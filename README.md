@@ -92,6 +92,14 @@ them into its per-run memory DB. Baseline never receives them. Prompts state
 behavioral contracts without naming memory tools or embedding the
 historical facts. Pilot-labeled, never evidence.
 
+`tasks/D_staleness/` holds stale-memory tasks on `fixtures/history_repo`
+(`task_01_suffix`). A `preseed` observation records a T1 fact that a later
+fixture commit contradicted; the task pins the later state and the evaluator
+checks current behavior. Retrieval of the stale fact is observable through
+the memory tools; whether it causes a wrong result is recorded as the
+evaluator outcome, never claimed as causality. Pilot-labeled, never
+evidence.
+
 ## Configurations (Phase 4)
 
 ```powershell
