@@ -19,16 +19,19 @@ if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
 from scripts.seed_deps_repo import ensure_seeded_deps  # noqa: E402
+from scripts.seed_history_repo import ensure_seeded_history  # noqa: E402
 from scripts.seed_toy_repo import ensure_seeded_fixture  # noqa: E402
 
 GIT_TIMEOUT = 120
 
 # Fixture-name -> seeder. Each seeder takes the fixture dir and returns HEAD.
 # Unknown fixtures fail loudly: silently seeding the wrong repo would corrupt
-# benchmark provenance. (history_repo dispatch arrives with Phase 5.3 tasks.)
+# benchmark provenance. (ensure_seeded_history returns oldest-first SHAs, so
+# history_repo takes the last element.)
 _SEEDERS = {
     "toy_repo": ensure_seeded_fixture,
     "deps_repo": ensure_seeded_deps,
+    "history_repo": lambda d: ensure_seeded_history(d)[-1],
 }
 
 

@@ -34,14 +34,15 @@ from memory.baseline import NullBackend
 from memory.reference import ReferenceBackend
 
 
-def _create_backend(config: dict, repo_root: Path):
+def _create_backend(config: dict, repo_root: Path, task_preseed=()):
     """Explicit backend selection. Unknown names fail loudly (never default)."""
     name = config.get("backend")
     if name is None or name == "null":
         return NullBackend()
     if name == "reference":
         memory_cfg = config.get("memory") or {}
-        return ReferenceBackend(repo_root=repo_root, preseed=memory_cfg.get("preseed", ()))
+        merged = list(task_preseed or []) + list(memory_cfg.get("preseed", ()))
+        return ReferenceBackend(repo_root=repo_root, preseed=merged)
     raise RuntimeError(f"unknown_backend: {name!r}")
 
 
@@ -192,7 +193,7 @@ def run_single(
         if run_error is None:
             assert workspace is not None
             try:
-                backend = _create_backend(config, repo_root)
+                backend = _create_backend(config, repo_root, task.preseed)
                 agent = _create_agent(config, mock_behavior_override)
             except LLMAuthError as exc:
                 run_error = f"llm_auth_missing: {exc}"

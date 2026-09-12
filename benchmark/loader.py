@@ -26,6 +26,11 @@ TASK_FIELDS = {
     "tags",
 }
 
+# Optional keys: accepted but never required (existing tasks load unchanged).
+OPTIONAL_TASK_FIELDS = {
+    "preseed",
+}
+
 CONFIG_FIELDS = {
     "name",
     "backend",
@@ -76,7 +81,7 @@ def load_task(task_dir: Path, repo_root: Path) -> TaskConfig:
     meta = yaml.safe_load(meta_path.read_text(encoding="utf-8"))
     if not isinstance(meta, dict):
         raise ValueError(f"{meta_path} must contain a mapping")
-    unknown = set(meta) - TASK_FIELDS
+    unknown = set(meta) - TASK_FIELDS - OPTIONAL_TASK_FIELDS
     if unknown:
         raise ValueError(f"{meta_path} has unknown keys: {sorted(unknown)}")
     missing = TASK_FIELDS - set(meta)
@@ -102,6 +107,11 @@ def load_task(task_dir: Path, repo_root: Path) -> TaskConfig:
         isinstance(t, str) for t in meta["tags"]
     ):
         raise ValueError("tags must be a list of strings")
+    preseed = meta.get("preseed", [])
+    if not isinstance(preseed, list) or not all(
+        isinstance(e, dict) for e in preseed
+    ):
+        raise ValueError("task preseed must be a list of dicts")
 
     fixture_dir = repo_root / meta["fixture"]
     if not fixture_dir.is_dir():
@@ -125,6 +135,7 @@ def load_task(task_dir: Path, repo_root: Path) -> TaskConfig:
         task_version=task_version_for(task_dir),
         prompt_sha256=prompt_sha,
         prompt=prompt,
+        preseed=list(preseed),
     )
 
 

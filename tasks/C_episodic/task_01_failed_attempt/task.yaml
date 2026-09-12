@@ -1,0 +1,33 @@
+task_id: task_01_failed_attempt
+category: C_episodic
+fixture: fixtures/history_repo
+base_commit: "a97390a8c7b7f17c90d57598538192aebc6b6ecb"
+prompt_file: prompt.md
+eval_command:
+  - python
+  - -c
+  - |
+    from auth.login import login_and_refresh
+    from services.renewal import renew_session
+    for bad in ("", None):
+        try:
+            login_and_refresh(bad, "s3cret")
+        except ValueError:
+            pass
+        else:
+            raise SystemExit(f"login accepted invalid user {bad!r}")
+    assert login_and_refresh("u1", "s3cret") == "token-u1-fresh"
+    assert renew_session("") == "token--fresh"
+    assert renew_session("u1") == "token-u1-fresh"
+timeout_seconds: 120
+tags: ["episodic", "failed-attempt"]
+preseed:
+  - type: attempt
+    source: agent
+    timestamp: "2026-02-10T09:00:00+00:00"
+    repo: history_repo
+    symbol: renew_session
+    file: services/renewal.py
+    payload:
+      action: "rejected empty user IDs inside renew_session"
+      result: "broke batch renewal flows that pass service IDs through; reverted; fix belongs at login layer"

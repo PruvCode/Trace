@@ -85,6 +85,13 @@ labelled PILOT and is calibration only, never evidence.
 definition→consumer relationship; evaluators assert behavior, never tool
 strategy. Baseline and reference run every task under identical controls.
 
+`tasks/C_episodic/` holds history-dependent tasks on `fixtures/history_repo`
+(`task_01_failed_attempt`, `task_02_decision`). Each declares deterministic
+`preseed` events in `task.yaml`; the reference backend (and only it) loads
+them into its per-run memory DB. Baseline never receives them. Prompts state
+behavioral contracts without naming memory tools or embedding the
+historical facts. Pilot-labeled, never evidence.
+
 ## Configurations (Phase 4)
 
 ```powershell

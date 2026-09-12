@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
@@ -19,6 +19,7 @@ class TaskConfig:
     task_version: str  # sha256 over task definition files
     prompt_sha256: str  # sha256 of prompt bytes (fairness: base prompt equality)
     prompt: str  # exact prompt text handed to the agent
+    preseed: list[dict] = field(default_factory=list)  # optional episodic events
 
 
 @dataclass(frozen=True)
