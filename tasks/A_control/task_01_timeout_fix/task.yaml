@@ -1,7 +1,7 @@
 task_id: task_01_timeout_fix
 category: A_control
 fixture: fixtures/toy_repo
-base_commit: "2a29f0abc2daf651516f79ab2b0f5c14ebb2c80e"
+base_commit: "db386fe0dfdacf4b96877defef1395f2ea5425ce"
 prompt_file: prompt.md
 eval_command: ["python", "-m", "pytest", "tests/test_session.py", "-q"]
 timeout_seconds: 120

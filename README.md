@@ -5,11 +5,12 @@
 > agents solve software-engineering tasks while reducing redundant
 > context/token consumption vs. a baseline without memory?
 
-## Status: Phase 1 (V0 — Benchmark Foundation, skeleton working)
+## Status: Phase 2 (V1 — Reference Memory, structural only)
 
-Phase 1 proves: TRACE can reliably execute and mechanically evaluate coding
-tasks. It does NOT prove that memory improves coding agents (no memory code
-exists yet).
+Phase 2 proves: structural memory can expose useful code relationships
+(Tree-sitter → SQLite/FTS5 → MCP tools `find_definition`, `find_callers`,
+`search_symbols`). It does NOT prove that structural memory improves agent
+performance (no agent wiring yet — Phase 4).
 
 - V0 (Phase 0+1): reproducibly execute + evaluate coding tasks without memory.
 - V1 (Phase 2+3+4): structural + episodic reference memory behind MCP.
@@ -66,8 +67,9 @@ tool log, git status).
   experiments, clone the repo outside OneDrive or pass a `--work-root`
   outside OneDrive (available from Phase 1).
 
-## What is NOT here yet (Phases 2+: memory)
+## What is NOT here yet (Phases 3+: episodic, wiring)
 
-Reference memory (SQLite/FTS5/Tree-sitter/MCP/episodic/transcripts), the real
-LLM agent, and B/C/D task categories. Phase 1 is intentionally only the
-benchmark skeleton + mock agent + one A_control task.
+Episodic memory, Git-derived events, transcripts, the real LLM agent, and
+B/C/D task categories. Reference-memory MCP tools are queryable directly
+(`python -m memory.mcp_server --db <workspace>/.agent-memory/memory.db`)
+but no agent is wired to them yet.

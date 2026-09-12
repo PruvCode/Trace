@@ -88,12 +88,46 @@ def test_agent_contract_vendor_neutral():
         assert vendor not in text
 
 
-def test_no_memory_package_or_backend():
-    """Proves Phase 1 contains no memory system at all (not even a stub)."""
-    assert not (REPO_ROOT / "memory").exists()
+def test_benchmark_never_imports_memory():
+    """FTS5/Tree-sitter/SQLite stay behind memory/ + MCP; benchmark sees tools.
+
+    Import-line scan (docstrings may say the word "memory" legitimately).
+    """
+    import re
+
+    offenders = []
+    for package in ("benchmark", "agent"):
+        for path in (REPO_ROOT / package).rglob("*.py"):
+            text = path.read_text(encoding="utf-8")
+            for match in re.finditer(r"^\s*(?:from|import)\s+([\w.]+)", text, re.M):
+                module = match.group(1)
+                if module == "memory" or module.startswith("memory."):
+                    offenders.append(f"{path.name} imports {module}")
+                if module in ("sqlite3", "tree_sitter") or module.startswith(
+                    ("tree_sitter", "mcp")
+                ):
+                    offenders.append(f"{path.name} imports {module}")
+    assert offenders == []
+
+
+def test_no_phase3_artifacts_yet():
+    """Proves no Phase 3/4 functionality leaked into Phase 2.
+
+    (Replaces the Phase 1 "no memory package" guard: memory/ now exists
+    legitimately with structural-only modules.)
+    """
+    for rel in (
+        "memory/episodic.py",
+        "memory/git_events.py",
+        "memory/reference.py",
+        "agent/llm_agent.py",
+        "agent/prompts.py",
+    ):
+        assert not (REPO_ROOT / rel).exists(), rel
     hits = []
-    for path in SCOPED_FILES + sorted((REPO_ROOT / "benchmark").rglob("*.py")):
+    for path in SCOPED_FILES:
         text = path.read_text(encoding="utf-8")
-        if "MemoryBackend" in text or "memory.db" in text:
-            hits.append(str(path))
+        for token in ("MemoryBackend", "memory.db", "git_change", "transcript/"):
+            if token in text:
+                hits.append(f"{path.name}: {token}")
     assert hits == []
