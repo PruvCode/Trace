@@ -113,12 +113,11 @@ def test_benchmark_never_imports_memory():
 def test_no_unapproved_phase_artifacts_yet():
     """Proves no functionality beyond the approved Phase 3.1 scope exists.
 
-    Evolved per milestone: 3.1 legitimizes memory/episodic.py; git history
-    (3.2), MCP episodic tools (3.3), and any Phase 4 agent/transcript work
-    remain rejected until their milestone lands.
+    Evolved per milestone: 3.1 legitimized memory/episodic.py, 3.2
+    legitimizes memory/git_events.py; MCP episodic tools (3.3) and any
+    Phase 4 agent/transcript work remain rejected until their milestone.
     """
     for rel in (
-        "memory/git_events.py",
         "memory/reference.py",
         "memory/transcripts.py",
         "agent/llm_agent.py",

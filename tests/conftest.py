@@ -9,6 +9,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from scripts.seed_history_repo import ensure_seeded_history  # noqa: E402
 from scripts.seed_toy_repo import ensure_seeded_fixture  # noqa: E402
 
 
@@ -22,3 +23,10 @@ def seeded_fixture(repo_root: Path):
     fixture_dir = repo_root / "fixtures" / "toy_repo"
     head = ensure_seeded_fixture(fixture_dir)
     return fixture_dir, head
+
+
+@pytest.fixture(scope="session")
+def seeded_history(repo_root: Path):
+    history_dir = repo_root / "fixtures" / "history_repo"
+    shas = ensure_seeded_history(history_dir)
+    return history_dir, shas

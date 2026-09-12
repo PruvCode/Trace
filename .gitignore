@@ -14,8 +14,9 @@ build/
 runs/
 .agent-memory/
 
-# Generated fixture git repo (seeded by scripts/seed_toy_repo.py)
+# Generated fixture git repos (seeded by scripts/seed_*.py)
 fixtures/toy_repo/.git/
+fixtures/history_repo/.git/
 
 # Local SQLite artefacts
 *.db

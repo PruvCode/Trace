@@ -60,7 +60,8 @@ class Symbol:
     name: str
     kind: str  # "function" | "class"
     file: str
-    line: int
+    line: int  # 1-based first line of the definition
+    end_line: int  # 1-based last line of the definition body
     signature: str
 
 
@@ -121,23 +122,26 @@ def extract_symbols(source: bytes, relpath: str) -> list[Symbol]:
     lines = source.decode("utf-8", errors="replace").splitlines()
     defs_query, _, _ = _queries()
     found: list[Symbol] = []
-    for _pattern, captures in QueryCursor(defs_query).matches(tree.root_node):
-        for capture, nodes in captures.items():
-            if capture not in ("fname", "cname"):
-                continue
-            kind = "function" if capture == "fname" else "class"
-            for name_node in nodes:
-                line = name_node.start_point[0] + 1
-                signature = lines[name_node.start_point[0]].strip()[:200] if lines else ""
-                found.append(
-                    Symbol(
-                        name=_text(name_node, source),
-                        kind=kind,
-                        file=relpath,
-                        line=line,
-                        signature=signature,
-                    )
+    # Each match yields exactly one definition node + its name node, paired
+    # by pattern: index 0 = function, index 1 = class.
+    for pattern, captures in QueryCursor(defs_query).matches(tree.root_node):
+        if pattern == 0:
+            kind, name_nodes, def_nodes = "function", captures.get("fname", []), captures.get("fnode", [])
+        else:
+            kind, name_nodes, def_nodes = "class", captures.get("cname", []), captures.get("cnode", [])
+        for name_node, def_node in zip(name_nodes, def_nodes):
+            line = name_node.start_point[0] + 1
+            signature = lines[name_node.start_point[0]].strip()[:200] if lines else ""
+            found.append(
+                Symbol(
+                    name=_text(name_node, source),
+                    kind=kind,
+                    file=relpath,
+                    line=line,
+                    end_line=def_node.end_point[0] + 1,
+                    signature=signature,
                 )
+            )
     return found
 
 
