@@ -35,6 +35,8 @@ PROVENANCE_FIELDS = [
     "timed_out",
     "tool_log",
     "git_status",
+    "memory_tool_calls",
+    "token_source",
 ]
 
 

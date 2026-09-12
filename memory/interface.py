@@ -36,3 +36,11 @@ class MemoryBackend(ABC):
     @abstractmethod
     def teardown(self) -> None:
         """Stop processes, close handles; never leave orphans."""
+
+    def tool_definitions(self) -> list:
+        """Agent ToolDefs for this backend's tools ([] when none/not ready).
+
+        Untyped (no agent import) to keep the seam dependency-light; the
+        runner combines these with the core file tools.
+        """
+        return []

@@ -1,8 +1,9 @@
-"""Benchmark runner: the SOLE orchestrator (Phase 1).
+"""Benchmark runner: the SOLE orchestrator (Phase 4).
 
 Flow per run: load task+config -> ensure fixture -> isolated workspace ->
-mock agent (timeout-guarded) -> mechanical evaluator -> JSONL result.
-Every failure path still writes a schema-valid result line with success=false.
+memory backend setup -> agent (timeout-guarded) -> mechanical evaluator ->
+JSONL result. Every failure path still writes a schema-valid result line
+with success=false. Memory setup failure never falls back to baseline.
 """
 
 from __future__ import annotations
@@ -15,6 +16,12 @@ from dataclasses import asdict
 from pathlib import Path
 
 from agent.interface import AgentResult, Budget
+from agent.llm_agent import (
+    LLMAgent,
+    LLMAuthError,
+    LLMProviderError,
+    OpenAICompatibleClient,
+)
 from agent.mock_agent import MockAgent
 from agent.tools import build_core_tools
 from benchmark import evaluator as evaluator_mod
@@ -23,8 +30,46 @@ from benchmark import loader as loader_mod
 from benchmark import metrics as metrics_mod
 from benchmark import results as results_mod
 from benchmark import workspace as workspace_mod
+from benchmark.mcp_bridge import MCPBridgeError
+from memory.baseline import NullBackend
+from memory.reference import ReferenceBackend
 
-PHASE1_AGENTS = ("mock",)
+
+def _create_backend(config: dict, repo_root: Path):
+    """Explicit backend selection. Unknown names fail loudly (never default)."""
+    name = config.get("backend")
+    if name is None or name == "null":
+        return NullBackend()
+    if name == "reference":
+        memory_cfg = config.get("memory") or {}
+        return ReferenceBackend(repo_root=repo_root, preseed=memory_cfg.get("preseed", ()))
+    raise RuntimeError(f"unknown_backend: {name!r}")
+
+
+def _create_agent(config: dict, mock_behavior_override: str | None = None):
+    """Explicit agent selection. Unknown names fail loudly (never default)."""
+    kind = config.get("agent")
+    if kind == "mock":
+        behavior = mock_behavior_override or config.get("mock", {}).get(
+            "behavior", "pass"
+        )
+        mock_cfg = config.get("mock", {})
+        return MockAgent(
+            behavior=behavior,
+            sleep_seconds=float(mock_cfg.get("sleep_seconds", 30.0)),
+        )
+    if kind == "llm":
+        params = config.get("model_parameters") or {}
+        try:
+            client = OpenAICompatibleClient(
+                model=config.get("model"),
+                base_url=params.get("base_url"),
+                request_timeout=float(params.get("request_timeout", 60.0)),
+            )
+        except LLMAuthError:
+            raise
+        return LLMAgent(client, model=config.get("model"))
+    raise RuntimeError(f"unknown_agent: {kind!r}")
 
 
 def _budget_from(config: dict) -> Budget:
@@ -128,6 +173,8 @@ def run_single(
     workspace: Path | None = None
     run_error: str | None = None
     actual_head: str | None = None
+    backend = None
+    mcp_tool_names: list[str] = []
 
     try:
         fixture_dir = (repo_root / task.fixture).resolve()
@@ -142,41 +189,63 @@ def run_single(
     except Exception as exc:  # noqa: BLE001 - recorded in result line
         run_error = f"workspace_setup_failed: {type(exc).__name__}: {exc}"
 
-    if run_error is None:
-        assert workspace is not None
-        try:
-            if config["agent"] not in PHASE1_AGENTS:
-                raise RuntimeError(
-                    f"Phase 1 supports only mock agents, got {config['agent']!r}"
+    try:
+        if run_error is None:
+            assert workspace is not None
+            try:
+                backend = _create_backend(config, repo_root)
+                backend.setup(workspace)
+                mcp_tools = backend.tool_definitions()
+                mcp_tool_names = [t.name for t in mcp_tools]
+                agent = _create_agent(config, mock_behavior_override)
+                prompt = task.prompt + (config.get("prompt_addendum") or "")
+                budget = _budget_from(config)
+                tools = build_core_tools(workspace) + mcp_tools
+                agent_result, agent_issue = _run_agent_guarded(
+                    agent, workspace, prompt, tools, budget
                 )
-            behavior = mock_behavior_override or config.get("mock", {}).get(
-                "behavior", "pass"
-            )
-            mock_cfg = config.get("mock", {})
-            agent = MockAgent(
-                behavior=behavior,
-                sleep_seconds=float(mock_cfg.get("sleep_seconds", 30.0)),
-            )
-            prompt = task.prompt + (config.get("prompt_addendum") or "")
-            budget = _budget_from(config)
-            tools = build_core_tools(workspace)
-            agent_result, agent_issue = _run_agent_guarded(
-                agent, workspace, prompt, tools, budget
-            )
-            if agent_issue is not None:
-                run_error = f"agent_{agent_issue}: {agent_result.error}"
-        except Exception as exc:  # noqa: BLE001 - recorded in result line
-            run_error = f"agent_failed: {type(exc).__name__}: {exc}"
+                if agent_issue == "timeout":
+                    run_error = f"agent_timeout: {agent_result.error}"
+                elif agent_issue is not None:
+                    message = agent_result.error or ""
+                    if message.startswith("LLMAuthError:"):
+                        run_error = f"llm_auth_missing: {message}"
+                    elif message.startswith("LLMProviderError:"):
+                        run_error = f"llm_provider_error: {message}"
+                    else:
+                        run_error = f"agent_failed: {message}"
+            except MCPBridgeError as exc:
+                # Setup-phase transport failure: explicit, never silent baseline.
+                run_error = f"memory_setup_failed: {exc}"
+            except LLMAuthError as exc:
+                run_error = f"llm_auth_missing: {exc}"
+            except LLMProviderError as exc:
+                run_error = f"llm_provider_error: {exc}"
+            except RuntimeError as exc:
+                message = str(exc)
+                if message.startswith(("unknown_backend:", "unknown_agent:")):
+                    run_error = message
+                else:
+                    run_error = f"agent_failed: {type(exc).__name__}: {exc}"
+            except Exception as exc:  # noqa: BLE001 - recorded in result line
+                run_error = f"agent_failed: {type(exc).__name__}: {exc}"
 
-    if workspace is not None and workspace.exists():
-        try:
-            eval_result = evaluator_mod.run_evaluator(
-                workspace, task.eval_command, task.timeout_seconds
-            )
-        except Exception as exc:  # noqa: BLE001 - recorded, never raised
-            run_error = (run_error + "; " if run_error else "") + (
-                f"evaluator_failed: {type(exc).__name__}: {exc}"
-            )
+        if workspace is not None and workspace.exists():
+            try:
+                eval_result = evaluator_mod.run_evaluator(
+                    workspace, task.eval_command, task.timeout_seconds
+                )
+            except Exception as exc:  # noqa: BLE001 - recorded, never raised
+                run_error = (run_error + "; " if run_error else "") + (
+                    f"evaluator_failed: {type(exc).__name__}: {exc}"
+                )
+    finally:
+        # Memory teardown never masks the run outcome.
+        if backend is not None:
+            try:
+                backend.teardown()
+            except Exception:  # noqa: BLE001 - teardown is best-effort
+                pass
 
     try:
         git_status = (
@@ -189,18 +258,34 @@ def run_single(
 
     latency = timer.elapsed()
     success = bool(eval_result is not None and eval_result.success)
+    in_tok = agent_result.input_tokens
+    out_tok = agent_result.output_tokens
+    # Total requires exact provider usage for BOTH directions; otherwise None
+    # (never estimated). token_source marks which case this run is.
+    if in_tok is not None and out_tok is not None:
+        total_tok: int | None = in_tok + out_tok
+        token_source = "provider"
+    else:
+        total_tok = None
+        token_source = "unknown"
+    memory_names = set(mcp_tool_names)
+    memory_tool_calls = sum(
+        1 for record in agent_result.tool_log if record.name in memory_names
+    )
     result = {
         "task_id": task.task_id,
         "configuration": configuration,
         "run": run_index,
         "base_commit": task.base_commit,
         "success": success,
-        "input_tokens": None,
-        "output_tokens": None,
-        "total_tokens": None,
+        "input_tokens": in_tok,
+        "output_tokens": out_tok,
+        "total_tokens": total_tok,
         "latency_seconds": round(latency, 3),
         "turns": agent_result.turns,
         "tool_calls": agent_result.tool_calls,
+        "memory_tool_calls": memory_tool_calls,
+        "token_source": token_source,
         # Provenance:
         "seed": run_seed,
         "model": config.get("model"),
@@ -273,7 +358,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--mock-behavior",
         type=str,
         default=None,
-        choices=["pass", "fail", "error", "slow"],
+        choices=["pass", "fail", "error", "slow", "memory"],
     )
     return parser
 
