@@ -71,6 +71,15 @@ tool log, git status).
 B/C/D task categories, staleness experiments, external backends, and any
 claim about memory effectiveness.
 
+## Benchmark corpus (Phase 5.1: Category A — Control)
+
+`tasks/A_control/` holds simple single-file tasks where memory should
+provide little or no advantage (`task_01_timeout_fix`,
+`task_02_empty_user`). Each task is mechanically evaluated and must fail on
+the clean fixture and pass after the correct fix. `scripts/pilot.py` runs a
+task × configuration matrix through the existing runner; its output is
+labelled PILOT and is calibration only, never evidence.
+
 ## Configurations (Phase 4)
 
 ```powershell

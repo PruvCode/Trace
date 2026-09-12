@@ -1,0 +1,26 @@
+task_id: task_02_empty_user
+category: A_control
+fixture: fixtures/toy_repo
+base_commit: "db386fe0dfdacf4b96877defef1395f2ea5425ce"
+prompt_file: prompt.md
+eval_command:
+  - python
+  - -c
+  - |
+    from auth.login import login_and_refresh
+    for bad in ("", None):
+        try:
+            login_and_refresh(bad, "s3cret")
+        except ValueError:
+            pass
+        else:
+            raise SystemExit(f"invalid user_id {bad!r} was accepted")
+    assert login_and_refresh("u1", "s3cret") == "token-u1-fresh"
+    try:
+        login_and_refresh("u1", "wrong")
+    except ValueError:
+        pass
+    else:
+        raise SystemExit("bad password was accepted")
+timeout_seconds: 120
+tags: ["control", "single-file"]
