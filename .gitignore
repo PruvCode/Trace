@@ -1,0 +1,23 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# pytest
+.pytest_cache/
+.hypothesis/
+
+# TRACE run outputs (generated, never committed)
+runs/
+.agent-memory/
+
+# Local SQLite artefacts
+*.db
+*.db-wal
+*.db-shm
+
+# Secrets / local env
+.env
