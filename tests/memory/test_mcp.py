@@ -70,7 +70,11 @@ def test_mcp_stdio_round_trip(tmp_path, seeded_fixture):
         return await asyncio.wait_for(_exercise(db_path), timeout=90)
 
     out = asyncio.run(bounded())
-    assert out["tool_names"] == ["find_callers", "find_definition", "search_symbols"]
+    # Structural tools must keep working; the exact full surface (now 6 with
+    # episodic tools) is owned by test_mcp_episodic.py.
+    assert {"find_callers", "find_definition", "search_symbols"} <= set(
+        out["tool_names"]
+    )
 
     callers = out["callers"]
     assert {(c["caller"], c["file"]) for c in callers} == {
