@@ -10,6 +10,10 @@ dependencies = [
     "mcp>=2.2",
     "tree-sitter>=0.26",
     "tree-sitter-python>=0.25",
+    # Phase 4.1 real-agent adapter: OpenAI-compatible client only.
+    # Lazy use: the automated suite runs keyless via fakes; only real
+    # (manual, credentialed) runs touch this package.
+    "openai>=1.0",
 ]
 
 [project.optional-dependencies]

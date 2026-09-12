@@ -5,6 +5,7 @@ Behaviors (selected via config `mock.behavior`, overridable by CLI):
 - "fail":  read session.py, write a wrong value, done      -> evaluator FAILS
 - "error": raise immediately                               -> harness error path
 - "slow":  sleep past the budget without writing           -> runner timeout path
+- "memory": use available memory tools, then fix, done     -> memory plumbing
 
 One tool call = one turn. Token usage is None (mock performs no model calls).
 """
@@ -22,10 +23,19 @@ TARGET_FILE = "auth/session.py"
 
 class MockAgent(CodingAgent):
     def __init__(self, behavior: str = "pass", sleep_seconds: float = 30.0) -> None:
-        if behavior not in ("pass", "fail", "error", "slow"):
+        if behavior not in ("pass", "fail", "error", "slow", "memory"):
             raise ValueError(f"unknown mock behavior: {behavior!r}")
         self.behavior = behavior
         self.sleep_seconds = sleep_seconds
+
+    @staticmethod
+    def _fixed(content: str) -> str:
+        buggy_line = "return 15  # BUG: should return SESSION_TIMEOUT_MINUTES"
+        if buggy_line in content:
+            return content.replace(buggy_line, "return SESSION_TIMEOUT_MINUTES")
+        if "return 15" in content:
+            return content.replace("return 15", "return SESSION_TIMEOUT_MINUTES")
+        return content
 
     def run(
         self,
@@ -85,17 +95,25 @@ class MockAgent(CodingAgent):
             )
 
         if self.behavior == "pass":
-            buggy_line = "return 15  # BUG: should return SESSION_TIMEOUT_MINUTES"
-            if buggy_line in content:
-                new_content = content.replace(
-                    buggy_line, "return SESSION_TIMEOUT_MINUTES"
+            new_content = self._fixed(content)
+        elif self.behavior == "memory":
+            # Exercise whichever memory tools the run provides, then fix.
+            # Works with or without memory tools (tolerant by design).
+            if "search_symbols" in by_name:
+                _ok, _res, stop = step("search_symbols", query="timeout")
+                if stop is not None:
+                    return stop
+            if "record_event" in by_name:
+                _ok, _res, stop = step(
+                    "record_event",
+                    type="observation",
+                    repo="benchmark-workspace",
+                    symbol="get_session_timeout",
+                    payload={"finding": "timeout value looks wrong"},
                 )
-            elif "return 15" in content:
-                new_content = content.replace(
-                    "return 15", "return SESSION_TIMEOUT_MINUTES"
-                )
-            else:
-                new_content = content
+                if stop is not None:
+                    return stop
+            new_content = self._fixed(content)
         else:  # "fail": a confident-looking but wrong edit
             new_content = content.replace(
                 "return 15  # BUG: should return SESSION_TIMEOUT_MINUTES",

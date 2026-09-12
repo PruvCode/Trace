@@ -114,13 +114,13 @@ def test_no_unapproved_phase_artifacts_yet():
     """Proves no functionality beyond the approved Phase 3.1 scope exists.
 
     Evolved per milestone: 3.1 legitimized memory/episodic.py, 3.2
-    legitimizes memory/git_events.py; MCP episodic tools (3.3) and any
-    Phase 4 agent/transcript work remain rejected until their milestone.
+    legitimizes memory/git_events.py, 4.1 legitimizes agent/llm_agent.py;
+    reference backend (4.2), MCP episodic tools config (4.3), transcripts,
+    prompts, and any Phase 5 work remain rejected until their milestone.
     """
     for rel in (
         "memory/reference.py",
         "memory/transcripts.py",
-        "agent/llm_agent.py",
         "agent/prompts.py",
     ):
         assert not (REPO_ROOT / rel).exists(), rel

@@ -47,19 +47,34 @@ def build_core_tools(workspace: Path) -> list[ToolDef]:
         ToolDef(
             name="read_file",
             description="Read a UTF-8 text file relative to the workspace.",
-            json_schema={"path": "string"},
+            json_schema={
+                "type": "object",
+                "properties": {"path": {"type": "string"}},
+                "required": ["path"],
+            },
             handler=read_file,
         ),
         ToolDef(
             name="write_file",
             description="Write a UTF-8 text file relative to the workspace.",
-            json_schema={"path": "string", "content": "string"},
+            json_schema={
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "content": {"type": "string"},
+                },
+                "required": ["path", "content"],
+            },
             handler=write_file,
         ),
         ToolDef(
             name="done",
             description="Signal task completion with a short summary.",
-            json_schema={"summary": "string"},
+            json_schema={
+                "type": "object",
+                "properties": {"summary": {"type": "string"}},
+                "required": ["summary"],
+            },
             handler=done,
         ),
     ]
