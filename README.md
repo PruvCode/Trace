@@ -151,6 +151,24 @@ Real-model runs need `TRACE_API_KEY`/`OPENAI_API_KEY` and are manual-only
 behavior is scripted plumbing, not intelligence; Windows stdio spawn adds
 ~1–2s per reference run.
 
+## Repeated runs and analysis (Phase 6)
+
+```powershell
+# n repetitions per task (fresh workspace + fresh DB each; --order shuffles deterministically)
+python -m benchmark.runner --all tasks --config configs/baseline.yaml --runs 3 --seed 7
+python -m benchmark.runner --all tasks --config configs/reference_memory.yaml --runs 3 --seed 7
+
+# Descriptive comparison straight from the raw JSONL (no inferential statistics)
+python -m benchmark.analyze --results runs/workspaces/<exp>/results.jsonl --tasks-root tasks
+```
+
+Each result carries `timestamp` and `benchmark_version` provenance.
+Analysis reports per-task, per-category, and overall figures with n cited,
+paired baseline-vs-reference deltas, and a visible list of infrastructure
+failures (excluded from success-rate denominators but never hidden).
+Real-model runs need `TRACE_API_KEY`/`OPENAI_API_KEY`; without credentials
+only fake-client validation runs — never presented as evidence.
+
 ## Deterministic tests
 
 ```powershell

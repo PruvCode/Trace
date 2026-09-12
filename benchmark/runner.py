@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import random
 import sys
 import threading
 from dataclasses import asdict
@@ -70,6 +71,20 @@ def _create_agent(config: dict, mock_behavior_override: str | None = None):
             raise
         return LLMAgent(client, model=config.get("model"))
     raise RuntimeError(f"unknown_agent: {kind!r}")
+
+
+def _benchmark_version() -> str:
+    """Package version for provenance; never fails the run."""
+    try:
+        from importlib.metadata import version
+
+        return version("trace")
+    except Exception:  # noqa: BLE001 - provenance best-effort only
+        return "unknown"
+
+
+def _utc_timestamp() -> str:
+    return datetime.datetime.now(datetime.timezone.utc).isoformat()
 
 
 def _budget_from(config: dict) -> Budget:
@@ -310,6 +325,8 @@ def run_single(
         "timed_out": eval_result.timed_out if eval_result else False,
         "tool_log": [asdict(r) for r in agent_result.tool_log],
         "git_status": git_status,
+        "timestamp": _utc_timestamp(),
+        "benchmark_version": _benchmark_version(),
     }
     results_mod.append_result(results_path, result)
     return result
@@ -330,6 +347,24 @@ def discover_tasks(tasks_root: Path) -> list[Path]:
     return found
 
 
+def _execution_order(task_refs: list[Path], runs: int, shuffle_order=None):
+    """Deterministic (task, run) execution sequence.
+
+    Default None preserves task-major order. An int seed shuffles the full
+    sequence deterministically; the seed is recorded in each result's `seed`
+    field and execution order equals JSONL line order, so runs stay
+    reproducible without extra machinery.
+    """
+    sequence = [
+        (task_ref, run_index)
+        for task_ref in task_refs
+        for run_index in range(1, runs + 1)
+    ]
+    if shuffle_order is not None:
+        random.Random(shuffle_order).shuffle(sequence)
+    return sequence
+
+
 def run_experiment(
     task_refs: list[Path],
     config: dict,
@@ -340,25 +375,25 @@ def run_experiment(
     results_path: Path,
     repo_root: Path,
     mock_behavior_override: str | None = None,
+    shuffle_order: int | None = None,
 ) -> list[dict]:
     outcomes = []
-    for task_ref in task_refs:
+    for task_ref, run_index in _execution_order(task_refs, runs, shuffle_order):
         task_dir = task_ref if task_ref.is_dir() else task_ref.parent
         task = loader_mod.load_task(task_dir, repo_root)
-        for run_index in range(1, runs + 1):
-            outcomes.append(
-                run_single(
-                    task,
-                    config,
-                    run_index,
-                    seed_base,
-                    work_root,
-                    exp_id,
-                    results_path,
-                    repo_root,
-                    mock_behavior_override,
-                )
+        outcomes.append(
+            run_single(
+                task,
+                config,
+                run_index,
+                seed_base,
+                work_root,
+                exp_id,
+                results_path,
+                repo_root,
+                mock_behavior_override,
             )
+        )
     return outcomes
 
 
@@ -370,6 +405,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--runs", type=int, default=1)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument(
+        "--order",
+        type=int,
+        default=None,
+        help="deterministically shuffle the task×run execution order with this "
+        "seed (default: task-major order). Recorded via per-run seeds; JSONL "
+        "line order equals execution order.",
+    )
     parser.add_argument("--work-root", type=Path, default=Path("runs") / "workspaces")
     parser.add_argument("--exp-id", type=str, default=None)
     parser.add_argument("--runs-file", type=Path, default=None)
@@ -414,6 +457,7 @@ def main(argv=None) -> int:
         results_path,
         repo_root,
         args.mock_behavior,
+        args.order,
     )
     passed = sum(1 for o in outcomes if o["success"])
     print(f"runs={len(outcomes)} passed={passed} failed={len(outcomes) - passed}")

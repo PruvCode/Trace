@@ -37,6 +37,8 @@ PROVENANCE_FIELDS = [
     "git_status",
     "memory_tool_calls",
     "token_source",
+    "timestamp",
+    "benchmark_version",
 ]
 
 
