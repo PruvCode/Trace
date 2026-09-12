@@ -35,6 +35,7 @@ CONFIG_FIELDS = {
     "budget",
     "mock",
     "prompt_addendum",
+    "memory",
 }
 
 
@@ -142,6 +143,14 @@ def load_config(config_path: Path) -> dict:
     for key in ("max_turns", "max_tool_calls", "timeout_seconds"):
         if key not in budget:
             raise ValueError(f"{config_path} budget is missing key: {key}")
+    if "memory" in cfg:
+        if not isinstance(cfg["memory"], dict):
+            raise ValueError(f"{config_path} memory must be a mapping")
+        preseed = cfg["memory"].get("preseed", [])
+        if not isinstance(preseed, list) or not all(
+            isinstance(e, dict) for e in preseed
+        ):
+            raise ValueError(f"{config_path} memory.preseed must be a list of dicts")
     cfg.setdefault("model_parameters", {})
     cfg.setdefault("mock", {"behavior": "pass"})
     cfg.setdefault("prompt_addendum", "")
