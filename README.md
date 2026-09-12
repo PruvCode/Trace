@@ -5,11 +5,11 @@
 > agents solve software-engineering tasks while reducing redundant
 > context/token consumption vs. a baseline without memory?
 
-## Status: Phase 0 (V0 — Benchmark Foundation, scaffolding only)
+## Status: Phase 1 (V0 — Benchmark Foundation, skeleton working)
 
-Phase 0 proves: the project builds and tests reproducibly. It proves nothing
-about tasks, agents, or memory. See the approved plan (V0/V1/V2) for the full
-roadmap:
+Phase 1 proves: TRACE can reliably execute and mechanically evaluate coding
+tasks. It does NOT prove that memory improves coding agents (no memory code
+exists yet).
 
 - V0 (Phase 0+1): reproducibly execute + evaluate coding tasks without memory.
 - V1 (Phase 2+3+4): structural + episodic reference memory behind MCP.
@@ -39,6 +39,23 @@ Then:
 python -m pytest
 ```
 
+## Running the benchmark (Phase 1: baseline + mock agent only)
+
+```powershell
+# Seed the fixture repo (deterministic SHA, printed for task.yaml)
+python scripts/seed_toy_repo.py
+
+# One task, baseline config, two runs
+python -m benchmark.runner --task tasks/A_control/task_01_timeout_fix --config configs/baseline.yaml --runs 2
+
+# Failing-outcome demo (evaluator still decides, not the agent)
+python -m benchmark.runner --task tasks/A_control/task_01_timeout_fix --config configs/baseline.yaml --mock-behavior fail
+```
+
+Results append to `runs/workspaces/<exp_id>/results.jsonl`, one JSON line per
+run with full provenance (seed, task/config hashes, base commit, exit code,
+tool log, git status).
+
 ## Reproducibility notes
 
 - Pinned starting point: `pyproject.toml` lower bounds (`requires-python >=3.11`,
@@ -49,8 +66,8 @@ python -m pytest
   experiments, clone the repo outside OneDrive or pass a `--work-root`
   outside OneDrive (available from Phase 1).
 
-## What is NOT here yet
+## What is NOT here yet (Phases 2+: memory)
 
-Runner, agents, evaluator, memory backend, MCP server, tasks — all arrive in
-their planned phases. Phase 0 is intentionally only: `pyproject.toml`,
-`.gitignore`, `README.md`, placeholder test.
+Reference memory (SQLite/FTS5/Tree-sitter/MCP/episodic/transcripts), the real
+LLM agent, and B/C/D task categories. Phase 1 is intentionally only the
+benchmark skeleton + mock agent + one A_control task.

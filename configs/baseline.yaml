@@ -1,0 +1,13 @@
+# Phase 1: only the null-memory baseline exists.
+name: baseline
+backend: null
+agent: mock
+model: mock
+model_parameters: {}
+budget:
+  max_turns: 10
+  max_tool_calls: 20
+  timeout_seconds: 300
+mock:
+  behavior: pass
+prompt_addendum: ""
