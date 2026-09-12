@@ -5,15 +5,11 @@
 > agents solve software-engineering tasks while reducing redundant
 > context/token consumption vs. a baseline without memory?
 
-## Status: Phase 3 (V1 — Reference Memory, structural + episodic)
+## Status: Phase 4 (controlled agent ↔ memory integration)
 
-Phase 3 proves: TRACE can store and retrieve what happened during previous
-coding work (agent-reported events with strict validation) while
-independently deriving factual code-change history from Git
-(`get_git_history`: sha, message, files, line counts, best-effort
-attributed symbols). Sources stay explicit (`agent` vs `git`); no LLM
-anywhere in the pipeline. It does NOT prove that episodic memory improves
-agent performance (no agent wiring yet — Phase 4).
+Phase 4 proves: TRACE can connect a coding agent to its reference memory
+system under a controlled benchmark configuration. It does NOT prove that
+memory improves coding-agent performance (that requires Phase 5+ experiments).
 
 - V0 (Phase 0+1): reproducibly execute + evaluate coding tasks without memory.
 - V1 (Phase 2+3+4): structural + episodic reference memory behind MCP.
@@ -70,9 +66,68 @@ tool log, git status).
   experiments, clone the repo outside OneDrive or pass a `--work-root`
   outside OneDrive (available from Phase 1).
 
-## What is NOT here yet (Phase 4+: agent wiring)
+## What is NOT here yet (Phase 5+: experiments)
 
-Transcripts, the real LLM agent, reference-backend lifecycle wiring, and
-B/C/D task categories. All 6 MCP tools are queryable directly
-(`python -m memory.mcp_server --db <workspace>/.agent-memory/memory.db
---repo <git repo>`) but no agent is wired to them yet.
+B/C/D task categories, staleness experiments, external backends, and any
+claim about memory effectiveness.
+
+## Configurations (Phase 4)
+
+```powershell
+# Baseline: core tools only (read_file, write_file, done)
+python -m benchmark.runner --task tasks/A_control/task_01_timeout_fix --config configs/baseline.yaml
+
+# Reference memory: same core tools + 6 memory tools over MCP
+python -m benchmark.runner --task tasks/A_control/task_01_timeout_fix --config configs/reference_memory.yaml
+```
+
+Both runs share task, base commit, agent, model, budget, timeout, and
+evaluator. The only difference is memory availability (plus a fixed
+tool-availability sentence in the prompt, versioned in the config).
+`tests/benchmark/test_config_fairness.py` enforces this mechanically.
+
+## How memory is isolated
+
+Each run clones a fresh workspace; `ReferenceBackend.setup()` builds a fresh
+`<workspace>/.agent-memory/memory.db` inside it (structural index + optional
+explicit `preseed` events) and spawns one MCP server child for that run
+only. Teardown kills the child. Two runs never share a database or process.
+
+## How MCP is started
+
+`ReferenceBackend` prepares the database, then `benchmark/mcp_bridge.py`
+spawns `python -m memory.mcp_server --db <db> --repo <workspace>` over stdio,
+initializes a client session, and exposes the 6 tools as normal `ToolDef`s.
+Transport failure fails closed per tool call; setup failure marks the run
+`memory_setup_failed` (never silent baseline).
+
+## How token accounting works
+
+`LLMAgent` sums exact provider `usage` per turn into
+`AgentResult.input/output_tokens`; the runner writes `total_tokens` only
+when both are known, plus `token_source: provider|unknown`. Mocks report
+`None`/`unknown`. Nothing is ever estimated. Memory vs total calls are split
+via `memory_tool_calls` (counted from the existing tool log).
+
+## What the benchmark does and does not prove
+
+Proves: agent↔memory runs execute reproducibly with honest failure records.
+Does not prove: any performance effect of memory — Phase 4 has one control
+task and mock agents by design.
+
+## Known limitations
+
+Real-model runs need `TRACE_API_KEY`/`OPENAI_API_KEY` and are manual-only
+(never in CI); per-request timeouts default to 60s; `MockAgent` memory
+behavior is scripted plumbing, not intelligence; Windows stdio spawn adds
+~1–2s per reference run.
+
+## Deterministic tests
+
+```powershell
+python -m pytest
+```
+
+No test needs network, keys, or a model. The `openai` package is imported
+only by the real-client adapter, which no automated test constructs
+against the network (missing-key behavior is tested with env scrubbed).

@@ -30,7 +30,6 @@ from benchmark import loader as loader_mod
 from benchmark import metrics as metrics_mod
 from benchmark import results as results_mod
 from benchmark import workspace as workspace_mod
-from benchmark.mcp_bridge import MCPBridgeError
 from memory.baseline import NullBackend
 from memory.reference import ReferenceBackend
 
@@ -194,29 +193,7 @@ def run_single(
             assert workspace is not None
             try:
                 backend = _create_backend(config, repo_root)
-                backend.setup(workspace)
-                mcp_tools = backend.tool_definitions()
-                mcp_tool_names = [t.name for t in mcp_tools]
                 agent = _create_agent(config, mock_behavior_override)
-                prompt = task.prompt + (config.get("prompt_addendum") or "")
-                budget = _budget_from(config)
-                tools = build_core_tools(workspace) + mcp_tools
-                agent_result, agent_issue = _run_agent_guarded(
-                    agent, workspace, prompt, tools, budget
-                )
-                if agent_issue == "timeout":
-                    run_error = f"agent_timeout: {agent_result.error}"
-                elif agent_issue is not None:
-                    message = agent_result.error or ""
-                    if message.startswith("LLMAuthError:"):
-                        run_error = f"llm_auth_missing: {message}"
-                    elif message.startswith("LLMProviderError:"):
-                        run_error = f"llm_provider_error: {message}"
-                    else:
-                        run_error = f"agent_failed: {message}"
-            except MCPBridgeError as exc:
-                # Setup-phase transport failure: explicit, never silent baseline.
-                run_error = f"memory_setup_failed: {exc}"
             except LLMAuthError as exc:
                 run_error = f"llm_auth_missing: {exc}"
             except LLMProviderError as exc:
@@ -227,6 +204,36 @@ def run_single(
                     run_error = message
                 else:
                     run_error = f"agent_failed: {type(exc).__name__}: {exc}"
+            except Exception as exc:  # noqa: BLE001 - recorded in result line
+                run_error = f"agent_failed: {type(exc).__name__}: {exc}"
+        if run_error is None:
+            assert backend is not None
+            try:
+                backend.setup(workspace)
+            except Exception as exc:  # noqa: BLE001 - setup phase is memory's
+                run_error = f"memory_setup_failed: {type(exc).__name__}: {exc}"
+        if run_error is None:
+            try:
+                mcp_tools = backend.tool_definitions()
+                mcp_tool_names = [t.name for t in mcp_tools]
+                prompt = task.prompt + (config.get("prompt_addendum") or "")
+                budget = _budget_from(config)
+                tools = build_core_tools(workspace) + mcp_tools
+                agent_result, agent_issue = _run_agent_guarded(
+                    agent, workspace, prompt, tools, budget
+                )
+                if agent_issue == "timeout":
+                    run_error = f"agent_timeout: {agent_result.error}"
+                elif agent_issue is not None:
+                    # In-thread agent crashes arrive as text; provider errors
+                    # keep their class prefix for taxonomy mapping.
+                    message = agent_result.error or ""
+                    if message.startswith("LLMAuthError:"):
+                        run_error = f"llm_auth_missing: {message}"
+                    elif message.startswith("LLMProviderError:"):
+                        run_error = f"llm_provider_error: {message}"
+                    else:
+                        run_error = f"agent_failed: {message}"
             except Exception as exc:  # noqa: BLE001 - recorded in result line
                 run_error = f"agent_failed: {type(exc).__name__}: {exc}"
 
