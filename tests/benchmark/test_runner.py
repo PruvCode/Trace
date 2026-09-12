@@ -1,8 +1,25 @@
 """End-to-end runner tests with the mock agent (no LLM, no network)."""
 
+from pathlib import Path
+
 from benchmark import loader as loader_mod
 from benchmark import results as results_mod
 from benchmark import runner as runner_mod
+
+
+def test_discover_tasks_skips_template(repo_root):
+    """Corpus discovery must yield runnable tasks only, never scaffolding."""
+    found = runner_mod.discover_tasks(repo_root / "tasks")
+    rel = sorted(str(p.parent.relative_to(repo_root / "tasks")) for p in found)
+    assert rel == [
+        str(Path("A_control") / "task_01_timeout_fix"),
+        str(Path("A_control") / "task_02_empty_user"),
+        str(Path("B_structural") / "task_01_callers"),
+        str(Path("B_structural") / "task_02_definition"),
+        str(Path("C_episodic") / "task_01_failed_attempt"),
+        str(Path("C_episodic") / "task_02_decision"),
+        str(Path("D_staleness") / "task_01_suffix"),
+    ]
 
 
 def _load(repo_root):

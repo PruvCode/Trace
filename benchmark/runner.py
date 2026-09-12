@@ -316,7 +316,18 @@ def run_single(
 
 
 def discover_tasks(tasks_root: Path) -> list[Path]:
-    return sorted(tasks_root.rglob("task.yaml"))
+    """Runnable corpus discovery: skips scaffold dirs (underscore-prefixed).
+
+    tasks/_template/ documents the schema but pins a placeholder commit, so
+    it must never enter a pilot matrix as a bogus error row.
+    """
+    found = []
+    for path in sorted(tasks_root.rglob("task.yaml")):
+        rel_parts = path.parent.relative_to(tasks_root).parts
+        if any(part.startswith("_") for part in rel_parts):
+            continue
+        found.append(path)
+    return found
 
 
 def run_experiment(
