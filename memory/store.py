@@ -4,6 +4,8 @@ Schema:
   symbols(name, kind, file, line, signature)
   relationships(src, rel, dst, file, line)   # rel in {"calls", "imports"}
   symbols_fts: FTS5 index over (name, kind, file, signature), rowid = symbols.id
+  events(type, timestamp, source, repo, commit?, file?, symbol?, payload JSON)
+  events_fts: FTS5 index over (type, symbol, file, payload_text), rowid = events.id
 
 All queries are parameterized. All results are bounded (default 10, max 50).
 FTS5 is an implementation detail of this backend; callers only see dicts.
@@ -39,6 +41,22 @@ CREATE INDEX IF NOT EXISTS idx_rel_dst ON relationships(rel, dst);
 CREATE VIRTUAL TABLE IF NOT EXISTS symbols_fts USING fts5(
     name, kind, file, signature
 );
+CREATE TABLE IF NOT EXISTS events (
+    id INTEGER PRIMARY KEY,
+    type TEXT NOT NULL,
+    timestamp TEXT NOT NULL,
+    source TEXT NOT NULL,
+    repo TEXT NOT NULL,
+    commit_sha TEXT,
+    file TEXT,
+    symbol TEXT,
+    payload TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_events_type ON events(type);
+CREATE INDEX IF NOT EXISTS idx_events_symbol ON events(symbol);
+CREATE VIRTUAL TABLE IF NOT EXISTS events_fts USING fts5(
+    type, symbol, file, payload_text
+);
 """
 
 
@@ -57,10 +75,17 @@ def init_schema(conn: sqlite3.Connection) -> None:
 
 
 def clear(conn: sqlite3.Connection) -> None:
-    """Wipe all rows so re-indexing is deterministic."""
+    """Wipe structural rows so re-indexing is deterministic (events kept)."""
     conn.execute("DELETE FROM symbols")
     conn.execute("DELETE FROM relationships")
     conn.execute("DELETE FROM symbols_fts")
+    conn.commit()
+
+
+def clear_events(conn: sqlite3.Connection) -> None:
+    """Wipe episodic rows (explicit only; re-indexing never clears events)."""
+    conn.execute("DELETE FROM events")
+    conn.execute("DELETE FROM events_fts")
     conn.commit()
 
 

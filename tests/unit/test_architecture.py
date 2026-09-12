@@ -110,16 +110,17 @@ def test_benchmark_never_imports_memory():
     assert offenders == []
 
 
-def test_no_phase3_artifacts_yet():
-    """Proves no Phase 3/4 functionality leaked into Phase 2.
+def test_no_unapproved_phase_artifacts_yet():
+    """Proves no functionality beyond the approved Phase 3.1 scope exists.
 
-    (Replaces the Phase 1 "no memory package" guard: memory/ now exists
-    legitimately with structural-only modules.)
+    Evolved per milestone: 3.1 legitimizes memory/episodic.py; git history
+    (3.2), MCP episodic tools (3.3), and any Phase 4 agent/transcript work
+    remain rejected until their milestone lands.
     """
     for rel in (
-        "memory/episodic.py",
         "memory/git_events.py",
         "memory/reference.py",
+        "memory/transcripts.py",
         "agent/llm_agent.py",
         "agent/prompts.py",
     ):
