@@ -18,9 +18,18 @@ _REPO_ROOT = str(Path(__file__).resolve().parent.parent)
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
+from scripts.seed_deps_repo import ensure_seeded_deps  # noqa: E402
 from scripts.seed_toy_repo import ensure_seeded_fixture  # noqa: E402
 
 GIT_TIMEOUT = 120
+
+# Fixture-name -> seeder. Each seeder takes the fixture dir and returns HEAD.
+# Unknown fixtures fail loudly: silently seeding the wrong repo would corrupt
+# benchmark provenance. (history_repo dispatch arrives with Phase 5.3 tasks.)
+_SEEDERS = {
+    "toy_repo": ensure_seeded_fixture,
+    "deps_repo": ensure_seeded_deps,
+}
 
 
 def _git(*args: str, cwd: Path) -> str:
@@ -40,7 +49,12 @@ def ensure_fixture(fixture_dir: Path) -> str:
     """Seed the fixture repo if needed; return its HEAD SHA."""
     env_name = os.environ.get("TRACE_SEED_DATES", "")
     _ = env_name
-    return ensure_seeded_fixture(fixture_dir)
+    seeder = _SEEDERS.get(fixture_dir.name)
+    if seeder is None:
+        raise RuntimeError(
+            f"no seeder registered for fixture: {fixture_dir.name}"
+        )
+    return seeder(fixture_dir)
 
 
 def create_workspace(fixture_dir: Path, base_commit: str, dest: Path) -> Path:

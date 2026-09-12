@@ -17,6 +17,7 @@ runs/
 # Generated fixture git repos (seeded by scripts/seed_*.py)
 fixtures/toy_repo/.git/
 fixtures/history_repo/.git/
+fixtures/deps_repo/.git/
 
 # Local SQLite artefacts
 *.db

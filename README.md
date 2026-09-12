@@ -80,6 +80,11 @@ the clean fixture and pass after the correct fix. `scripts/pilot.py` runs a
 task × configuration matrix through the existing runner; its output is
 labelled PILOT and is calibration only, never evidence.
 
+`tasks/B_structural/` holds cross-file tasks on `fixtures/deps_repo`
+(`task_01_callers`, `task_02_definition`). Each requires understanding a
+definition→consumer relationship; evaluators assert behavior, never tool
+strategy. Baseline and reference run every task under identical controls.
+
 ## Configurations (Phase 4)
 
 ```powershell
