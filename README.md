@@ -5,12 +5,15 @@
 > agents solve software-engineering tasks while reducing redundant
 > context/token consumption vs. a baseline without memory?
 
-## Status: Phase 2 (V1 — Reference Memory, structural only)
+## Status: Phase 3 (V1 — Reference Memory, structural + episodic)
 
-Phase 2 proves: structural memory can expose useful code relationships
-(Tree-sitter → SQLite/FTS5 → MCP tools `find_definition`, `find_callers`,
-`search_symbols`). It does NOT prove that structural memory improves agent
-performance (no agent wiring yet — Phase 4).
+Phase 3 proves: TRACE can store and retrieve what happened during previous
+coding work (agent-reported events with strict validation) while
+independently deriving factual code-change history from Git
+(`get_git_history`: sha, message, files, line counts, best-effort
+attributed symbols). Sources stay explicit (`agent` vs `git`); no LLM
+anywhere in the pipeline. It does NOT prove that episodic memory improves
+agent performance (no agent wiring yet — Phase 4).
 
 - V0 (Phase 0+1): reproducibly execute + evaluate coding tasks without memory.
 - V1 (Phase 2+3+4): structural + episodic reference memory behind MCP.
@@ -67,9 +70,9 @@ tool log, git status).
   experiments, clone the repo outside OneDrive or pass a `--work-root`
   outside OneDrive (available from Phase 1).
 
-## What is NOT here yet (Phases 3+: episodic, wiring)
+## What is NOT here yet (Phase 4+: agent wiring)
 
-Episodic memory, Git-derived events, transcripts, the real LLM agent, and
-B/C/D task categories. Reference-memory MCP tools are queryable directly
-(`python -m memory.mcp_server --db <workspace>/.agent-memory/memory.db`)
-but no agent is wired to them yet.
+Transcripts, the real LLM agent, reference-backend lifecycle wiring, and
+B/C/D task categories. All 6 MCP tools are queryable directly
+(`python -m memory.mcp_server --db <workspace>/.agent-memory/memory.db
+--repo <git repo>`) but no agent is wired to them yet.
