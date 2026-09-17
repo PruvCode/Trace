@@ -14,9 +14,12 @@ EXPECTED_TOOLS = [
     "find_callers",
     "find_definition",
     "get_git_history",
+    "get_transcript_session",
     "record_event",
+    "record_transcript_message",
     "search_events",
     "search_symbols",
+    "search_transcripts",
 ]
 
 
@@ -86,6 +89,28 @@ async def _exercise(db_path: Path, repo: Path) -> dict:
             )
             out["history_symbol"] = _parse(history_symbol)
 
+            # Transcript tools
+            transcript_recorded = await session.call_tool(
+                "record_transcript_message",
+                {
+                    "session_id": "test-session-1",
+                    "role": "user",
+                    "content": "We discovered the auth bug",
+                    "metadata": {"model": "gpt-4"},
+                },
+            )
+            out["transcript_recorded"] = _parse(transcript_recorded)
+
+            transcript_found = await session.call_tool(
+                "search_transcripts", {"query": "auth bug", "limit": 5}
+            )
+            out["transcript_found"] = _parse(transcript_found)
+
+            transcript_session = await session.call_tool(
+                "get_transcript_session", {"session_id": "test-session-1", "limit": 10}
+            )
+            out["transcript_session"] = _parse(transcript_session)
+
             # Structural regression inside the same session.
             callers = await session.call_tool(
                 "find_callers", {"name": "refresh_token"}
@@ -100,7 +125,7 @@ async def _exercise(db_path: Path, repo: Path) -> dict:
 
 
 def test_mcp_episodic_round_trip(tmp_path, seeded_fixture, seeded_history):
-    """Proves the exact 6-tool surface end to end with clean shutdown."""
+    """Proves the exact 9-tool surface end to end with clean shutdown."""
     fixture_dir, _head = seeded_fixture
     history_dir, _shas = seeded_history
     db_path = tmp_path / ".agent-memory" / "memory.db"
@@ -121,6 +146,13 @@ def test_mcp_episodic_round_trip(tmp_path, seeded_fixture, seeded_history):
     }
     assert out["found"][0]["source"] == "agent"
     assert out["by_type"] == []
+
+    # Transcript tools
+    assert out["transcript_recorded"] == {"id": 1}
+    assert len(out["transcript_found"]) == 1
+    assert out["transcript_found"][0]["content"] == "We discovered the auth bug"
+    assert out["transcript_found"][0]["role"] == "user"
+    assert out["transcript_session"] == out["transcript_found"]
 
     subjects = [h["subject"] for h in out["history"]]
     assert subjects[0] == "renew sessions via refresh_token"

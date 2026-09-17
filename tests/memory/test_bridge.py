@@ -17,6 +17,9 @@ MEMORY_TOOL_NAMES = {
     "record_event",
     "search_events",
     "get_git_history",
+    "record_transcript_message",
+    "search_transcripts",
+    "get_transcript_session",
 }
 
 

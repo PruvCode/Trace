@@ -1,7 +1,9 @@
 [project]
 name = "trace"
 version = "0.1.0"
-description = "Reproducible benchmark/evaluation harness for coding-agent memory (benchmark-first)."
+description = "Persistent local memory for coding agents across sessions, with measurement."
+readme = "README.md"
+license = { text = "MIT" }
 requires-python = ">=3.11"
 dependencies = [
     "pyyaml>=6.0",
@@ -20,6 +22,11 @@ dependencies = [
 dev = [
     "pytest>=8.0",
 ]
+# Corpus pipeline (SWE-bench ingestion) only; the benchmark engine never
+# imports it. Kept optional so the deterministic test suite stays light.
+corpus = [
+    "pyarrow>=15",
+]
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -27,7 +34,10 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["benchmark*", "agent*", "memory*"]
+include = ["benchmark*", "agent*", "memory*", "corpus*", "trace_memory*"]
+
+[project.scripts]
+trace = "trace_memory.cli:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

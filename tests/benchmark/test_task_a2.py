@@ -133,8 +133,12 @@ def test_pilot_skeleton_labelled_and_delegating(tmp_path, repo_root, capsys):
     out = capsys.readouterr().out
     assert "PILOT" in out
     rows = [json.loads(line) for line in runs_file.read_text(encoding="utf-8").splitlines()]
-    assert len(rows) == 2  # both A tasks ran
+    assert len(rows) == 6  # all A tasks ran
     assert {row["task_id"] for row in rows} == {
         "task_01_timeout_fix",
         "task_02_empty_user",
+        "task_03_token_prefix",
+        "task_04_page_offbyone",
+        "task_05_retry_count",
+        "task_06_csv_header",
     }

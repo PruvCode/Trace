@@ -91,3 +91,29 @@ def test_memory_key_validated(repo_root, tmp_path):
     )
     with pytest.raises(ValueError, match="memory must be a mapping"):
         loader_mod.load_config(bad)
+
+
+def _load_llm(repo_root):
+    task = loader_mod.load_task(
+        repo_root / "tasks" / "A_control" / "task_01_timeout_fix", repo_root
+    )
+    baseline = loader_mod.load_config(repo_root / "configs" / "baseline_llm.yaml")
+    reference = loader_mod.load_config(repo_root / "configs" / "reference_llm.yaml")
+    return task, baseline, reference
+
+
+def test_llm_controls_equal_intervention_explicit(repo_root):
+    """Same fairness contract for the real-model pair: identical controls,
+    memory availability as the only permitted difference."""
+    task, baseline, reference = _load_llm(repo_root)
+    base_spec = fairness_mod.resolve_run_spec(task, baseline, str(repo_root))
+    ref_spec = fairness_mod.resolve_run_spec(task, reference, str(repo_root))
+    message = fairness_mod.assert_fair(base_spec, ref_spec)
+    assert "fair" in message
+    assert baseline["agent"] == reference["agent"] == "llm"
+    assert baseline["model"] == reference["model"]
+    assert "openrouter" in reference["model_parameters"]["base_url"]
+    assert baseline["backend"] is None
+    assert reference["backend"] == "reference"
+    assert baseline.get("prompt_addendum", "") == ""
+    assert "find_definition" in reference["prompt_addendum"]

@@ -6,6 +6,8 @@ Schema:
   symbols_fts: FTS5 index over (name, kind, file, signature), rowid = symbols.id
   events(type, timestamp, source, repo, commit?, file?, symbol?, payload JSON)
   events_fts: FTS5 index over (type, symbol, file, payload_text), rowid = events.id
+  transcript_messages(id, session_id, role, content, timestamp, metadata JSON)
+  transcript_messages_fts: FTS5 index over (session_id, role, content), rowid = transcript_messages.id
 
 All queries are parameterized. All results are bounded (default 10, max 50).
 FTS5 is an implementation detail of this backend; callers only see dicts.
@@ -56,6 +58,19 @@ CREATE INDEX IF NOT EXISTS idx_events_type ON events(type);
 CREATE INDEX IF NOT EXISTS idx_events_symbol ON events(symbol);
 CREATE VIRTUAL TABLE IF NOT EXISTS events_fts USING fts5(
     type, symbol, file, payload_text
+);
+CREATE TABLE IF NOT EXISTS transcript_messages (
+    id INTEGER PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL,
+    timestamp TEXT NOT NULL,
+    metadata TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_transcript_session ON transcript_messages(session_id);
+CREATE INDEX IF NOT EXISTS idx_transcript_timestamp ON transcript_messages(timestamp);
+CREATE VIRTUAL TABLE IF NOT EXISTS transcript_messages_fts USING fts5(
+    session_id, role, content
 );
 """
 

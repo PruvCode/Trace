@@ -6,6 +6,9 @@ __pycache__/
 dist/
 build/
 
+# Local artifacts
+.workbuddy-ai/
+
 # pytest
 .pytest_cache/
 .hypothesis/
@@ -18,6 +21,16 @@ runs/
 fixtures/toy_repo/.git/
 fixtures/history_repo/.git/
 fixtures/deps_repo/.git/
+fixtures/iface_repo/.git/
+fixtures/creds_repo/.git/
+fixtures/pager_repo/.git/
+fixtures/net_repo/.git/
+fixtures/data_repo/.git/
+fixtures/api_repo/.git/
+fixtures/queue_repo/.git/
+fixtures/profiles_repo/.git/
+fixtures/cache_repo/.git/
+fixtures/store_repo/.git/
 
 # Local SQLite artefacts
 *.db

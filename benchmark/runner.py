@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import json
+import os
 import random
 import sys
 import threading
@@ -24,6 +26,15 @@ from agent.llm_agent import (
     OpenAICompatibleClient,
 )
 from agent.mock_agent import MockAgent
+from agent.opencode_agent import (
+    CONFIG_FILENAME as OPENCODE_CONFIG_FILENAME,
+)
+from agent.opencode_agent import (
+    OpenCodeAgent,
+)
+from agent.opencode_agent import (
+    build_opencode_config as build_opencode_base_config,
+)
 from agent.tools import build_core_tools
 from benchmark import evaluator as evaluator_mod
 from benchmark import fairness as fairness_mod
@@ -70,7 +81,46 @@ def _create_agent(config: dict, mock_behavior_override: str | None = None):
         except LLMAuthError:
             raise
         return LLMAgent(client, model=config.get("model"))
+    if kind == "opencode":
+        return OpenCodeAgent(model=config.get("model"))
     raise RuntimeError(f"unknown_agent: {kind!r}")
+
+
+def build_opencode_config_with_memory(mcp_command: list[str]) -> dict:
+    """Runner-owned seam: permission profile + local trace_memory server.
+
+    Baseline never calls this (no ``mcp`` key). Reference calls it with the
+    backend's MCPConfig.command so the out-of-process OpenCode binary spawns
+    the same per-run database. Lives in the runner (not the agent) to keep
+    memory/MCP details out of the agent layer; runner.py already holds the
+    narrow ``mcp`` architecture exemption for this purpose.
+    """
+    base = build_opencode_base_config()
+    base["mcp"] = {
+        "trace_memory": {
+            "type": "local",
+            "enabled": True,
+            "command": list(mcp_command),
+        }
+    }
+    return base
+
+
+def write_opencode_config_for_run(
+    workspace: Path, mcp_command: list[str] | tuple | None
+) -> None:
+    """Write the per-run opencode.json when a memory server exists.
+
+    No-op when ``mcp_command`` is empty (baseline): the agent writes its
+    permission-only config itself. The file lives inside the isolated
+    per-run workspace and the agent removes it afterwards.
+    """
+    if not mcp_command:
+        return
+    cfg = build_opencode_config_with_memory(list(mcp_command))
+    (workspace.resolve() / OPENCODE_CONFIG_FILENAME).write_text(
+        json.dumps(cfg, indent=2), encoding="utf-8"
+    )
 
 
 def _benchmark_version() -> str:
@@ -189,11 +239,18 @@ def run_single(
     run_error: str | None = None
     actual_head: str | None = None
     backend = None
+    mcp_config = None
     mcp_tool_names: list[str] = []
 
     try:
         fixture_dir = (repo_root / task.fixture).resolve()
-        actual_head = workspace_mod.ensure_fixture(fixture_dir)
+        # Seeders for generated fixtures return their (single) HEAD, which is
+        # the task's base commit. The SWE-bench fixture is a shared historical
+        # clone, so it is told which commit this task needs and verifies that
+        # one is present locally instead of assuming HEAD.
+        actual_head = workspace_mod.ensure_fixture(
+            fixture_dir, base_commit=task.base_commit
+        )
         if actual_head != task.base_commit:
             raise RuntimeError(
                 f"fixture HEAD {actual_head} != task base_commit {task.base_commit}"
@@ -225,9 +282,23 @@ def run_single(
         if run_error is None:
             assert backend is not None
             try:
-                backend.setup(workspace)
+                mcp_config = backend.setup(workspace)
             except Exception as exc:  # noqa: BLE001 - setup phase is memory's
                 run_error = f"memory_setup_failed: {type(exc).__name__}: {exc}"
+        if run_error is None:
+            # OpenCode reference seam (benchmark-owned): point the
+            # out-of-process binary at this run's database via opencode.json.
+            # Baseline (empty command) writes nothing, so it gets no memory.
+            try:
+                if config.get("agent") == "opencode" and getattr(
+                    mcp_config, "command", None
+                ):
+                    assert workspace is not None
+                    write_opencode_config_for_run(
+                        workspace, list(mcp_config.command)
+                    )
+            except Exception as exc:  # noqa: BLE001 - recorded in result line
+                run_error = f"agent_failed: {type(exc).__name__}: {exc}"
         if run_error is None:
             try:
                 mcp_tools = backend.tool_definitions()
@@ -413,7 +484,16 @@ def build_parser() -> argparse.ArgumentParser:
         "seed (default: task-major order). Recorded via per-run seeds; JSONL "
         "line order equals execution order.",
     )
-    parser.add_argument("--work-root", type=Path, default=Path("runs") / "workspaces")
+    parser.add_argument(
+        "--work-root",
+        type=Path,
+        default=None,
+        help="Parent dir for per-run workspaces. Defaults to a fast local path "
+        "outside the repo: each run clones a full repo and churns thousands of "
+        "files, and doing that inside the OneDrive-synced tree (or under "
+        "AppData\\Local) is throttled to a few files/s on Windows. Override "
+        "with TRACE_WORK_ROOT when a specific volume is required.",
+    )
     parser.add_argument("--exp-id", type=str, default=None)
     parser.add_argument("--runs-file", type=Path, default=None)
     parser.add_argument(
@@ -423,6 +503,28 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["pass", "fail", "error", "slow", "memory"],
     )
     return parser
+
+
+def _resolve_work_root(work_root: Path | None, repo_root: Path) -> Path:
+    """Resolve the parent dir for per-run workspaces.
+
+    Each run clones a full repo and churns thousands of files, so the *location*
+    is a performance-critical choice on Windows: deletion under
+    ``%LOCALAPPDATA%`` and inside the OneDrive-synced tree is throttled to a few
+    files/s, which turns a ~12 s checkout into a multi-minute one. The default
+    is therefore a fast local path outside the repo, overridable with
+    ``TRACE_WORK_ROOT`` or ``--work-root``.
+    """
+    if work_root is not None:
+        return work_root if work_root.is_absolute() else repo_root / work_root
+    env = os.environ.get("TRACE_WORK_ROOT")
+    if env:
+        return Path(env).expanduser().resolve()
+    if sys.platform == "win32":
+        base = os.environ.get("TEMP") or os.environ.get("TMP")
+        if base:
+            return (Path(base) / "trace_runs").resolve()
+    return (repo_root / "runs" / "workspaces").resolve()
 
 
 def main(argv=None) -> int:
@@ -439,7 +541,7 @@ def main(argv=None) -> int:
     exp_id = args.exp_id or (
         "exp_" + datetime.datetime.now().strftime("%Y%m%d_%H%M%S")  # noqa: DTZ005 - local lab timestamps
     )
-    work_root = args.work_root if args.work_root.is_absolute() else repo_root / args.work_root
+    work_root = _resolve_work_root(args.work_root, repo_root)
     results_path = (
         args.runs_file
         if args.runs_file is not None

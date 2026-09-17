@@ -1,4 +1,4 @@
-"""Reference memory MCP server (stdio): 3 structural + 3 episodic tools.
+"""Reference memory MCP server (stdio): 3 structural + 3 episodic + 3 transcript tools.
 
 The agent's only path to memory. Each tool opens a short-lived connection to
 the workspace-local database, so there is no shared handle and no cross-run
@@ -23,6 +23,7 @@ from mcp.server.mcpserver import MCPServer
 from memory import episodic as episodic_mod
 from memory import git_events as git_events_mod
 from memory import store as store_mod
+from memory import transcript as transcript_mod
 
 server = MCPServer("trace-reference-memory")
 
@@ -147,6 +148,70 @@ def get_git_history(
 ) -> list[dict]:
     """Deterministic Git facts: sha, subject, message, files, changed symbols."""
     return git_events_mod.get_git_history(_repo(), path, symbol, limit)
+
+
+@server.tool()
+def record_transcript_message(
+    session_id: str,
+    role: str,
+    content: str,
+    timestamp: str | None = None,
+    metadata: dict | None = None,
+) -> dict:
+    """Record one transcript message (user/assistant/system/tool)."""
+    conn = _connect()
+    try:
+        msg_id = transcript_mod.record_message(
+            conn,
+            session_id=session_id,
+            role=role,
+            content=content,
+            timestamp=timestamp,
+            metadata=metadata,
+        )
+        return {"id": msg_id}
+    finally:
+        conn.close()
+
+
+@server.tool()
+def search_transcripts(
+    session_id: str | None = None,
+    role: str | None = None,
+    query: str | None = None,
+    limit: int = 10,
+) -> list[dict]:
+    """Search transcript messages by session, role, or full-text query. Bounded."""
+    conn = _connect()
+    try:
+        return [
+            asdict(msg)
+            for msg in transcript_mod.search_messages(
+                conn,
+                session_id=session_id,
+                role=role,
+                query=query,
+                limit=limit,
+            )
+        ]
+    finally:
+        conn.close()
+
+
+@server.tool()
+def get_transcript_session(
+    session_id: str,
+    limit: int = 50,
+) -> list[dict]:
+    """Retrieve all messages for a session, ordered by insertion. Bounded."""
+    conn = _connect()
+    try:
+        return [
+            asdict(msg)
+            for msg in transcript_mod.get_session_messages(conn, session_id, limit)
+        ]
+    finally:
+        conn.close()
 
 
 def main(argv: list[str] | None = None) -> int:

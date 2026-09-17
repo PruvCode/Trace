@@ -14,11 +14,26 @@ def test_discover_tasks_skips_template(repo_root):
     assert rel == [
         str(Path("A_control") / "task_01_timeout_fix"),
         str(Path("A_control") / "task_02_empty_user"),
+        str(Path("A_control") / "task_03_token_prefix"),
+        str(Path("A_control") / "task_04_page_offbyone"),
+        str(Path("A_control") / "task_05_retry_count"),
+        str(Path("A_control") / "task_06_csv_header"),
         str(Path("B_structural") / "task_01_callers"),
         str(Path("B_structural") / "task_02_definition"),
+        str(Path("B_structural") / "task_03_arg_order"),
+        str(Path("B_structural") / "task_04_serde_contract"),
+        str(Path("B_structural") / "task_05_exception_contract"),
+        str(Path("B_structural") / "task_06_shadowed_name"),
         str(Path("C_episodic") / "task_01_failed_attempt"),
         str(Path("C_episodic") / "task_02_decision"),
+        str(Path("C_episodic") / "task_03_incident_blocklist"),
+        str(Path("C_episodic") / "task_04_reverted_cache_key"),
+        str(Path("C_episodic") / "task_05_cursor_rollout"),
+        str(Path("C_episodic") / "task_06_migration_idempotent"),
         str(Path("D_staleness") / "task_01_suffix"),
+        str(Path("D_staleness") / "task_02_credential_rotation"),
+        str(Path("D_staleness") / "task_03_stale_page_default"),
+        str(Path("D_staleness") / "task_04_stale_route"),
     ]
 
 
