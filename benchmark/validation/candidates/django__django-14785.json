@@ -1,0 +1,32 @@
+{
+  "base_checkout": false,
+  "base_commit": "93f3b7a0ba2969109940775a18515728603afac6",
+  "base_commit_exists": true,
+  "classification": "CHECKOUT_FAILURE",
+  "duration_seconds": 15.73,
+  "f2p_labels": [
+    "model_fields.test_decimalfield.DecimalFieldTests.test_save_nan_invalid"
+  ],
+  "failure_reason": "checkout_failed: RuntimeError: worktree checkout failed for 93f3b7a0ba: fatal: Unable to create 'C:/Users/pruth/AppData/Local/TraceSWECache/repos/django__django/.git/worktrees/django__django1/index.lock': File exists.\n\nAnother git process seems to be running in this repository, or the lock file may be stale",
+  "gold_patch_applies": false,
+  "has_test_patch": false,
+  "p2p_labels": [
+    "model_fields.test_decimalfield.DecimalFieldTests.test_default",
+    "model_fields.test_decimalfield.DecimalFieldTests.test_get_prep_value",
+    "model_fields.test_decimalfield.DecimalFieldTests.test_invalid_value",
+    "model_fields.test_decimalfield.DecimalFieldTests.test_max_decimal_places_validation",
+    "model_fields.test_decimalfield.DecimalFieldTests.test_max_digits_validation",
+    "model_fields.test_decimalfield.DecimalFieldTests.test_max_whole_digits_validation",
+    "model_fields.test_decimalfield.DecimalFieldTests.test_to_python"
+  ],
+  "repo": "django/django",
+  "source_task_id": "django__django-14785",
+  "task_id": "django__django-14785",
+  "test_patch_applies": false,
+  "tests_available": true,
+  "tests_fail_before_gold_patch": null,
+  "tests_pass_after_gold_patch": null,
+  "valid": false,
+  "validation_version": "2",
+  "version": "4.1"
+}

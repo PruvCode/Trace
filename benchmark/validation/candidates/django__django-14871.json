@@ -1,0 +1,32 @@
+{
+  "base_checkout": false,
+  "base_commit": "32b7ffc2bbfd1ae055bdbe287f8598de731adce1",
+  "base_commit_exists": true,
+  "classification": "CHECKOUT_FAILURE",
+  "duration_seconds": 15.72,
+  "f2p_labels": [
+    "admin_widgets.test_autocomplete_widget.AutocompleteMixinTests.test_build_attrs"
+  ],
+  "failure_reason": "checkout_failed: RuntimeError: worktree checkout failed for 32b7ffc2bb: fatal: Unable to create 'C:/Users/pruth/AppData/Local/TraceSWECache/repos/django__django/.git/worktrees/django__django1/index.lock': File exists.\n\nAnother git process seems to be running in this repository, or the lock file may be stale",
+  "gold_patch_applies": false,
+  "has_test_patch": false,
+  "p2p_labels": [
+    "admin_widgets.test_autocomplete_widget.AutocompleteMixinTests.test_build_attrs_no_custom_class",
+    "admin_widgets.test_autocomplete_widget.AutocompleteMixinTests.test_build_attrs_not_required_field",
+    "admin_widgets.test_autocomplete_widget.AutocompleteMixinTests.test_build_attrs_required_field",
+    "admin_widgets.test_autocomplete_widget.AutocompleteMixinTests.test_get_url",
+    "admin_widgets.test_autocomplete_widget.AutocompleteMixinTests.test_media",
+    "admin_widgets.test_autocomplete_widget.AutocompleteMixinTests.test_render_options",
+    "admin_widgets.test_autocomplete_widget.AutocompleteMixinTests.test_render_options_fk_as_pk"
+  ],
+  "repo": "django/django",
+  "source_task_id": "django__django-14871",
+  "task_id": "django__django-14871",
+  "test_patch_applies": false,
+  "tests_available": true,
+  "tests_fail_before_gold_patch": null,
+  "tests_pass_after_gold_patch": null,
+  "valid": false,
+  "validation_version": "2",
+  "version": "4.1"
+}

@@ -1,0 +1,17 @@
+{
+  "base_checkout": false,
+  "base_commit": "68ef274bc505cd44f305c03cbf84cf08826200a8",
+  "base_commit_exists": true,
+  "failure_reason": "checkout_failed: RuntimeError: worktree checkout failed for 68ef274bc5: ",
+  "gold_patch_applies": false,
+  "has_test_patch": false,
+  "repo": "django/django",
+  "source_task_id": "django__django-14463",
+  "task_id": "django__django-14463",
+  "test_patch_applies": false,
+  "tests_available": true,
+  "tests_fail_before_gold_patch": null,
+  "tests_pass_after_gold_patch": null,
+  "valid": false,
+  "validation_version": "1"
+}

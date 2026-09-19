@@ -1,0 +1,17 @@
+{
+  "base_checkout": true,
+  "base_commit": "d4bf3b4c75c0e1229062ad4c937725931f699fb7",
+  "base_commit_exists": true,
+  "failure_reason": null,
+  "gold_patch_applies": true,
+  "has_test_patch": true,
+  "repo": "django/django",
+  "source_task_id": "django__django-12504",
+  "task_id": "django__django-12504",
+  "test_patch_applies": true,
+  "tests_available": true,
+  "tests_fail_before_gold_patch": true,
+  "tests_pass_after_gold_patch": true,
+  "valid": true,
+  "validation_version": "1"
+}

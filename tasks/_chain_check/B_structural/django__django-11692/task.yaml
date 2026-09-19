@@ -1,0 +1,19 @@
+task_id: django__django-11692
+category: B_structural
+fixture: fixtures/swebench_repo
+base_commit: "f37face331f21cb8af70fc4ec101ec7b6be1f63e"
+prompt_file: prompt.md
+eval_command:
+  - "python"
+  - "tests/runtests.py"
+  - "queries.test_qs_combinators.QuerySetSetOperationTests.test_union_in_subquery"
+  - "queries.test_qs_combinators.QuerySetSetOperationTests.test_union_in_subquery_related_outerref"
+  - "-v"
+  - "0"
+  - "--parallel"
+  - "1"
+timeout_seconds: 1800
+tags:
+  - "swe-bench"
+  - "B_structural"
+  - "django/django"

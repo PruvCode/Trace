@@ -1,0 +1,7 @@
+{
+  "adapter_version": "2",
+  "repo": "django/django",
+  "source": "swe-bench",
+  "source_task_id": "django__django-11692",
+  "task_id": "django__django-11692"
+}

@@ -1,0 +1,14 @@
+# Baseline OpenCode configuration (real-model experiment, no API key).
+# agent: opencode + pinned free model; backend null (no memory tools).
+# Must stay identical to configs/reference_opencode.yaml in every control
+# dimension; the ONLY differences are the memory intervention.
+name: baseline_opencode
+backend: null
+agent: opencode
+model: opencode/mimo-v2.5-free
+model_parameters: {}
+budget:
+  max_turns: 10
+  max_tool_calls: 20
+  timeout_seconds: 300
+prompt_addendum: ""

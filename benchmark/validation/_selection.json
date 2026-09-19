@@ -1,0 +1,30 @@
+{
+  "selection_rule": "dataset order, filtered to host-runnable Django (interpreter available for version); first 20; no outcome-based skipping",
+  "pool_total": 850,
+  "runnable_pool": 289,
+  "skipped_unsupported_environment": 561,
+  "limit": 20,
+  "id_list_sha256": "271f03e1952f0b582d12f6e5bce37a89f9ea6efc0916a6f1b5cc13287ee0240d",
+  "selected": [
+    "django__django-11692",
+    "django__django-12504",
+    "django__django-14385",
+    "django__django-14463",
+    "django__django-14480",
+    "django__django-14722",
+    "django__django-14725",
+    "django__django-14751",
+    "django__django-14762",
+    "django__django-14771",
+    "django__django-14785",
+    "django__django-14787",
+    "django__django-14805",
+    "django__django-14861",
+    "django__django-14871",
+    "django__django-14878",
+    "django__django-14880",
+    "django__django-14890",
+    "django__django-14894",
+    "django__django-14915"
+  ]
+}

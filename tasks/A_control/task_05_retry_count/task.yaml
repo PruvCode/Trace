@@ -1,0 +1,31 @@
+task_id: task_05_retry_count
+category: A_control
+fixture: fixtures/net_repo
+base_commit: "a1a4737877a2a6a3e3ecf90b698311849c7ffb2b"
+prompt_file: prompt.md
+eval_command:
+  - python
+  - -c
+  - |
+    from net.retry import run_with_retries
+    calls = []
+    def flaky():
+        calls.append(1)
+        if len(calls) < 3:
+            raise RuntimeError("boom")
+        return "ok"
+    assert run_with_retries(flaky, 3) == "ok"
+    assert len(calls) == 3
+    calls2 = []
+    def always():
+        calls2.append(1)
+        raise RuntimeError("down")
+    try:
+        run_with_retries(always, 4)
+    except RuntimeError:
+        pass
+    else:
+        raise SystemExit("expected RuntimeError after 4 attempts")
+    assert len(calls2) == 4
+timeout_seconds: 120
+tags: ["control", "retry", "single-file"]

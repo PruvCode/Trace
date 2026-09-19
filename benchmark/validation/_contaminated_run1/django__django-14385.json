@@ -1,0 +1,17 @@
+{
+  "base_checkout": false,
+  "base_commit": "221b2f85febcf68629fc3a4007dc7edb5a305b91",
+  "base_commit_exists": true,
+  "failure_reason": "checkout_failed: TimeoutExpired: Command '['git', 'checkout', '--detach', '221b2f85febcf68629fc3a4007dc7edb5a305b91']' timed out after 600 seconds",
+  "gold_patch_applies": false,
+  "has_test_patch": false,
+  "repo": "django/django",
+  "source_task_id": "django__django-14385",
+  "task_id": "django__django-14385",
+  "test_patch_applies": false,
+  "tests_available": true,
+  "tests_fail_before_gold_patch": null,
+  "tests_pass_after_gold_patch": null,
+  "valid": false,
+  "validation_version": "1"
+}

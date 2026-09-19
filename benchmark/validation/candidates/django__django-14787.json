@@ -1,0 +1,32 @@
+{
+  "base_checkout": false,
+  "base_commit": "004b4620f6f4ad87261e149898940f2dcd5757ef",
+  "base_commit_exists": false,
+  "classification": "CANDIDATE_INVALID",
+  "duration_seconds": 0.0,
+  "f2p_labels": null,
+  "failure_reason": "no_runnable_test_labels",
+  "gold_patch_applies": false,
+  "has_test_patch": false,
+  "p2p_labels": [
+    "decorators.tests.CacheControlDecoratorTest.test_cache_control_decorator_http_request",
+    "decorators.tests.DecoratorsTest.test_cache_page",
+    "decorators.tests.NeverCacheDecoratorTest.test_never_cache_decorator",
+    "decorators.tests.NeverCacheDecoratorTest.test_never_cache_decorator_http_request",
+    "decorators.tests.MethodDecoratorTests.test_argumented",
+    "decorators.tests.MethodDecoratorTests.test_bad_iterable",
+    "decorators.tests.MethodDecoratorTests.test_descriptors",
+    "decorators.tests.MethodDecoratorTests.test_preserve_attributes",
+    "decorators.tests.MethodDecoratorTests.test_preserve_signature"
+  ],
+  "repo": "django/django",
+  "source_task_id": "django__django-14787",
+  "task_id": "django__django-14787",
+  "test_patch_applies": false,
+  "tests_available": true,
+  "tests_fail_before_gold_patch": null,
+  "tests_pass_after_gold_patch": null,
+  "valid": false,
+  "validation_version": "2",
+  "version": "4.1"
+}

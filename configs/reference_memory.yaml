@@ -1,0 +1,24 @@
+# Reference-memory configuration (Phase 4.3).
+#
+# Identical to configs/baseline.yaml in every control dimension (agent,
+# model, parameters, budget, timeout); the ONLY differences are the memory
+# intervention: backend null -> reference, mock behavior pass -> memory
+# (exercises memory tools deterministically), a fixed tool-availability
+# addendum, and an (empty) preseed list.
+#
+# The addendum names tools so the agent can discover them. It contains no
+# task hints and no staleness instructions (Phase 5 owns those).
+name: reference_memory
+backend: reference
+agent: mock
+model: mock
+model_parameters: {}
+budget:
+  max_turns: 10
+  max_tool_calls: 20
+  timeout_seconds: 300
+mock:
+  behavior: memory
+prompt_addendum: "You have access to project memory tools (find_definition, find_callers, search_symbols, record_event, search_events, get_git_history). Use them to look up code facts instead of guessing."
+memory:
+  preseed: []

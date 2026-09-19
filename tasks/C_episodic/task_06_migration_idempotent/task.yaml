@@ -1,0 +1,29 @@
+task_id: task_06_migration_idempotent
+category: C_episodic
+fixture: fixtures/store_repo
+base_commit: "175315a7ff1fa1774769322d0dea6cfa83988db4"
+prompt_file: prompt.md
+eval_command:
+  - python
+  - -c
+  - |
+    from migrate.backfill import run_backfill
+    rows = [{"id": 1}, {"id": 2, "archived": True, "_migrated_by": "bf-2026-03"}]
+    ledger = [{"row": 2, "by": "bf-2026-03"}]
+    run_backfill(rows, ledger)
+    run_backfill(rows, ledger)
+    assert ledger == [{"row": 2, "by": "bf-2026-03"}, {"row": 1, "by": "bf-2026-03"}]
+    assert all(r.get("archived") is True for r in rows)
+    assert rows[0]["_migrated_by"] == "bf-2026-03"
+    assert rows[1]["_migrated_by"] == "bf-2026-03"
+timeout_seconds: 120
+tags: ["episodic", "migration-idempotency"]
+preseed:
+  - type: observation
+    source: agent
+    timestamp: "2026-03-10T09:00:00+00:00"
+    repo: store_repo
+    symbol: run_backfill
+    file: migrate/backfill.py
+    payload:
+      finding: "backfill bf-2026-03 completed 2026-03-10 for the users table; remaining unprocessed rows belong to bf-2026-03; do not open a new migration"

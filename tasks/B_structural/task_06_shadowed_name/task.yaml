@@ -1,0 +1,15 @@
+task_id: task_06_shadowed_name
+category: B_structural
+fixture: fixtures/profiles_repo
+base_commit: "b69ffc07eebee4989c23e0a1f04cbbecc65dda81"
+prompt_file: prompt.md
+eval_command:
+  - python
+  - -c
+  - |
+    from app.profiles import display_name
+    assert display_name("<b>ann</b> ") == "ann"
+    assert display_name("  bob  ") == "bob"
+    assert display_name("plain") == "plain"
+timeout_seconds: 120
+tags: ["structural", "name-resolution", "multi-file"]

@@ -1,0 +1,14 @@
+task_id: task_05_exception_contract
+category: B_structural
+fixture: fixtures/queue_repo
+base_commit: "365c8c50e9cf293e5cfebd07134b7e3e4201be46"
+prompt_file: prompt.md
+eval_command:
+  - python
+  - -c
+  - |
+    from api.submit import submit
+    assert submit({"payload": "p"}) == {"status": "ok", "result": "p"}
+    assert submit({"payload": "p", "fail": True}) == {"status": "retry"}
+timeout_seconds: 120
+tags: ["structural", "exception-contract", "multi-file"]

@@ -1,0 +1,15 @@
+# Baseline LLM configuration (real-model experiment).
+# agent: llm + pinned free model; backend null (no memory tools).
+# Must stay identical to configs/reference_llm.yaml in every control
+# dimension; the ONLY differences are the memory intervention.
+name: baseline_llm
+backend: null
+agent: llm
+model: cohere/north-mini-code:free
+model_parameters:
+  base_url: https://openrouter.ai/api/v1
+budget:
+  max_turns: 10
+  max_tool_calls: 20
+  timeout_seconds: 300
+prompt_addendum: ""

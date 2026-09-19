@@ -1,0 +1,33 @@
+task_id: task_05_cursor_rollout
+category: C_episodic
+fixture: fixtures/pager_repo
+base_commit: "bc80e0936d617a56371059c9d7030598837c6080"
+prompt_file: prompt.md
+eval_command:
+  - python
+  - -c
+  - |
+    from store.cursors import encode_cursor, decode_cursor
+    assert encode_cursor(40) == "cur_40"
+    assert decode_cursor("cur_40") == 40
+    assert decode_cursor("40") == 40
+    assert decode_cursor("0") == 0
+    for bad in ("bogus", "", "cur_", None):
+        try:
+            decode_cursor(bad)
+        except ValueError:
+            pass
+        else:
+            raise SystemExit(f"cursor {bad!r} was accepted")
+timeout_seconds: 120
+tags: ["episodic", "cursor-compatibility"]
+preseed:
+  - type: decision
+    source: agent
+    timestamp: "2026-03-15T09:00:00+00:00"
+    repo: pager_repo
+    symbol: decode_cursor
+    file: store/cursors.py
+    payload:
+      decision: "opaque cursor rollout: decoders must keep accepting legacy numeric offsets"
+      detail: "both cursor generations valid during the compatibility window until 2026-09-01"

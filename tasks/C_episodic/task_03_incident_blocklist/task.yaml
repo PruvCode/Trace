@@ -1,0 +1,28 @@
+task_id: task_03_incident_blocklist
+category: C_episodic
+fixture: fixtures/history_repo
+base_commit: "a97390a8c7b7f17c90d57598538192aebc6b6ecb"
+prompt_file: prompt.md
+eval_command:
+  - python
+  - -c
+  - |
+    from auth.tokens import validate_token
+    assert validate_token("token-u1-fresh") is True
+    assert validate_token("token-abc-fresh") is True
+    assert validate_token("token-u-comp-7-fresh") is False
+    assert validate_token("token-u-comp-19-fresh") is False
+    assert validate_token("bad") is False
+    assert validate_token("") is False
+    assert validate_token(None) is False
+timeout_seconds: 120
+tags: ["episodic", "incident-revocation"]
+preseed:
+  - type: observation
+    source: agent
+    timestamp: "2026-02-20T09:00:00+00:00"
+    repo: history_repo
+    symbol: validate_token
+    file: auth/tokens.py
+    payload:
+      finding: "account-compromise incident 2026-02-20: tokens issued for accounts u-comp-7 and u-comp-19 must no longer verify; all other issuance unchanged"

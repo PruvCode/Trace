@@ -1,0 +1,41 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Local artifacts
+.workbuddy-ai/
+
+# pytest
+.pytest_cache/
+.hypothesis/
+
+# TRACE run outputs (generated, never committed)
+runs/
+.agent-memory/
+
+# Generated fixture git repos (seeded by scripts/seed_*.py)
+fixtures/toy_repo/.git/
+fixtures/history_repo/.git/
+fixtures/deps_repo/.git/
+fixtures/iface_repo/.git/
+fixtures/creds_repo/.git/
+fixtures/pager_repo/.git/
+fixtures/net_repo/.git/
+fixtures/data_repo/.git/
+fixtures/api_repo/.git/
+fixtures/queue_repo/.git/
+fixtures/profiles_repo/.git/
+fixtures/cache_repo/.git/
+fixtures/store_repo/.git/
+
+# Local SQLite artefacts
+*.db
+*.db-wal
+*.db-shm
+
+# Secrets / local env
+.env

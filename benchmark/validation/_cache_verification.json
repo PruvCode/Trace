@@ -1,0 +1,134 @@
+{
+  "repo": "django/django",
+  "repo_slug": "django__django",
+  "cache_path": "C:/Users/pruth/AppData/Local/TraceSWECache/repos/django__django",
+  "phase": "Option A conversion was already performed 2026-09-14 09:40-10:02; verified and hardened 11:00-11:20",
+
+  "materialization": {
+    "method": "git-native in-place drain (no re-clone, no deletion of the canonical cache)",
+    "steps": [
+      "git config --unset remote.origin.partialclonefilter",
+      "git config --unset remote.origin.promisor",
+      "git config --unset extensions.partialClone",
+      "git fetch --refetch --no-tags origin +refs/heads/*:refs/remotes/origin/*   (NO --filter)"
+    ],
+    "duration_seconds": 71,
+    "before": {
+      "size_human": "121M",
+      "size_pack_kb": 107012,
+      "in_pack": 406535,
+      "partialclonefilter": "blob:none",
+      "promisor": "true",
+      "extensions_partialClone": "set",
+      "human_remote": "origin https://github.com/django/django.git (fetch) [blob:none]"
+    },
+    "after": {
+      "size_human": "353M",
+      "size_bytes": 367526605,
+      "size_pack_kb": 351294,
+      "in_pack": 840726,
+      "packs": 250,
+      "promisor_markers_remaining": 249,
+      "partialclonefilter": "UNSET",
+      "promisor": "UNSET",
+      "extensions_partialClone": "UNSET",
+      "garbage": 0,
+      "human_remote": "origin https://github.com/django/django.git (fetch)"
+    }
+  },
+
+  "hardening_applied_this_session": {
+    "core.autocrlf": {
+      "before": "UNSET locally; the SYSTEM-level config is true, so requirement #9 was at risk",
+      "after": "false (pinned via `git config --local core.autocrlf false` in the cache)",
+      "why": "The earlier verification pinned autocrlf only per-invocation via GIT_CONFIG_PARAMETERS, so a bare `git` call still inherited system-level true"
+    },
+    "core.lockTimeout": {
+      "before": "UNSET",
+      "after": "30000 (pinned via git config --local)"
+    },
+    "promisor_markers": {
+      "count": 249,
+      "assessment": "vestigial: the filter/promisor config is unset and every required blob is locally present (verified offline). No fetch is triggered for the candidate set."
+    }
+  },
+
+  "verification": {
+    "strict_offline_blob_audit": {
+      "mechanism": "GIT_ALLOW_PROTOCOL=file (all remote transports disabled) + `git cat-file --batch-check` over every blob id in each base_commit tree",
+      "commits_tested": 20,
+      "result": "20/20 commits: every blob resolved as type `blob`, zero missing objects",
+      "blob_counts": {
+        "django__django-11692": 6594,
+        "django__django-12504": 6618,
+        "django__django-14385": 6522,
+        "django__django-14463": 6661,
+        "django__django-14480": 6610,
+        "django__django-14722": 6542,
+        "django__django-14725": 6601,
+        "django__django-14751": 6594,
+        "django__django-14762": 6526,
+        "django__django-14771": 6525,
+        "django__django-14785": 6522,
+        "django__django-14787": 6539,
+        "django__django-14805": 6526,
+        "django__django-14861": 6522,
+        "django__django-14871": 6522,
+        "django__django-14878": 6542,
+        "django__django-14880": 6526,
+        "django__django-14890": 6522,
+        "django__django-14894": 6525,
+        "django__django-14915": 6525
+      }
+    },
+    "offline_tree_resolution": {
+      "mechanism": "GIT_ALLOW_PROTOCOL=file + `git ls-tree -r`",
+      "result": "20/20 commits produced full trees (~6,500 entries each) with no network"
+    },
+    "network_dependency_verdict": "Required historical Django blobs are available locally; `git checkout <base_commit>` does not need network blob fetching."
+  },
+
+  "unchanged_after_materialization": {
+    "HEAD": "2b30f6255b5ef84afbd827993643d52ef2c0963a",
+    "branch": "main",
+    "commit_count": 34925,
+    "remote_url": "https://github.com/django/django.git",
+    "object_count_loose": 3,
+    "repo_sanity": {
+      "git_rev_parse_head": "2b30f6255b5ef84afbd827993643d52ef2c0963a",
+      "git_log_head": "2b30f6255b Fixed #36933 -- Distinguished shapes of boolean icons.",
+      "git_remote_v": "origin https://github.com/django/django.git (fetch/push) -- no [blob:none]",
+      "git_worktree_list": "single main worktree + the one reusable scratch worktree the validator owns"
+    }
+  },
+
+  "discovered_infrastructure_issue": {
+    "symptom": "The prior 20-candidate probe reported `0 valid / 20 invalid`. 18 of the 20 failures were identical `index.lock: File exists` checkout failures, and the probe later deadlocked.",
+    "root_cause": "NOT a cache/blob problem (blobs verified local and complete). The real cause is checkout wall-clock: a full ~6,661-file Django checkout on this host takes ~690s because Windows Defender realtime scanning is active in the write path (~9.6 files/s observed). The validator's checkout budget was 600s, i.e. BELOW the real cost, so healthy checkouts were killed mid-write and reported as `checkout_failed`; the killed process then left a live-looking index.lock that poisoned every subsequent candidate.",
+    "measurements": {
+      "observed_throughput_files_per_sec": 9.6,
+      "files_per_full_checkout": 6661,
+      "extrapolated_full_checkout_seconds": 690,
+      "old_budget_seconds": 600,
+      "new_budget_seconds": 3600
+    },
+    "evidence": [
+      "403s timed checkout: 3890/6661 files written, process healthy and still progressing",
+      "8s and 25s CPU samples of the 'hung' git: 0 CPU delta, i.e. blocked in I/O, not deadlocked on logic",
+      "Get-MpPreference DisableRealtimeMonitoring=False (Defender active)"
+    ],
+    "fix": "Checkout budget raised 600 -> 3600s (CHECKOUT_TIMEOUT), applied to `git worktree add` and `git checkout --detach`; a checkout timeout is now classified TIMEOUT, so it can never become CANDIDATE_INVALID."
+  },
+
+  "constraints_respected": {
+    "existing_cache_preserved_until_verified": true,
+    "no_re_clone": true,
+    "nothing_deleted_inside_Trace_repo": true,
+    "no_git_clean_fdx_on_Trace": true,
+    "trace_history_untouched": true,
+    "pyproject_untouched": true,
+    "core_autocrlf_false": true,
+    "no_commit_no_push": true,
+    "contaminated_results_quarantined_not_deleted": "benchmark/validation/_contaminated_run1/"
+  }
+}

@@ -1,0 +1,25 @@
+task_id: task_04_stale_route
+category: D_staleness
+fixture: fixtures/api_repo
+base_commit: "ec8302d893bc682d9bdfff2a541ba2078a143a11"
+prompt_file: prompt.md
+eval_command:
+  - python
+  - -c
+  - |
+    from api.client import session_url
+    from router import ROUTES
+    assert ROUTES["session"] == "/v2/sessions"
+    assert session_url("https://api.example") == "https://api.example/v2/sessions"
+    assert session_url("https://api.example/") == "https://api.example/v2/sessions"
+timeout_seconds: 120
+tags: ["staleness", "route"]
+preseed:
+  - type: observation
+    source: agent
+    timestamp: "2026-02-01T00:00:00+00:00"
+    repo: api_repo
+    symbol: session_url
+    file: api/client.py
+    payload:
+      finding: "service exposes POST /v1/sessions (observed 2026-02-01)"

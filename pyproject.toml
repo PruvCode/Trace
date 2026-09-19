@@ -1,0 +1,43 @@
+[project]
+name = "trace"
+version = "0.1.0"
+description = "Persistent local memory for coding agents across sessions, with measurement."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+dependencies = [
+    "pyyaml>=6.0",
+    # Phase 2 structural memory: official MCP SDK (v2 API: MCPServer),
+    # tree-sitter core + Python grammar only. No embeddings, no graph DB.
+    "mcp>=2.2",
+    "tree-sitter>=0.26",
+    "tree-sitter-python>=0.25",
+    # Phase 4.1 real-agent adapter: OpenAI-compatible client only.
+    # Lazy use: the automated suite runs keyless via fakes; only real
+    # (manual, credentialed) runs touch this package.
+    "openai>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+# Corpus pipeline (SWE-bench ingestion) only; the benchmark engine never
+# imports it. Kept optional so the deterministic test suite stays light.
+corpus = [
+    "pyarrow>=15",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["benchmark*", "agent*", "memory*", "corpus*", "trace_memory*"]
+
+[project.scripts]
+trace = "trace_memory.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

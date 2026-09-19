@@ -1,0 +1,8 @@
+task_id: task_02_definition
+category: B_structural
+fixture: fixtures/deps_repo
+base_commit: "465ad3222befa4eb6d0f7f348fb88290b8c8b9d3"
+prompt_file: prompt.md
+eval_command: ["python", "-m", "pytest", "tests/test_policy.py", "-q"]
+timeout_seconds: 120
+tags: ["structural", "definition", "multi-file"]

@@ -1,0 +1,25 @@
+task_id: task_04_reverted_cache_key
+category: C_episodic
+fixture: fixtures/cache_repo
+base_commit: "5a9ae97ca381ac1fbf63669e0449c602fb209606"
+prompt_file: prompt.md
+eval_command:
+  - python
+  - -c
+  - |
+    from cache.users import get_user
+    assert get_user("u1") == {"id": "u1", "name": "ann"}
+    assert get_user("u2") == {"id": "u2", "name": "ann"}
+    assert get_user("u1") == {"id": "u1", "name": "ann"}
+timeout_seconds: 120
+tags: ["episodic", "cache-key"]
+preseed:
+  - type: attempt
+    source: agent
+    timestamp: "2026-03-05T09:00:00+00:00"
+    repo: cache_repo
+    symbol: get_user
+    file: cache/users.py
+    payload:
+      action: "keyed the user cache by username to speed up lookups"
+      result: "returned the wrong account for same-name users; reverted; cache key must uniquely identify the account"

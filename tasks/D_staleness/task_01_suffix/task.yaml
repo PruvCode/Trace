@@ -1,0 +1,25 @@
+task_id: task_01_suffix
+category: D_staleness
+fixture: fixtures/history_repo
+base_commit: "a97390a8c7b7f17c90d57598538192aebc6b6ecb"
+prompt_file: prompt.md
+eval_command:
+  - python
+  - -c
+  - |
+    from auth.tokens import validate_token
+    assert validate_token("token-u1-fresh") is True
+    assert validate_token("token-u1") is False
+    assert validate_token("bad") is False
+    assert validate_token("") is False
+timeout_seconds: 120
+tags: ["staleness", "suffix-format"]
+preseed:
+  - type: observation
+    source: agent
+    timestamp: "2026-02-01T00:00:00+00:00"
+    repo: history_repo
+    symbol: refresh_token
+    file: auth/tokens.py
+    payload:
+      finding: "refresh_token issues bare token-{user_id} tokens with no suffix"

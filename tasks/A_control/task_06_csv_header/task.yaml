@@ -1,0 +1,26 @@
+task_id: task_06_csv_header
+category: A_control
+fixture: fixtures/data_repo
+base_commit: "acc103bc60ff688cea80e00ed7ff475fc7a57469"
+prompt_file: prompt.md
+eval_command:
+  - python
+  - -c
+  - |
+    import csv
+    import os
+    import tempfile
+    from ingest.csv_loader import load_rows
+    with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False, newline="") as fh:
+        writer = csv.writer(fh)
+        writer.writerow(["id", "name"])
+        writer.writerow(["1", "ann"])
+        writer.writerow(["2", "bob"])
+        path = fh.name
+    try:
+        assert load_rows(path) == [["1", "ann"], ["2", "bob"]]
+        assert load_rows(path, has_header=False) == [["id", "name"], ["1", "ann"], ["2", "bob"]]
+    finally:
+        os.unlink(path)
+timeout_seconds: 120
+tags: ["control", "csv", "single-file"]

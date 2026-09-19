@@ -1,0 +1,24 @@
+task_id: task_03_arg_order
+category: B_structural
+fixture: fixtures/iface_repo
+base_commit: "ec45d0daf6b294078f93788ad08185ae79b3fd09"
+prompt_file: prompt.md
+eval_command:
+  - python
+  - -c
+  - |
+    from services import renew_session
+    from handlers import handle_renew
+    for user, token in (("u1", "tok_abcdefghij"), ("alice", "tok_123456789012345")):
+        assert handle_renew(user, token) == renew_session(user, token)
+        assert handle_renew(user, token) == f"renewed-{user}-{token}"
+    for bad in ("bad", "", "tok_x", None):
+        for label, fn in (("handler", lambda: handle_renew("u1", bad)), ("service", lambda: renew_session("u1", bad))):
+            try:
+                fn()
+            except ValueError:
+                pass
+            else:
+                raise SystemExit(f"{label} accepted {bad!r}")
+timeout_seconds: 120
+tags: ["structural", "arg-order", "multi-file"]

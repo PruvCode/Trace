@@ -1,0 +1,21 @@
+# Reference-memory OpenCode configuration (real-model experiment).
+#
+# Identical to configs/baseline_opencode.yaml in every control dimension
+# (agent, model, parameters, budget, timeout); the ONLY differences are the
+# memory intervention: backend null -> reference, a fixed tool-availability
+# addendum, and an (empty) preseed list.
+#
+# The addendum names tools so the agent can discover them. It contains no
+# task hints and no staleness instructions.
+name: reference_opencode
+backend: reference
+agent: opencode
+model: opencode/mimo-v2.5-free
+model_parameters: {}
+budget:
+  max_turns: 10
+  max_tool_calls: 20
+  timeout_seconds: 300
+prompt_addendum: "You have access to project memory tools (find_definition, find_callers, search_symbols, record_event, search_events, get_git_history). Use them to look up code facts instead of guessing."
+memory:
+  preseed: []

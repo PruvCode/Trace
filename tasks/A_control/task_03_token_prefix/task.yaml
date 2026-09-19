@@ -1,0 +1,19 @@
+task_id: task_03_token_prefix
+category: A_control
+fixture: fixtures/toy_repo
+base_commit: "db386fe0dfdacf4b96877defef1395f2ea5425ce"
+prompt_file: prompt.md
+eval_command:
+  - python
+  - -c
+  - |
+    from auth.tokens import validate_token
+    assert validate_token("token-u1-fresh") is True
+    assert validate_token("token-abc-fresh") is True
+    assert validate_token("evil-fresh") is False
+    assert validate_token("token-u1") is False
+    assert validate_token("bad") is False
+    assert validate_token("") is False
+    assert validate_token(None) is False
+timeout_seconds: 120
+tags: ["control", "single-file"]

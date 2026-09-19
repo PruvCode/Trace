@@ -1,0 +1,32 @@
+{
+  "base_checkout": false,
+  "base_commit": "d446f8ba0820c8a4a923614611ae53582d38bc8e",
+  "base_commit_exists": true,
+  "classification": "CHECKOUT_FAILURE",
+  "duration_seconds": 15.75,
+  "f2p_labels": [
+    "backends.sqlite.test_introspection.IntrospectionTests.test_get_primary_key_column_pk_constraint"
+  ],
+  "failure_reason": "checkout_failed: RuntimeError: worktree checkout failed for d446f8ba08: fatal: Unable to create 'C:/Users/pruth/AppData/Local/TraceSWECache/repos/django__django/.git/worktrees/django__django1/index.lock': File exists.\n\nAnother git process seems to be running in this repository, or the lock file may be stale",
+  "gold_patch_applies": false,
+  "has_test_patch": false,
+  "p2p_labels": [
+    "backends.sqlite.test_introspection.ParsingTests.test_check_and_unique_column",
+    "backends.sqlite.test_introspection.ParsingTests.test_check_column",
+    "backends.sqlite.test_introspection.ParsingTests.test_check_column_with_operators_and_functions",
+    "backends.sqlite.test_introspection.ParsingTests.test_check_constraint",
+    "backends.sqlite.test_introspection.ParsingTests.test_unique_column",
+    "backends.sqlite.test_introspection.ParsingTests.test_unique_constraint",
+    "backends.sqlite.test_introspection.ParsingTests.test_unique_constraint_multicolumn"
+  ],
+  "repo": "django/django",
+  "source_task_id": "django__django-14878",
+  "task_id": "django__django-14878",
+  "test_patch_applies": false,
+  "tests_available": true,
+  "tests_fail_before_gold_patch": null,
+  "tests_pass_after_gold_patch": null,
+  "valid": false,
+  "validation_version": "2",
+  "version": "4.1"
+}
