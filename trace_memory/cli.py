@@ -162,6 +162,12 @@ def build_parser() -> argparse.ArgumentParser:
     monitor_sub.add_argument("--project", default=".", help="project directory (default: current directory)")
     monitor_sub.set_defaults(func=cmd_monitor)
 
+    # Persistent service subcommands
+    service_sub = sub.add_parser("service", help="persistent OpenCode capture service (survives CLI exit)")
+    service_sub.add_argument("action", choices=["start", "stop", "status", "restart"], help="service action")
+    service_sub.add_argument("--project", default=".", help="project directory (default: current directory)")
+    service_sub.set_defaults(func=cmd_service)
+
     # Context subcommand for retrieving relevant history
     context_sub = sub.add_parser("context", help="retrieve relevant historical context for a new session")
     context_sub.add_argument("query", help="search query for relevant context")
@@ -516,6 +522,26 @@ def cmd_monitor(args) -> int:
             f"unknown monitor action {args.action!r}",
             "monitor action must be start, stop, or status.",
             "Run 'trace monitor start|stop|status --project <path>'.",
+        )
+    print(json.dumps(result, sort_keys=True, default=str))
+    return EXIT_OK
+
+
+def cmd_service(args) -> int:
+    project = project_mod.resolve_project(args.project)
+    if args.action == "start":
+        result = project_mod.start_opencode_service(project)
+    elif args.action == "stop":
+        result = project_mod.stop_opencode_service(project)
+    elif args.action == "status":
+        result = project_mod.get_opencode_service_status(project)
+    elif args.action == "restart":
+        result = project_mod.restart_opencode_service(project)
+    else:
+        raise project_mod.TraceUserError(
+            f"unknown service action {args.action!r}",
+            "service action must be start, stop, status, or restart.",
+            "Run 'trace service start|stop|status|restart --project <path>'.",
         )
     print(json.dumps(result, sort_keys=True, default=str))
     return EXIT_OK

@@ -27,6 +27,7 @@ from memory import structural as structural_mod
 from memory import transcript as transcript_mod
 from memory import opencode_capture as opencode_capture_mod
 from memory import opencode_transparent as opencode_transparent_mod
+from memory import opencode_service as opencode_service_mod
 
 # Must stay identical to memory.reference.MEMORY_DIRNAME / DB_FILENAME so the
 # CLI, the MCP server, and the benchmark backend share one database layout.
@@ -642,3 +643,32 @@ def setup_opencode_transparent(project: Path) -> dict:
     project = project.resolve()
     adapter = opencode_transparent_mod.create_opencode_transparent_adapter()
     return adapter.setup_integration(project)
+
+
+# Persistent service functions
+def start_opencode_service(project: Path) -> dict:
+    """Start the persistent OpenCode capture service."""
+    project = project.resolve()
+    service = opencode_service_mod.get_service(project)
+    return service.start()
+
+
+def stop_opencode_service(project: Path) -> dict:
+    """Stop the persistent OpenCode capture service."""
+    project = project.resolve()
+    service = opencode_service_mod.get_service(project)
+    return service.stop()
+
+
+def get_opencode_service_status(project: Path) -> dict:
+    """Get the status of the persistent OpenCode capture service."""
+    project = project.resolve()
+    service = opencode_service_mod.get_service(project)
+    return service.status()
+
+
+def restart_opencode_service(project: Path) -> dict:
+    """Restart the persistent OpenCode capture service."""
+    project = project.resolve()
+    service = opencode_service_mod.get_service(project)
+    return service.restart()

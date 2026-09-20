@@ -542,7 +542,7 @@ class OpenCodeTransparentAdapter(CaptureAdapter):
         )
 
     def start_monitoring(self, project_path: Path) -> dict:
-        """Start monitoring OpenCode's database for the given project."""
+        """Start persistent OpenCode capture service for the given project."""
         project_path = project_path.resolve()
         self._project_path = project_path
 
@@ -559,90 +559,24 @@ class OpenCodeTransparentAdapter(CaptureAdapter):
                 "message": f"OpenCode database not found at {opencode_db_path}. Run OpenCode at least once first."
             }
 
-        # Get or create the shared monitor for this project
-        monitor = _get_monitor(project_path)
-        
-        if monitor._running:
-            return {"status": "already_running", "message": "Monitor already running"}
-
-        # Ensure TRACE is initialized for this project
-        if not project_mod.is_initialized(project_path):
-            project_mod.init_project(project_path)
-
-        self._trace_db_path = self._get_trace_db_path(project_path)
-
-        # Pre-populate known sessions to avoid re-processing
-        self._populate_known_sessions(monitor, Path.home() / ".local" / "share" / "opencode" / "opencode.db")
-
-        monitor.start()
-
-        return {
-            "status": "started",
-            "message": "OpenCode transparent capture started",
-            "opencode_db": str(Path.home() / ".local" / "share" / "opencode" / "opencode.db"),
-            "trace_db": str(self._trace_db_path),
-        }
-
-    def _populate_known_sessions(self, monitor: OpenCodeDatabaseMonitor, opencode_db_path: Path):
-        """Pre-populate known sessions to avoid re-processing existing data.
-        Uses ROWID-based cursors for efficient incremental processing.
-        """
-        try:
-            with sqlite3.connect(f"file:{opencode_db_path}?mode=ro", uri=True) as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT MAX(rowid) FROM session")
-                row = cursor.fetchone()
-                if row[0] is not None:
-                    monitor._last_session_rowid = row[0]
-
-                cursor.execute("SELECT MAX(rowid) FROM message")
-                row = cursor.fetchone()
-                if row[0] is not None:
-                    monitor._last_message_rowid = row[0]
-
-                cursor.execute("SELECT MAX(rowid) FROM part")
-                row = cursor.fetchone()
-                if row[0] is not None:
-                    monitor._last_part_rowid = row[0]
-
-                # Also populate ID sets for idempotency fallback
-                cursor.execute("SELECT id FROM session")
-                for row in cursor.fetchall():
-                    monitor._known_sessions.add(row[0])
-
-                cursor.execute("SELECT id FROM message")
-                for row in cursor.fetchall():
-                    monitor._processed_message_ids.add(row[0])
-
-                cursor.execute("SELECT id FROM part")
-                for row in cursor.fetchall():
-                    monitor._processed_part_ids.add(row[0])
-        except Exception as e:
-            print(f"[OpenCode monitor] Failed to populate known sessions: {e}")
+        # Use persistent service
+        from memory import opencode_service as opencode_service_mod
+        service = opencode_service_mod.get_service(project_path)
+        return service.start()
 
     def stop_monitoring(self, project_path: Path) -> dict:
-        """Stop monitoring OpenCode's database."""
+        """Stop persistent OpenCode capture service."""
         project_path = project_path.resolve()
-        key = _get_monitor_key(project_path)
-        if key in _MONITORS:
-            monitor = _MONITORS[key]
-            if monitor._running:
-                monitor.stop()
-        return {"status": "stopped", "message": "OpenCode transparent capture stopped"}
+        from memory import opencode_service as opencode_service_mod
+        service = opencode_service_mod.get_service(project_path)
+        return service.stop()
 
     def get_monitoring_status(self, project_path: Path) -> dict:
-        """Get current monitoring status."""
+        """Get current monitoring status from persistent service."""
         project_path = project_path.resolve()
-        key = _get_monitor_key(project_path)
-        if key not in _MONITORS:
-            return {"status": "not_started"}
-        monitor = _MONITORS[key]
-        return {
-            "status": "running" if monitor._running else "stopped",
-            "known_sessions": len(monitor._known_sessions),
-            "processed_messages": len(monitor._processed_message_ids),
-            "processed_parts": len(monitor._processed_part_ids),
-        }
+        from memory import opencode_service as opencode_service_mod
+        service = opencode_service_mod.get_service(project_path)
+        return service.status()
 
     def setup_integration(self, project_path: Path) -> dict:
         """Set up OpenCode integration for automatic capture (one-time setup)."""
@@ -655,7 +589,7 @@ class OpenCodeTransparentAdapter(CaptureAdapter):
         # Create OpenCode config with TRACE MCP server
         result = self._create_opencode_config(project_path)
 
-        # Also start monitoring
+        # Also start persistent service
         monitor_result = self.start_monitoring(project_path)
 
         return {

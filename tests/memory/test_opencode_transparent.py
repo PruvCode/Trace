@@ -43,13 +43,14 @@ def test_transparent_monitor_start_stop(temp_project):
     # Start monitoring
     result = adapter.start_monitoring(temp_project)
     assert result["status"] == "started"
-    assert "opencode_db" in result
-    assert "trace_db" in result
+    assert "pid" in result
+    assert "message" in result
     
     # Check status
     status = adapter.get_monitoring_status(temp_project)
     assert status["status"] == "running"
-    assert "known_sessions" in status
+    assert "pid" in status
+    assert "project" in status
     
     # Give monitor time to run
     import time

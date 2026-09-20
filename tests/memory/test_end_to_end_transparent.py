@@ -48,6 +48,7 @@ def test_end_to_end_transparent_capture(temp_project):
     # Step 1: One-time setup
     adapter = create_opencode_transparent_adapter()
     setup_result = adapter.setup_integration(temp_project)
+    print(f"Setup result: {setup_result}")
     assert setup_result["setup"]["status"] in ("created", "updated")
     assert setup_result["monitoring"]["status"] == "started"
     
@@ -58,6 +59,13 @@ def test_end_to_end_transparent_capture(temp_project):
     config = json.loads(config_path.read_text(encoding="utf-8"))
     assert "mcp" in config
     assert "trace-memory" in config["mcp"]
+    
+    # Give service time to fully start
+    time.sleep(3)
+    
+    # Check service status
+    status = adapter.get_monitoring_status(temp_project)
+    print(f"Service status after 3s: {status}", flush=True)
     
     # Step 2: Simulate Session 1 - User codes with OpenCode
     # We simulate by inserting directly into OpenCode's database
@@ -126,8 +134,12 @@ def test_end_to_end_transparent_capture(temp_project):
         """, (part_id, msg_id_2, session_id, int(time.time() * 1000) + 500, int(time.time() * 1000) + 500,
               '{"type":"tool","tool":"record_event","callID":"call_123","state":{"status":"completed","input":{"type":"observation","symbol":"calculate_banana_tax","payload":{"finding":"quantum tax is 42"}}}}'))
     
-    # Step 3: Give monitor time to capture the new data
-    time.sleep(2)
+# Step 3: Give monitor time to capture the new data
+        time.sleep(5)
+    
+    # Check service status after capture
+    status = adapter.get_monitoring_status(temp_project)
+    print(f"Service status after capture: {status}", flush=True)
     
     # Step 4: Verify TRACE captured the session
     trace_db = project_mod.db_path(temp_project)
@@ -135,6 +147,9 @@ def test_end_to_end_transparent_capture(temp_project):
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM transcript_messages WHERE session_id = ?", (session_id,))
         rows = cursor.fetchall()
+        print(f"Transcript messages for session {session_id}: {len(rows)}", flush=True)
+        for row in rows:
+            print(f"  {row}", flush=True)
         # Should have captured user message, assistant response, and tool call
         assert len(rows) >= 2, f"Expected at least 2 transcript messages, got {len(rows)}"
         # Check for user message
@@ -203,7 +218,7 @@ def test_end_to_end_transparent_capture(temp_project):
               '{"role":"user","content":"Continue the quantum banana work. What was the tax calculation?"}'))
     
     # Step 7: Give monitor time to capture
-    time.sleep(2)
+    time.sleep(5)
     
     # Step 8: Verify retrieval works - new session can access previous context
     # Use the adapter's context retrieval
@@ -229,8 +244,8 @@ def test_end_to_end_transparent_capture(temp_project):
     # Cleanup
     adapter.stop_monitoring(temp_project)
     adapter2.stop_monitoring(temp_project)
-    # Give extra time for threads to fully terminate and release DB locks
-    time.sleep(3.0)
+    # Give extra time for subprocess to fully terminate and release DB locks
+    time.sleep(5.0)
     import gc
     gc.collect()
 

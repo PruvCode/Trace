@@ -78,6 +78,13 @@ CREATE TABLE IF NOT EXISTS structural_fingerprint (
     file_mtimes TEXT,
     updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS monitor_cursors (
+    project_name TEXT NOT NULL,
+    source_table TEXT NOT NULL,
+    last_rowid INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (project_name, source_table)
+);
 """
 
 
@@ -182,6 +189,36 @@ def set_structural_fingerprint(
         (git_tree_hash, file_mtimes, updated_at),
     )
     conn.commit()
+
+
+def get_monitor_cursor(conn: sqlite3.Connection, project_name: str, source_table: str) -> int:
+    """Get the last processed rowid for a monitor source table."""
+    row = conn.execute(
+        "SELECT last_rowid FROM monitor_cursors WHERE project_name = ? AND source_table = ?",
+        (project_name, source_table),
+    ).fetchone()
+    return row[0] if row else 0
+
+
+def set_monitor_cursor(conn: sqlite3.Connection, project_name: str, source_table: str, last_rowid: int) -> None:
+    """Store the last processed rowid for a monitor source table."""
+    import datetime
+    updated_at = datetime.datetime.utcnow().isoformat() + "Z"
+    conn.execute(
+        "INSERT OR REPLACE INTO monitor_cursors (project_name, source_table, last_rowid, updated_at) "
+        "VALUES (?, ?, ?, ?)",
+        (project_name, source_table, last_rowid, updated_at),
+    )
+    conn.commit()
+
+
+def get_all_monitor_cursors(conn: sqlite3.Connection, project_name: str) -> dict[str, int]:
+    """Get all monitor cursors for a project."""
+    rows = conn.execute(
+        "SELECT source_table, last_rowid FROM monitor_cursors WHERE project_name = ?",
+        (project_name,),
+    ).fetchall()
+    return {row[0]: row[1] for row in rows}
 
 
 def _rows_to_dicts(rows) -> list[dict]:
