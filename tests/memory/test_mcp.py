@@ -28,16 +28,16 @@ def _parse_tool_result(result) -> object:
     return json.loads(texts)
 
 
-def _session_params(db_path: Path) -> StdioServerParameters:
+def _session_params(db_path: Path, root: Path) -> StdioServerParameters:
     return StdioServerParameters(
         command=sys.executable,
-        args=["-m", "memory.mcp_server", "--db", str(db_path)],
+        args=["-m", "memory.mcp_server", "--db", str(db_path), "--root", str(root)],
         cwd=str(REPO_ROOT),
     )
 
 
-async def _exercise(db_path: Path) -> dict:
-    async with stdio_client(_session_params(db_path)) as (read, write):
+async def _exercise(db_path: Path, root: Path) -> dict:
+    async with stdio_client(_session_params(db_path, root)) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
             tools = await session.list_tools()
@@ -67,7 +67,7 @@ def test_mcp_stdio_round_trip(tmp_path, seeded_fixture):
     structural_mod.index_workspace(fixture_dir, db_path)
 
     async def bounded():
-        return await asyncio.wait_for(_exercise(db_path), timeout=90)
+        return await asyncio.wait_for(_exercise(db_path, fixture_dir), timeout=90)
 
     out = asyncio.run(bounded())
     # Structural tools must keep working; the exact full surface (now 6 with

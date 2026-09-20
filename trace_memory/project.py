@@ -110,6 +110,16 @@ def init_project(project: Path) -> dict:
     }
 
 
+def ensure_structural_memory(project: Path) -> dict:
+    """Ensure structural memory exists and is fresh.
+
+    - If no memory.db: creates it and builds structural index
+    - If memory exists but stale: rebuilds structural index
+    - If fresh: returns status without rebuilding
+    """
+    return structural_mod.ensure_structural_memory(project)
+
+
 def index_project(project: Path) -> dict:
     """Rebuild the structural index for an initialized project."""
     project = project.resolve()
@@ -225,6 +235,8 @@ def record_user_event(
 
 def find_definitions(project: Path, name: str, limit: int = 10) -> list[dict]:
     project = project.resolve()
+    # Ensure structural memory is fresh before querying
+    structural_mod.ensure_structural_memory(project)
     db = require_db(project)
     conn = store_mod.connect(db)
     try:
@@ -235,6 +247,7 @@ def find_definitions(project: Path, name: str, limit: int = 10) -> list[dict]:
 
 def find_callers_of(project: Path, name: str, limit: int = 10) -> list[dict]:
     project = project.resolve()
+    structural_mod.ensure_structural_memory(project)
     db = require_db(project)
     conn = store_mod.connect(db)
     try:
@@ -245,6 +258,7 @@ def find_callers_of(project: Path, name: str, limit: int = 10) -> list[dict]:
 
 def search_project_symbols(project: Path, query: str, limit: int = 10) -> list[dict]:
     project = project.resolve()
+    structural_mod.ensure_structural_memory(project)
     db = require_db(project)
     conn = store_mod.connect(db)
     try:

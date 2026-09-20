@@ -35,7 +35,7 @@ def _parse(result) -> object:
     return json.loads("".join(getattr(b, "text", "") for b in result.content))
 
 
-def _params(db_path: Path, repo: Path) -> StdioServerParameters:
+def _params(db_path: Path, repo: Path, root: Path) -> StdioServerParameters:
     import sys
 
     return StdioServerParameters(
@@ -45,6 +45,8 @@ def _params(db_path: Path, repo: Path) -> StdioServerParameters:
             "memory.mcp_server",
             "--db",
             str(db_path),
+            "--root",
+            str(root),
             "--repo",
             str(repo),
         ],
@@ -52,9 +54,9 @@ def _params(db_path: Path, repo: Path) -> StdioServerParameters:
     )
 
 
-async def _exercise(db_path: Path, repo: Path) -> dict:
+async def _exercise(db_path: Path, repo: Path, root: Path) -> dict:
     out: dict = {}
-    async with stdio_client(_params(db_path, repo)) as (read, write):
+    async with stdio_client(_params(db_path, repo, root)) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
             tools = await session.list_tools()
@@ -132,7 +134,7 @@ def test_mcp_episodic_round_trip(tmp_path, seeded_fixture, seeded_history):
     structural_mod.index_workspace(fixture_dir, db_path)
 
     async def bounded():
-        return await asyncio.wait_for(_exercise(db_path, history_dir), timeout=90)
+        return await asyncio.wait_for(_exercise(db_path, history_dir, fixture_dir), timeout=90)
 
     out = asyncio.run(bounded())
     assert out["tool_names"] == EXPECTED_TOOLS

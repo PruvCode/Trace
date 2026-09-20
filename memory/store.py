@@ -72,6 +72,12 @@ CREATE INDEX IF NOT EXISTS idx_transcript_timestamp ON transcript_messages(times
 CREATE VIRTUAL TABLE IF NOT EXISTS transcript_messages_fts USING fts5(
     session_id, role, content
 );
+CREATE TABLE IF NOT EXISTS structural_fingerprint (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    git_tree_hash TEXT,
+    file_mtimes TEXT,
+    updated_at TEXT NOT NULL
+);
 """
 
 
@@ -150,6 +156,32 @@ def clamp_limit(limit: object) -> int:
     except (TypeError, ValueError):
         return DEFAULT_LIMIT
     return max(1, min(MAX_LIMIT, value))
+
+
+def get_structural_fingerprint(conn: sqlite3.Connection) -> dict | None:
+    """Get the stored structural fingerprint."""
+    row = conn.execute(
+        "SELECT git_tree_hash, file_mtimes, updated_at FROM structural_fingerprint WHERE id = 1"
+    ).fetchone()
+    if row:
+        return {"git_tree_hash": row[0], "file_mtimes": row[1], "updated_at": row[2]}
+    return None
+
+
+def set_structural_fingerprint(
+    conn: sqlite3.Connection,
+    git_tree_hash: str | None,
+    file_mtimes: str | None,
+) -> None:
+    """Store the structural fingerprint."""
+    import datetime
+    updated_at = datetime.datetime.utcnow().isoformat() + "Z"
+    conn.execute(
+        "INSERT OR REPLACE INTO structural_fingerprint (id, git_tree_hash, file_mtimes, updated_at) "
+        "VALUES (1, ?, ?, ?)",
+        (git_tree_hash, file_mtimes, updated_at),
+    )
+    conn.commit()
 
 
 def _rows_to_dicts(rows) -> list[dict]:

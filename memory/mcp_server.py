@@ -29,6 +29,25 @@ server = MCPServer("trace-reference-memory")
 
 _DB_PATH: Path | None = None
 _REPO_PATH: Path | None = None
+_ROOT_PATH: Path | None = None
+
+
+def _project_root() -> Path | None:
+    """Get project root (from --root arg, fallback to DB path derivation)."""
+    if _ROOT_PATH is not None:
+        return _ROOT_PATH
+    if _DB_PATH is None:
+        return None
+    # DB is at <project>/.agent-memory/memory.db
+    return _DB_PATH.parent.parent
+
+
+def _ensure_structural_fresh() -> None:
+    """Ensure structural memory is fresh before structural queries."""
+    root = _project_root()
+    if root is not None and root.exists():
+        from memory import structural as structural_mod
+        structural_mod.ensure_structural_memory(root)
 
 
 def _connect() -> sqlite3.Connection:
@@ -37,6 +56,7 @@ def _connect() -> sqlite3.Connection:
             "structural database not found; index the workspace first"
             " (memory.structural.index_workspace)"
         )
+    _ensure_structural_fresh()
     return store_mod.connect(_DB_PATH)
 
 
@@ -215,7 +235,7 @@ def get_transcript_session(
 
 
 def main(argv: list[str] | None = None) -> int:
-    global _DB_PATH, _REPO_PATH
+    global _DB_PATH, _REPO_PATH, _ROOT_PATH
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--db", type=Path, required=True)
     parser.add_argument("--root", type=Path, default=None)
@@ -227,6 +247,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
     _DB_PATH = args.db
+    _ROOT_PATH = args.root
     _REPO_PATH = args.repo if args.repo is not None else args.root
     if not _DB_PATH.exists():
         print(f"error: database not found: {_DB_PATH}", file=sys.stderr)

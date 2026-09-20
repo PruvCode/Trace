@@ -56,6 +56,11 @@ def ensure_seeded_fixture(fixture_dir: Path = FIXTURE_DIR) -> str:
     """Create/commit the fixture repo if needed; return HEAD SHA."""
     if not (fixture_dir / "auth" / "session.py").exists():
         raise FileNotFoundError(f"fixture source missing in {fixture_dir}")
+    # Clean up any .agent-memory from previous test runs
+    import shutil
+    agent_memory = fixture_dir / ".agent-memory"
+    if agent_memory.exists():
+        shutil.rmtree(agent_memory, ignore_errors=True)
     git_dir = fixture_dir / ".git"
     if not git_dir.exists():
         _git("init", "-b", "main", cwd=fixture_dir)

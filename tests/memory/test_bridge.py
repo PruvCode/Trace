@@ -28,23 +28,26 @@ def indexed_db(tmp_path, seeded_fixture):
     fixture_dir, _head = seeded_fixture
     db_path = tmp_path / ".agent-memory" / "memory.db"
     structural_mod.index_workspace(fixture_dir, db_path)
-    return db_path
+    return db_path, fixture_dir
 
 
-def _command(db_path: Path) -> list[str]:
+def _command(db_path: Path, root: Path) -> list[str]:
     return [
         sys.executable,
         "-m",
         "memory.mcp_server",
         "--db",
         str(db_path),
+        "--root",
+        str(root),
         "--repo",
-        str(db_path.parent),
+        str(root),
     ]
 
 
 def test_bridge_start_call_close(indexed_db):
-    bridge = MCPBridgeSession(_command(indexed_db), cwd=str(REPO_ROOT))
+    db_path, fixture_dir = indexed_db
+    bridge = MCPBridgeSession(_command(db_path, fixture_dir), cwd=str(REPO_ROOT))
     try:
         bridge.start()
         assert set(bridge.tool_names()) == MEMORY_TOOL_NAMES
@@ -79,7 +82,8 @@ def test_bridge_bad_command_fails_loudly(tmp_path):
 
 
 def test_bridge_unknown_tool_raises(indexed_db):
-    bridge = MCPBridgeSession(_command(indexed_db), cwd=str(REPO_ROOT))
+    db_path, fixture_dir = indexed_db
+    bridge = MCPBridgeSession(_command(db_path, fixture_dir), cwd=str(REPO_ROOT))
     try:
         bridge.start()
         with pytest.raises(MCPBridgeError, match="mcp tool error"):
@@ -94,7 +98,8 @@ def test_tool_parity_core_identical_memory_additive(tmp_path, indexed_db):
     core_b = {t.name: (t.description, t.json_schema) for t in build_core_tools(tmp_path)}
     assert core_a == core_b
     assert set(core_a) == {"read_file", "write_file", "done"}
-    bridge = MCPBridgeSession(_command(indexed_db), cwd=str(REPO_ROOT))
+    db_path, fixture_dir = indexed_db
+    bridge = MCPBridgeSession(_command(db_path, fixture_dir), cwd=str(REPO_ROOT))
     try:
         bridge.start()
         memory_names = set(bridge.tool_names())

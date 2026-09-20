@@ -18,6 +18,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
+import hashlib
+import json
+import subprocess
 
 import tree_sitter_python
 from tree_sitter import Language, Parser, Query, QueryCursor
@@ -236,6 +239,8 @@ def index_workspace(root: Path, db_path: Path) -> dict:
                 rel_count += 1
         store_mod.rebuild_fts(conn)
         conn.commit()
+        # Store fingerprint after successful index
+        _store_fingerprint(root, conn)
         return {
             "files": files,
             "symbols": symbol_count,
@@ -244,3 +249,98 @@ def index_workspace(root: Path, db_path: Path) -> dict:
         }
     finally:
         conn.close()
+
+
+def _compute_git_tree_hash(project_root: Path) -> str | None:
+    """Compute Git tree hash for the repository (deterministic)."""
+    try:
+        result = subprocess.run(
+            ["git", "ls-tree", "-r", "HEAD", "--", "."],
+            cwd=str(project_root),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            return None
+        # Hash the tree output for a stable fingerprint
+        return hashlib.sha256(result.stdout.encode()).hexdigest()[:32]
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def _compute_file_mtimes(project_root: Path) -> str | None:
+    """Compute file mtimes hash as fallback for non-Git repos."""
+    try:
+        files = iter_python_files(project_root)
+        if not files:
+            return None
+        mtime_data = {}
+        for path in files:
+            relpath = path.relative_to(project_root).as_posix()
+            try:
+                mtime_data[relpath] = int(path.stat().st_mtime * 1e6)  # microseconds
+            except OSError:
+                continue
+        if not mtime_data:
+            return None
+        # Create deterministic JSON and hash it
+        json_str = json.dumps(mtime_data, sort_keys=True)
+        return hashlib.sha256(json_str.encode()).hexdigest()[:32]
+    except Exception:
+        return None
+
+
+def _store_fingerprint(project_root: Path, conn) -> None:
+    """Store the current fingerprint after indexing."""
+    git_hash = _compute_git_tree_hash(project_root)
+    file_hash = _compute_file_mtimes(project_root)
+    store_mod.set_structural_fingerprint(conn, git_hash, file_hash)
+
+
+def get_current_fingerprint(project_root: Path) -> dict:
+    """Compute the current fingerprint of the project."""
+    return {
+        "git_tree_hash": _compute_git_tree_hash(project_root),
+        "file_mtimes": _compute_file_mtimes(project_root),
+    }
+
+
+def is_structural_fresh(project_root: Path) -> bool:
+    """Check if structural memory is up to date."""
+    db = project_root / ".agent-memory" / "memory.db"
+    if not db.exists():
+        return False
+    conn = store_mod.connect(db)
+    try:
+        stored = store_mod.get_structural_fingerprint(conn)
+        if not stored:
+            return False
+        current = get_current_fingerprint(project_root)
+        # Compare git hash if available, otherwise file mtimes
+        if current["git_tree_hash"] and stored["git_tree_hash"]:
+            return current["git_tree_hash"] == stored["git_tree_hash"]
+        if current["file_mtimes"] and stored["file_mtimes"]:
+            return current["file_mtimes"] == stored["file_mtimes"]
+        return False
+    finally:
+        conn.close()
+
+
+def ensure_structural_memory(project_root: Path) -> dict:
+    """Ensure structural memory exists and is fresh. Auto-create or refresh as needed."""
+    project_root = project_root.resolve()
+    db = project_root / ".agent-memory" / "memory.db"
+
+    if not db.exists():
+        # Fresh project - create and index
+        return index_workspace(project_root, db)
+
+    # Check if fresh
+    if is_structural_fresh(project_root):
+        return {"status": "fresh", "project": str(project_root)}
+
+    # Stale - reindex
+    stats = index_workspace(project_root, db)
+    stats["status"] = "refreshed"
+    return stats
