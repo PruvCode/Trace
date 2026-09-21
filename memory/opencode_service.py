@@ -282,10 +282,21 @@ class OpenCodeCaptureService:
             "message": "OpenCode capture service started",
         }
 
+    def _log(self, msg: str) -> None:
+        """Write log message to service log file."""
+        try:
+            log_file = self._service_dir / "service.log"
+            log_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(log_file, "a") as f:
+                import datetime
+                timestamp = datetime.datetime.now().isoformat()
+                f.write(f"{timestamp} {msg}\n")
+        except Exception:
+            pass
+
     def _run_monitor_loop(
         self, session_rowid: int, message_rowid: int, part_rowid: int
     ) -> None:
-        """Main monitor loop running in child process."""
         # State in child process
         self._running = True
         self._stop_event = False
@@ -297,6 +308,7 @@ class OpenCodeCaptureService:
 
         # ID sets for idempotency
         known_sessions: set[str] = set()
+        project_sessions: set[str] = set()
         processed_message_ids: set[str] = set()
         processed_part_ids: set[str] = set()
 
@@ -306,6 +318,8 @@ class OpenCodeCaptureService:
         # Setup signal handlers
         signal.signal(signal.SIGTERM, self._handle_signal)
         signal.signal(signal.SIGINT, self._handle_signal)
+
+        self._log(f"Service started for project {self.project_name} at {self.project_path}")
 
         # Update status
         self._write_status(
@@ -327,53 +341,59 @@ class OpenCodeCaptureService:
         base_backoff = 1.0
         max_backoff = 30.0
 
-        while self._running:
-            try:
-                last_session_rowid = self._check_for_new_sessions(
-                    last_session_rowid, known_sessions
-                )
-                last_message_rowid = self._check_for_new_messages(
-                    last_message_rowid, processed_message_ids
-                )
-                last_part_rowid = self._check_for_new_parts(
-                    last_part_rowid, processed_part_ids
-                )
+        try:
+            while self._running:
+                try:
+                    last_session_rowid = self._check_for_new_sessions(
+                        last_session_rowid, known_sessions, project_sessions
+                    )
+                    last_message_rowid = self._check_for_new_messages(
+                        last_message_rowid, processed_message_ids, project_sessions
+                    )
+                    last_part_rowid = self._check_for_new_parts(
+                        last_part_rowid, processed_part_ids, project_sessions
+                    )
 
-                # Persist cursors periodically
-                self._save_cursors(
-                    last_session_rowid,
-                    last_message_rowid,
-                    last_part_rowid,
-                )
+                    # Persist cursors periodically
+                    self._save_cursors(
+                        last_session_rowid,
+                        last_message_rowid,
+                        last_part_rowid,
+                    )
 
-                consecutive_failures = 0
+                    consecutive_failures = 0
 
-            except sqlite3.OperationalError as e:
-                if "database is locked" in str(e).lower():
-                    delay = min(base_backoff * (2**consecutive_failures), max_backoff)
-                    time.sleep(delay)
-                    consecutive_failures += 1
-                else:
+                except sqlite3.OperationalError as e:
+                    if "database is locked" in str(e).lower():
+                        delay = min(base_backoff * (2**consecutive_failures), max_backoff)
+                        time.sleep(delay)
+                        consecutive_failures += 1
+                    else:
+                        self._log(f"Database error: {e}")
+                        time.sleep(self._get_backoff_delay(consecutive_failures, base_backoff, max_backoff))
+                        consecutive_failures += 1
+                except Exception as e:
+                    self._log(f"Unhandled error: {e}")
+                    import traceback
+                    self._log("Traceback: " + traceback.format_exc())
                     time.sleep(self._get_backoff_delay(consecutive_failures, base_backoff, max_backoff))
                     consecutive_failures += 1
-            except Exception:
-                time.sleep(self._get_backoff_delay(consecutive_failures, base_backoff, max_backoff))
-                consecutive_failures += 1
-            else:
-                time.sleep(1.0)
-
-        # Save cursors on exit
-        self._save_cursors(
-            last_session_rowid,
-            last_message_rowid,
-            last_part_rowid,
-        )
-        self._remove_pid()
-        self._write_status({"status": "stopped", "project": self.project_name})
-        sys.exit(0)
-
-    def _check_for_new_sessions(self, last_rowid: int, known_sessions: set[str]) -> int:
-        """Detect new sessions in OpenCode database."""
+                else:
+                    time.sleep(1.0)
+        finally:
+            # Save cursors on exit
+            self._save_cursors(
+                last_session_rowid,
+                last_message_rowid,
+                last_part_rowid,
+            )
+            self._log(f"Service stopped for project {self.project_name}")
+            self._remove_pid()
+            self._write_status({"status": "stopped", "project": self.project_name})
+    def _check_for_new_sessions(self, last_rowid: int, known_sessions: set[str], project_sessions: set[str]) -> int:
+        """Detect new sessions in OpenCode database for this project."""
+        # Normalize project path for comparison (OpenCode stores with forward slashes)
+        project_dir = str(self.project_path.resolve()).replace("\\", "/")
         try:
             with sqlite3.connect(f"file:{self.opencode_db_path}?mode=ro", uri=True) as conn:
                 conn.row_factory = sqlite3.Row
@@ -397,17 +417,28 @@ class OpenCodeCaptureService:
                     # Update cursor
                     last_rowid = max(last_rowid, rowid)
 
+                    # Filter by project directory
+                    session_dir = row.get("directory", "")
+                    session_dir_normalized = session_dir.replace("\\", "/") if session_dir else ""
+                    print(f"[OpenCode service] Session {session_id}: dir='{session_dir}', normalized='{session_dir_normalized}', project_dir='{project_dir}', match={session_dir_normalized == project_dir}")
+                    if session_dir:
+                        session_dir_normalized = session_dir.replace("\\", "/")
+                        if session_dir_normalized != project_dir:
+                            continue
+
                     # Idempotency check
                     if session_id not in known_sessions:
                         known_sessions.add(session_id)
+                        project_sessions.add(session_id)
+                        print(f"[OpenCode service] Added session {session_id} to project_sessions")
                         self._process_new_session(dict(row))
 
         except Exception as e:
             print(f"[OpenCode service] Session check error: {e}")
         return last_rowid
 
-    def _check_for_new_messages(self, last_rowid: int, processed_ids: set[str]) -> int:
-        """Detect new messages in OpenCode database."""
+    def _check_for_new_messages(self, last_rowid: int, processed_ids: set[str], project_sessions: set[str]) -> int:
+        """Detect new messages in OpenCode database for this project."""
         try:
             with sqlite3.connect(f"file:{self.opencode_db_path}?mode=ro", uri=True) as conn:
                 conn.row_factory = sqlite3.Row
@@ -422,7 +453,16 @@ class OpenCodeCaptureService:
                 for row in cursor.fetchall():
                     rowid = row["rowid"]
                     msg_id = row["id"]
+                    session_id = row.get("session_id", "")
                     last_rowid = max(last_rowid, rowid)
+
+                    # Filter by project sessions
+                    if session_id:
+                        if session_id not in project_sessions:
+                            print(f"[OpenCode service] Skipping message {msg_id}: session {session_id} not in project_sessions ({project_sessions})")
+                            continue
+                    else:
+                        print(f"[OpenCode service] Skipping message {msg_id}: no session_id")
 
                     if msg_id not in processed_ids:
                         processed_ids.add(msg_id)
@@ -432,8 +472,8 @@ class OpenCodeCaptureService:
             print(f"[OpenCode service] Message check error: {e}")
         return last_rowid
 
-    def _check_for_new_parts(self, last_rowid: int, processed_ids: set[str]) -> int:
-        """Detect new message parts in OpenCode database."""
+    def _check_for_new_parts(self, last_rowid: int, processed_ids: set[str], project_sessions: set[str]) -> int:
+        """Detect new message parts in OpenCode database for this project."""
         try:
             with sqlite3.connect(f"file:{self.opencode_db_path}?mode=ro", uri=True) as conn:
                 conn.row_factory = sqlite3.Row
@@ -448,7 +488,12 @@ class OpenCodeCaptureService:
                 for row in cursor.fetchall():
                     rowid = row["rowid"]
                     part_id = row["id"]
+                    session_id = row.get("session_id", "")
                     last_rowid = max(last_rowid, rowid)
+
+                    # Filter by project sessions
+                    if session_id and session_id not in project_sessions:
+                        continue
 
                     if part_id not in processed_ids:
                         processed_ids.add(part_id)
