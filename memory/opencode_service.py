@@ -128,6 +128,28 @@ class OpenCodeCaptureService:
         except Exception:
             return 0, 0, 0
 
+    def _reconstruct_project_sessions(self) -> set[str]:
+        """Reconstruct project_sessions by querying OpenCode DB for sessions in this project.
+        
+        This reconstructs the set of session IDs that belong to this project,
+        which is needed for proper message/part filtering after service restart.
+        """
+        project_sessions = set()
+        project_dir = str(self.project_path.resolve()).replace("\\", "/")
+        try:
+            with sqlite3.connect(f"file:{self.opencode_db_path}?mode=ro", uri=True) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT id FROM session
+                    WHERE directory = ?
+                """, (project_dir,))
+                for row in cursor.fetchall():
+                    project_sessions.add(row["id"])
+        except Exception as e:
+            print(f"[OpenCode service] Failed to reconstruct project sessions: {e}")
+        return project_sessions
+
     def _save_cursors(
         self, session_rowid: int, message_rowid: int, part_rowid: int
     ) -> None:
@@ -312,6 +334,10 @@ class OpenCodeCaptureService:
         processed_message_ids: set[str] = set()
         processed_part_ids: set[str] = set()
 
+        # Reconstruct project_sessions from OpenCode DB for restart recovery
+        project_sessions = self._reconstruct_project_sessions()
+        self._log(f"Reconstructed {len(project_sessions)} project sessions from OpenCode DB")
+
         # Pre-populate ID sets
         self._populate_known_ids(known_sessions, processed_message_ids, processed_part_ids)
 
@@ -418,7 +444,10 @@ class OpenCodeCaptureService:
                     last_rowid = max(last_rowid, rowid)
 
                     # Filter by project directory
-                    session_dir = row.get("directory", "")
+                    try:
+                        session_dir = row["directory"]
+                    except KeyError:
+                        session_dir = ""
                     session_dir_normalized = session_dir.replace("\\", "/") if session_dir else ""
                     print(f"[OpenCode service] Session {session_id}: dir='{session_dir}', normalized='{session_dir_normalized}', project_dir='{project_dir}', match={session_dir_normalized == project_dir}")
                     if session_dir:
@@ -453,7 +482,10 @@ class OpenCodeCaptureService:
                 for row in cursor.fetchall():
                     rowid = row["rowid"]
                     msg_id = row["id"]
-                    session_id = row.get("session_id", "")
+                    try:
+                        session_id = row["session_id"]
+                    except KeyError:
+                        session_id = ""
                     last_rowid = max(last_rowid, rowid)
 
                     # Filter by project sessions
@@ -488,7 +520,10 @@ class OpenCodeCaptureService:
                 for row in cursor.fetchall():
                     rowid = row["rowid"]
                     part_id = row["id"]
-                    session_id = row.get("session_id", "")
+                    try:
+                        session_id = row["session_id"]
+                    except KeyError:
+                        session_id = ""
                     last_rowid = max(last_rowid, rowid)
 
                     # Filter by project sessions
