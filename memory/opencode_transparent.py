@@ -316,6 +316,26 @@ class OpenCodeDatabaseMonitor:
                     metadata={"message_id": message["id"]}
                 )
 
+    def _parent_message_role(self, message_id: str) -> str | None:
+        """Look up the role of a parent message in OpenCode's database.
+
+        OpenCode stores message content in ``part`` rows; the ``message``
+        row carries the role (``user`` vs ``assistant``). Returns None when
+        the role cannot be determined; callers fall back to ``assistant``.
+        """
+        try:
+            with sqlite3.connect(f"file:{self.opencode_db_path}?mode=ro", uri=True) as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT data FROM message WHERE id = ?", (message_id,))
+                row = cursor.fetchone()
+                if not row:
+                    return None
+                data = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+                role = data.get("role") if isinstance(data, dict) else None
+                return role if role in ("user", "assistant", "system") else None
+        except Exception:
+            return None
+
     def _process_part(self, part: dict):
         """Process a message part from OpenCode."""
         part_data = json.loads(part["data"]) if isinstance(part["data"], str) else part["data"]
@@ -327,8 +347,8 @@ class OpenCodeDatabaseMonitor:
             # Text content - could be user or assistant message
             text_content = part_data.get("text", "")
             if text_content:
-                # Determine role from parent message
-                role = "assistant"  # default, could be refined
+                # Attribute user vs assistant via the parent message row.
+                role = self._parent_message_role(part["message_id"]) or "assistant"
                 self._persist_transcript_message(
                     session_id=session_id,
                     role=role,
@@ -598,36 +618,49 @@ class OpenCodeTransparentAdapter(CaptureAdapter):
         }
 
     def _create_opencode_config(self, project_path: Path) -> dict:
-        """Create or update opencode.json with TRACE MCP server."""
+        """Create or update opencode.json with TRACE MCP server.
+
+        TRACE only configures its own ``trace-memory`` MCP server entry.
+        Any existing user configuration is preserved untouched.
+
+        TRACE must NOT write a ``permission`` block: custom permission
+        restrictions change the OpenCode free-tier request path and cause
+        ``opencode run`` to fail with 403 FreeTierError
+        ("OpenCode's free tier can only be used from within OpenCode").
+        """
+        import json
         config_path = project_path / "opencode.json"
         mcp_command = project_mod.mcp_server_command(project_path)
 
-        opencode_config = {
-            "$schema": "https://opencode.ai/config.json",
-            "permission": {
-                "read": "allow",
-                "edit": "allow",
-                "glob": "allow",
-                "grep": "allow",
-                "bash": "deny",
-                "task": "deny",
-                "webfetch": "deny",
-                "websearch": "deny",
-            },
-            "mcp": {
-                "trace-memory": {
-                    "type": "local",
-                    "enabled": True,
-                    "command": mcp_command,
-                }
-            },
+        existed = config_path.exists()
+        opencode_config: dict = {}
+        if existed:
+            try:
+                loaded = json.loads(config_path.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict):
+                    opencode_config = loaded
+            except (ValueError, OSError):
+                # Unparseable config cannot be preserved; fall through
+                # and replace it with a minimal TRACE-compatible config.
+                opencode_config = {}
+
+        if "$schema" not in opencode_config:
+            opencode_config["$schema"] = "https://opencode.ai/config.json"
+
+        mcp = opencode_config.get("mcp")
+        if not isinstance(mcp, dict):
+            mcp = {}
+            opencode_config["mcp"] = mcp
+        mcp["trace-memory"] = {
+            "type": "local",
+            "enabled": True,
+            "command": mcp_command,
         }
 
-        import json
         config_path.write_text(json.dumps(opencode_config, indent=2), encoding="utf-8")
 
         return {
-            "status": "created" if not config_path.exists() else "updated",
+            "status": "updated" if existed else "created",
             "config_path": str(config_path),
             "message": "OpenCode config created/updated with TRACE MCP server",
         }

@@ -304,6 +304,29 @@ class OpenCodeCaptureService:
             "message": "OpenCode capture service started",
         }
 
+    def _is_pid_alive(self, pid: int) -> bool:
+        """Check whether a PID is still alive."""
+        try:
+            if sys.platform == "win32":
+                result = subprocess.run(
+                    ["tasklist", "/FI", f"PID eq {pid}"],
+                    capture_output=True, text=True, check=False
+                )
+                return str(pid) in result.stdout
+            else:
+                os.kill(pid, 0)
+                return True
+        except OSError:
+            return False
+
+    def _wait_for_exit(self, pid: int, attempts: int = 50, interval: float = 0.1) -> bool:
+        """Wait (bounded) for a PID to exit. Returns True when gone."""
+        for _ in range(attempts):
+            if not self._is_pid_alive(pid):
+                return True
+            time.sleep(interval)
+        return not self._is_pid_alive(pid)
+
     def _log(self, msg: str) -> None:
         """Write log message to service log file."""
         try:
@@ -338,8 +361,12 @@ class OpenCodeCaptureService:
         project_sessions = self._reconstruct_project_sessions()
         self._log(f"Reconstructed {len(project_sessions)} project sessions from OpenCode DB")
 
-        # Pre-populate ID sets
-        self._populate_known_ids(known_sessions, processed_message_ids, processed_part_ids)
+        # NOTE: processed-ID sets intentionally start empty on (re)start.
+        # Restart recovery relies on persisted ROWID cursors: rows with
+        # rowid > cursor are (re)processed, older rows are never reselected.
+        # Pre-populating the ID sets from current DB state would permanently
+        # skip rows created while the service was stopped, defeating
+        # catch-up after restart.
 
         # Setup signal handlers
         signal.signal(signal.SIGTERM, self._handle_signal)
@@ -571,6 +598,26 @@ class OpenCodeCaptureService:
                     metadata={"message_id": message["id"]}
                 )
 
+    def _parent_message_role(self, message_id: str) -> str | None:
+        """Look up the role of a parent message in OpenCode's database.
+
+        OpenCode stores message content in ``part`` rows; the ``message``
+        row carries the role (``user`` vs ``assistant``). Returns None when
+        the role cannot be determined; callers fall back to ``assistant``.
+        """
+        try:
+            with sqlite3.connect(f"file:{self.opencode_db_path}?mode=ro", uri=True) as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT data FROM message WHERE id = ?", (message_id,))
+                row = cursor.fetchone()
+                if not row:
+                    return None
+                data = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+                role = data.get("role") if isinstance(data, dict) else None
+                return role if role in ("user", "assistant", "system") else None
+        except Exception:
+            return None
+
     def _process_part(self, part: dict) -> None:
         """Process a message part from OpenCode."""
         part_data = json.loads(part["data"]) if isinstance(part["data"], str) else part["data"]
@@ -581,7 +628,8 @@ class OpenCodeCaptureService:
         if part_type == "text":
             text_content = part_data.get("text", "")
             if text_content:
-                role = "assistant"
+                # Attribute user vs assistant via the parent message row.
+                role = self._parent_message_role(part["message_id"]) or "assistant"
                 self._persist_transcript_message(
                     session_id=session_id,
                     role=role,
@@ -701,30 +749,6 @@ class OpenCodeCaptureService:
                 result = re.sub(regex, replacement, result, flags=re.IGNORECASE)
         return result
 
-    def _populate_known_ids(
-        self,
-        known_sessions: set[str],
-        processed_message_ids: set[str],
-        processed_part_ids: set[str],
-    ) -> None:
-        """Pre-populate known IDs for idempotency."""
-        try:
-            with sqlite3.connect(
-                f"file:{self.opencode_db_path}?mode=ro", uri=True
-            ) as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT id FROM session")
-                for row in cursor.fetchall():
-                    known_sessions.add(row[0])
-                cursor.execute("SELECT id FROM message")
-                for row in cursor.fetchall():
-                    processed_message_ids.add(row[0])
-                cursor.execute("SELECT id FROM part")
-                for row in cursor.fetchall():
-                    processed_part_ids.add(row[0])
-        except Exception as e:
-            print(f"[OpenCode service] Failed to populate known IDs: {e}")
-
     def _handle_signal(self, signum, frame):
         """Handle shutdown signals."""
         self._running = False
@@ -743,40 +767,35 @@ class OpenCodeCaptureService:
         try:
             if sys.platform == "win32":
                 # Use taskkill on Windows
-                subprocess.run(["taskkill", "/PID", str(pid)], 
-                             capture_output=True, check=False)
+                subprocess.run(["taskkill", "/PID", str(pid)],
+                               capture_output=True, check=False)
             else:
                 os.kill(pid, signal.SIGTERM)
-            
+
             # Wait for process to terminate
-            for _ in range(50):
-                try:
-                    if sys.platform == "win32":
-                        result = subprocess.run(
-                            ["tasklist", "/FI", f"PID eq {pid}"],
-                            capture_output=True, text=True, check=False
-                        )
-                        if str(pid) not in result.stdout:
-                            break
-                    else:
-                        os.kill(pid, 0)
-                    time.sleep(0.1)
-                except OSError:
-                    break
-            else:
-                # Force kill
-                try:
-                    if sys.platform == "win32":
-                        subprocess.run(["taskkill", "/F", "/PID", str(pid)], 
-                                     capture_output=True, check=False)
-                    else:
-                        os.kill(pid, signal.SIGKILL)
-                except Exception:
-                    pass
+            if self._wait_for_exit(pid):
+                self._remove_pid()
+                self._write_status({"status": "stopped", "project": self.project_name})
+                return {"status": "stopped", "message": "OpenCode capture service stopped"}
+
+            # Force kill, then wait again so file handles (TRACE DB) are
+            # actually released before the caller proceeds to cleanup.
+            try:
+                if sys.platform == "win32":
+                    subprocess.run(["taskkill", "/F", "/PID", str(pid)],
+                                   capture_output=True, check=False)
+                else:
+                    os.kill(pid, signal.SIGKILL)
+            except Exception:
+                pass
+
+            if self._wait_for_exit(pid):
+                self._remove_pid()
+                self._write_status({"status": "stopped", "project": self.project_name})
+                return {"status": "stopped", "message": "OpenCode capture service stopped"}
 
             self._remove_pid()
-            self._write_status({"status": "stopped", "project": self.project_name})
-            return {"status": "stopped", "message": "OpenCode capture service stopped"}
+            return {"status": "error", "message": f"Service process {pid} did not terminate"}
         except OSError as e:
             self._remove_pid()
             return {"status": "error", "message": f"Failed to stop service: {e}"}
