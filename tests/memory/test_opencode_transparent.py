@@ -290,5 +290,62 @@ def test_transparent_adapter_context_search_filters(temp_project):
     assert "assistant" in roles
 
 
+def test_create_opencode_config_preserves_existing(temp_project):
+    """TRACE setup must preserve existing opencode.json user configuration.
+
+    Regression test: TRACE previously overwrote opencode.json with its own
+    permission block, which both destroyed user settings and broke
+    ``opencode run`` on the free tier (403 FreeTierError). TRACE must only
+    add/update its own ``trace-memory`` MCP entry.
+    """
+    import json
+    adapter = opencode_transparent_mod.create_opencode_transparent_adapter()
+    config_path = temp_project / "opencode.json"
+
+    existing = {
+        "$schema": "https://opencode.ai/config.json",
+        "theme": "custom-theme",
+        "permission": {"bash": "allow", "edit": "ask"},
+        "mcp": {
+            "other-server": {
+                "type": "local",
+                "enabled": True,
+                "command": ["other-command"],
+            }
+        },
+    }
+    config_path.write_text(json.dumps(existing, indent=2), encoding="utf-8")
+
+    result = adapter._create_opencode_config(temp_project)
+    assert result["status"] == "updated"
+
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    # Unrelated user settings preserved verbatim
+    assert config["theme"] == "custom-theme"
+    assert config["permission"] == {"bash": "allow", "edit": "ask"}
+    assert config["mcp"]["other-server"] == existing["mcp"]["other-server"]
+    # TRACE MCP entry added
+    mcp_server = config["mcp"]["trace-memory"]
+    assert mcp_server["type"] == "local"
+    assert mcp_server["enabled"] is True
+    assert "memory.mcp_server" in str(mcp_server["command"])
+
+
+def test_create_opencode_config_minimal_no_permission(temp_project):
+    """A fresh TRACE config must contain the MCP server and no permission block."""
+    import json
+    adapter = opencode_transparent_mod.create_opencode_transparent_adapter()
+    config_path = temp_project / "opencode.json"
+    assert not config_path.exists()
+
+    result = adapter._create_opencode_config(temp_project)
+    assert result["status"] == "created"
+
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    assert "permission" not in config
+    assert config["mcp"]["trace-memory"]["type"] == "local"
+    assert config["mcp"]["trace-memory"]["enabled"] is True
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
