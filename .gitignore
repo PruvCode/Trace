@@ -18,6 +18,8 @@ runs/
 .agent-memory/
 
 # Generated fixture git repos (seeded by scripts/seed_*.py)
+# Working trees are regenerated locally; only the seed scripts are tracked.
+fixtures/*/
 fixtures/toy_repo/.git/
 fixtures/history_repo/.git/
 fixtures/deps_repo/.git/
