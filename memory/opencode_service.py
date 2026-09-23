@@ -766,8 +766,11 @@ class OpenCodeCaptureService:
 
         try:
             if sys.platform == "win32":
-                # Use taskkill on Windows
-                subprocess.run(["taskkill", "/PID", str(pid)],
+                # Use taskkill on Windows. /T kills the whole child tree:
+                # the service is spawned via shim layers, so stopping only
+                # the PID-file process could leave a grandchild polling the
+                # databases after "stopped" is reported.
+                subprocess.run(["taskkill", "/PID", str(pid), "/T"],
                                capture_output=True, check=False)
             else:
                 os.kill(pid, signal.SIGTERM)
@@ -782,7 +785,7 @@ class OpenCodeCaptureService:
             # actually released before the caller proceeds to cleanup.
             try:
                 if sys.platform == "win32":
-                    subprocess.run(["taskkill", "/F", "/PID", str(pid)],
+                    subprocess.run(["taskkill", "/F", "/PID", str(pid), "/T"],
                                    capture_output=True, check=False)
                 else:
                     os.kill(pid, signal.SIGKILL)
