@@ -470,17 +470,17 @@ class OpenCodeCaptureService:
                     # Update cursor
                     last_rowid = max(last_rowid, rowid)
 
-                    # Filter by project directory
+                    # Filter by project directory. Only an exact normalized
+                    # match is captured: sessions with a missing or empty
+                    # directory, or a different project directory, must NOT
+                    # leak into this project.
                     try:
                         session_dir = row["directory"]
                     except KeyError:
                         session_dir = ""
                     session_dir_normalized = session_dir.replace("\\", "/") if session_dir else ""
-                    print(f"[OpenCode service] Session {session_id}: dir='{session_dir}', normalized='{session_dir_normalized}', project_dir='{project_dir}', match={session_dir_normalized == project_dir}")
-                    if session_dir:
-                        session_dir_normalized = session_dir.replace("\\", "/")
-                        if session_dir_normalized != project_dir:
-                            continue
+                    if session_dir_normalized != project_dir:
+                        continue
 
                     # Idempotency check
                     if session_id not in known_sessions:

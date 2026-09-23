@@ -23,17 +23,54 @@ from memory.opencode_transparent import create_opencode_transparent_adapter
 from memory import store as store_mod
 from memory import transcript as transcript_mod
 from trace_memory import project as project_mod
+from tests.memory.test_441_environment import (
+    _rmtree_with_retry,
+    _stop_service_and_wait,
+)
+
+
+def _assert_session_committed(opencode_db: Path, session_id: str) -> None:
+    """Prove the simulated session is committed and visible to other connections.
+
+    The capture service polls from its own connection, so it can only
+    observe rows after this writer's transaction commits. A fresh
+    connection must see the row before the polling phase begins.
+    """
+    conn = sqlite3.connect(opencode_db)
+    try:
+        row = conn.execute(
+            "SELECT id FROM session WHERE id = ?", (session_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+    assert row is not None, f"Session {session_id} not committed before polling phase"
 
 
 @pytest.fixture()
 def temp_project():
     """Create a temporary project with TRACE initialized."""
-    with tempfile.TemporaryDirectory() as tmp:
+    import tempfile
+    import time
+    tmp = tempfile.mkdtemp()
+    try:
         project = Path(tmp) / "project"
         project.mkdir()
         (project / "main.py").write_text("def hello():\n    return 'world'\n", encoding="utf-8")
         project_mod.init_project(project)
         yield project
+    finally:
+        try:
+            from memory.opencode_service import get_service
+            service = get_service(project)
+            if service.is_running():
+                service.stop()
+                deadline = time.time() + 20.0
+                while service.is_running() and time.time() < deadline:
+                    time.sleep(0.5)
+                time.sleep(2)
+        except Exception as e:
+            print(f"[temp_project teardown] best-effort service stop: {e}")
+        _rmtree_with_retry(Path(tmp))
 
 
 def test_end_to_end_transparent_capture(temp_project):
@@ -133,9 +170,15 @@ def test_end_to_end_transparent_capture(temp_project):
             VALUES (?, ?, ?, ?, ?, ?)
         """, (part_id, msg_id_2, session_id, int(time.time() * 1000) + 500, int(time.time() * 1000) + 500,
               '{"type":"tool","tool":"record_event","callID":"call_123","state":{"status":"completed","input":{"type":"observation","symbol":"calculate_banana_tax","payload":{"finding":"quantum tax is 42"}}}}'))
-    
-# Step 3: Give monitor time to capture the new data
-        time.sleep(5)
+        conn.commit()
+
+    # The transaction above is committed at block exit. Prove it with a
+    # fresh connection BEFORE the polling phase: the capture service reads
+    # from its own connection and can never observe uncommitted rows.
+    _assert_session_committed(opencode_db, session_id)
+
+    # Step 3: Give monitor time to capture the new data
+    time.sleep(5)
     
     # Check service status after capture
     status = adapter.get_monitoring_status(temp_project)
@@ -216,7 +259,10 @@ def test_end_to_end_transparent_capture(temp_project):
             VALUES (?, ?, ?, ?, ?)
         """, (msg_id_3, session_id_2, int(time.time() * 1000) + 10000, int(time.time() * 1000) + 10000,
               '{"role":"user","content":"Continue the quantum banana work. What was the tax calculation?"}'))
-    
+        conn.commit()
+
+    _assert_session_committed(opencode_db, session_id_2)
+
     # Step 7: Give monitor time to capture
     time.sleep(5)
     
@@ -242,12 +288,8 @@ def test_end_to_end_transparent_capture(temp_project):
     assert len(tax_findings) >= 1, "Tax finding not in transcript"
     
     # Cleanup
-    adapter.stop_monitoring(temp_project)
-    adapter2.stop_monitoring(temp_project)
-    # Give extra time for subprocess to fully terminate and release DB locks
-    time.sleep(5.0)
-    import gc
-    gc.collect()
+    _stop_service_and_wait(adapter, temp_project)
+    _stop_service_and_wait(adapter2, temp_project)
 
 
 if __name__ == "__main__":

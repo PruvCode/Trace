@@ -547,70 +547,106 @@ class TestRealOpenCodeIsolation:
 
 
 class TestNullDirectoryRegression:
-    """Regression test for OpenCode sessions with missing/NULL directory."""
+    """Regression test for OpenCode sessions with missing/unusable directory."""
 
     def test_null_directory_isolation(self, temp_project):
         """
-        Test that sessions with NULL/missing directory don't leak into other projects.
-        
-        This simulates the edge case where OpenCode creates a session without a directory,
-        or with a directory that doesn't match any TRACE project.
+        Test that sessions with a missing or non-matching directory don't
+        leak into other projects.
+
+        The production schema declares session.directory NOT NULL, so a
+        "missing" directory is modeled as an empty string (the only
+        schema-valid representation of absent), plus a session pointed at
+        an unrelated directory. Both inserts happen AFTER the service
+        starts with committed transactions, so the directory filter is
+        genuinely exercised (pre-start rows would sit below the service's
+        initialized cursors and prove nothing).
         """
         db_path = _opencode_db_path()
-        
-        # Insert a session with NULL directory directly into OpenCode DB
-        with sqlite3.connect(db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                INSERT INTO session (id, project_id, workspace_id, parent_id, slug, directory, path, title,
-                           version, share_url, summary_additions, summary_deletions,
-                           summary_files, summary_diffs, metadata, cost, tokens_input,
-                           tokens_output, tokens_reasoning, tokens_cache_read,
-                           tokens_cache_write, revert, permission, agent, model,
-                           time_created, time_updated, time_compacting, time_archived)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                "test_null_dir_session", "test", "", "", "null-dir-test", None, "", "Null Dir Test",
-                "1", "", 0, 0, 0, "", "{}", 0.0, 0, 0, 0, 0, 0, "", "", "", "",
-                int(time.time() * 1000), int(time.time() * 1000), 0, 0
-            ))
-        
-        # Also add a message for this session
-        with sqlite3.connect(db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                INSERT INTO message (id, session_id, time_created, time_updated, data)
-                VALUES (?, ?, ?, ?, ?)
-            """, ("test_null_msg", "test_null_dir_session", int(time.time() * 1000), int(time.time() * 1000),
-                  '{"role":"user","content":"test from null directory"}'))
-        
-        # Now run the TRACE monitor - it should NOT capture this session
+        stamp = int(time.time() * 1000)
+        empty_session = f"ses_emptydir_{stamp}"
+        wrong_session = f"ses_wrongdir_{stamp}"
+
+        def _insert_session(session_id, directory):
+            conn = sqlite3.connect(db_path)
+            try:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT INTO session (id, project_id, workspace_id, parent_id, slug, directory, path, title,
+                               version, share_url, summary_additions, summary_deletions,
+                               summary_files, summary_diffs, metadata, cost, tokens_input,
+                               tokens_output, tokens_reasoning, tokens_cache_read,
+                               tokens_cache_write, revert, permission, agent, model,
+                               time_created, time_updated, time_compacting, time_archived)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    session_id, "test", "", "", "dir-test", directory, "", "Dir Test",
+                    "1", "", 0, 0, 0, "", "{}", 0.0, 0, 0, 0, 0, 0, "", "", "", "",
+                    int(time.time() * 1000), int(time.time() * 1000), 0, 0
+                ))
+                cursor.execute("""
+                    INSERT INTO message (id, session_id, time_created, time_updated, data)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (f"msg_{session_id}", session_id, int(time.time() * 1000), int(time.time() * 1000),
+                      '{"role":"user","content":"test from unusable directory"}'))
+                conn.commit()
+            finally:
+                conn.close()
+            # Prove committed/visible to other connections before polling.
+            check = sqlite3.connect(db_path)
+            try:
+                row = check.execute(
+                    "SELECT id FROM session WHERE id = ?", (session_id,)
+                ).fetchone()
+            finally:
+                check.close()
+            assert row is not None, f"Session {session_id} not committed before polling phase"
+
+        # Start TRACE monitoring FIRST so the malicious rows land above
+        # the service's initialized cursors.
         from memory.opencode_transparent import create_opencode_transparent_adapter
         adapter = create_opencode_transparent_adapter()
         setup_result = adapter.setup_integration(temp_project)
         assert setup_result["monitoring"]["status"] == "started"
-        
-        time.sleep(3)
-        
-        # The NULL directory session should NOT appear in TRACE
-        trace_db = project_mod.db_path(temp_project)
-        with sqlite3.connect(trace_db) as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT COUNT(*) FROM transcript_messages WHERE session_id = ?",
-                ("test_null_dir_session",)
-            )
-            count = cursor.fetchone()[0]
-            assert count == 0, "NULL directory session leaked into TRACE"
-        
-        adapter.stop_monitoring(temp_project)
-        time.sleep(2)
 
-        # Clean up the test session from OpenCode DB
-        with sqlite3.connect(db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM session WHERE id = ?", ("test_null_dir_session",))
-            cursor.execute("DELETE FROM message WHERE session_id = ?", ("test_null_dir_session",))
+        time.sleep(3)
+
+        try:
+            # Empty string = schema-valid "missing" directory.
+            _insert_session(empty_session, "")
+            # Unrelated directory = must not leak across projects.
+            _insert_session(wrong_session, "C:/definitely/not/this/project")
+
+            time.sleep(5)
+
+            # Neither session may appear in TRACE.
+            trace_db = project_mod.db_path(temp_project)
+            conn = sqlite3.connect(trace_db)
+            try:
+                cursor = conn.cursor()
+                for sid in (empty_session, wrong_session):
+                    cursor.execute(
+                        "SELECT COUNT(*) FROM transcript_messages WHERE session_id = ?",
+                        (sid,)
+                    )
+                    count = cursor.fetchone()[0]
+                    assert count == 0, f"Session {sid} with unusable directory leaked into TRACE"
+            finally:
+                conn.close()
+        finally:
+            adapter.stop_monitoring(temp_project)
+            time.sleep(2)
+
+            # Clean up the test sessions from OpenCode DB.
+            conn = sqlite3.connect(db_path)
+            try:
+                cursor = conn.cursor()
+                for sid in (empty_session, wrong_session):
+                    cursor.execute("DELETE FROM session WHERE id = ?", (sid,))
+                    cursor.execute("DELETE FROM message WHERE session_id = ?", (sid,))
+                conn.commit()
+            finally:
+                conn.close()
 
 
 if __name__ == "__main__":
