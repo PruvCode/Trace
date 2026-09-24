@@ -442,48 +442,15 @@ class OpenCodeDatabaseMonitor:
             print(f"[OpenCode monitor] Failed to persist tool event: {e}")
 
     def _sanitize_content(self, content: str) -> str:
-        """Redact sensitive information from content.
-        
+        """Redact sensitive information from content (shared rules).
+
         Best-effort secret redaction; this is not guaranteed to detect every secret.
         Covers common patterns for API keys, tokens, passwords, and credentials.
         """
         if not self.config.redact_secrets:
             return content
-        import re
-        patterns = [
-            # Generic key=value patterns
-            (r'(api[_-]?key|secret|password|passwd|credential|auth[_-]?token|access[_-]?token|refresh[_-]?token)\s*[:=]\s*\S+', r'\1=***REDACTED***'),
-            # OpenAI API keys
-            (r'sk-[a-zA-Z0-9]{32,}', '***REDACTED***'),
-            # Stripe keys
-            (r'(sk|pk)_(live|test)_[a-zA-Z0-9]{24,}', '***REDACTED***'),
-            # GitHub tokens
-            (r'gh[psuo]_[a-zA-Z0-9]{36}', '***REDACTED***'),
-            # Slack tokens
-            (r'xox[baprs]-[\w-]{10,}', '***REDACTED***'),
-            # AWS credentials
-            (r'AKIA[0-9A-Z]{16}', '***REDACTED***'),
-            (r'(aws[_-]?secret[_-]?access[_-]?key)\s*[:=]\s*\S+', r'\1=***REDACTED***'),
-            # Google API keys
-            (r'AIza[0-9A-Za-z\-_]{35}', '***REDACTED***'),
-            # Generic bearer tokens
-            (r'bearer\s+[a-zA-Z0-9\._\-]{20,}', 'bearer ***REDACTED***', re.IGNORECASE),
-            # Private key blocks
-            (r'-----BEGIN (RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----[\s\S]*?-----END (RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----', '***REDACTED PRIVATE KEY***'),
-            # Connection strings with passwords
-            (r'(mongodb|postgres|mysql|redis)://[^:]+:[^@]+@', r'\1://***REDACTED:***REDACTED@', re.IGNORECASE),
-            # JWT tokens
-            (r'eyJ[a-zA-Z0-9_-]{10,}\.eyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}', '***REDACTED JWT***'),
-        ]
-        result = content
-        for pattern in patterns:
-            if len(pattern) == 3:
-                regex, replacement, flags = pattern
-                result = re.sub(regex, replacement, result, flags=flags)
-            else:
-                regex, replacement = pattern
-                result = re.sub(regex, replacement, result, flags=re.IGNORECASE)
-        return result
+        from memory import redact as redact_mod
+        return redact_mod.redact_text(content)
 
 
 # Class-level storage for monitor instances per project path
@@ -609,11 +576,16 @@ class OpenCodeTransparentAdapter(CaptureAdapter):
         # Create OpenCode config with TRACE MCP server
         result = self._create_opencode_config(project_path)
 
+        # Install project-local plugin for automatic session-start retrieval
+        from memory import opencode_plugin as opencode_plugin_mod
+        plugin_result = opencode_plugin_mod.install_plugin(project_path)
+
         # Also start persistent service
         monitor_result = self.start_monitoring(project_path)
 
         return {
             "setup": result,
+            "plugin": plugin_result,
             "monitoring": monitor_result,
         }
 
