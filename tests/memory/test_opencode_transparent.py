@@ -205,6 +205,48 @@ def test_setup_opencode_transparent(temp_project):
     adapter.stop_monitoring(temp_project)
 
 
+def test_setup_installs_memory_plugin(temp_project):
+    """Setup installs the project-local TRACE memory plugin (no service)."""
+    from memory import opencode_plugin as opencode_plugin_mod
+    result = opencode_plugin_mod.install_plugin(temp_project)
+    assert result["status"] in ("created", "updated")
+
+    plugin_path = temp_project / ".opencode" / "plugins" / "trace-memory.js"
+    assert plugin_path.exists()
+    source = plugin_path.read_text(encoding="utf-8")
+
+    # Hook registration + once-per-session guard present.
+    assert "experimental.chat.system.transform" in source
+    assert "traceInjectedSessions" in source
+    assert "output.system.push" in source
+    # Thin glue only: no database logic, no npm dependencies in JS.
+    assert "sqlite" not in source.lower()
+    assert "node_modules" not in source
+    import re as _re
+    dynamic_imports = _re.findall(r'import\(([^)]+)\)', source)
+    assert dynamic_imports, "expected dynamic node: imports"
+    assert all('node:' in imp for imp in dynamic_imports), dynamic_imports
+    # Baked absolute paths (consistent with the MCP command).
+    assert ".agent-memory" in source and "memory.db" in source
+    assert "memory.session_context" in source
+    # Fail-open: every fallible section is guarded.
+    assert source.count("try {") >= 2
+
+
+def test_setup_integration_reports_plugin(temp_project):
+    """setup_integration reports plugin install without a permission block."""
+    adapter = opencode_transparent_mod.create_opencode_transparent_adapter()
+    result = adapter.setup_integration(temp_project)
+    assert result["plugin"]["status"] in ("created", "updated")
+    assert (temp_project / ".opencode" / "plugins" / "trace-memory.js").exists()
+
+    import json
+    config = json.loads((temp_project / "opencode.json").read_text(encoding="utf-8"))
+    assert "permission" not in config
+
+    adapter.stop_monitoring(temp_project)
+
+
 def test_get_recent_context(temp_project):
     """Test retrieving relevant context from TRACE transcript memory."""
     # First, manually add some transcript messages
