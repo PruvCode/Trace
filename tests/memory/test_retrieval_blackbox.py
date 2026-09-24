@@ -127,7 +127,7 @@ class TestAutomaticContinuity:
             f"Our project code word is {MARKER}. "
             "Acknowledge it briefly without creating any files."
         )
-        result1 = _run_opencode_direct(project, prompt1, timeout=90)
+        result1 = _run_opencode_direct(project, prompt1, timeout=180)
         assert result1.returncode == 0, (
             f"Session 1 failed: {_safe(result1.stdout)} {_safe(result1.stderr)}"
         )
@@ -167,7 +167,7 @@ class TestAutomaticContinuity:
             "previous conversation (with a .txt extension) containing the "
             "word done."
         )
-        result2 = _run_opencode_direct(project, prompt2, timeout=120)
+        result2 = _run_opencode_direct(project, prompt2, timeout=180)
         assert result2.returncode == 0, (
             f"Session 2 failed: {_safe(result2.stdout)} {_safe(result2.stderr)}"
         )

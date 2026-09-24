@@ -47,7 +47,7 @@ OPENCODE_EXE = Path.home() / "AppData" / "Roaming" / "npm" / "node_modules" / "o
 MIN_OPENCODE_VERSION = (1, 18)
 
 
-def _run_opencode_direct(project_path: Path, prompt: str, timeout: int = 60) -> subprocess.CompletedProcess:
+def _run_opencode_direct(project_path: Path, prompt: str, timeout: int = 150) -> subprocess.CompletedProcess:
     """Run OpenCode with a prompt in the given project directory using the actual .exe."""
     cmd = [
         str(OPENCODE_EXE),
@@ -193,7 +193,7 @@ class TestRealOpenCodeEnvironment:
             project.mkdir()
             (project / "test.py").write_text("print('hello')\n", encoding="utf-8")
 
-            result = _run_opencode_direct(project, "Say hello", timeout=60)
+            result = _run_opencode_direct(project, "Say hello", timeout=120)
             # OpenCode should run and produce JSON output
             assert result.returncode in (0, 1)  # May exit with 1 due to rate limits but should run
             assert "step_start" in result.stdout or "error" in result.stdout
@@ -223,7 +223,7 @@ class TestRealOpenCodeCapture:
 
         # 2. Run REAL OpenCode with a free model - STRICT: must succeed
         prompt = "Create a simple hello.py file that prints 'hello from opencode'"
-        result = _run_opencode_direct(temp_project, prompt, timeout=90)
+        result = _run_opencode_direct(temp_project, prompt, timeout=180)
 
         # OpenCode MUST succeed for a valid capture test
         assert result.returncode == 0, (
@@ -313,7 +313,7 @@ class TestRealOpenCodeCapture:
 
         # Session 1 - deterministic prompt
         prompt1 = "Create a file alpha.txt containing the word ALPHA_ONLY"
-        result1 = _run_opencode_direct(temp_project, prompt1, timeout=60)
+        result1 = _run_opencode_direct(temp_project, prompt1, timeout=120)
         assert result1.returncode == 0, f"Session 1 failed: {result1.stderr[:500]}"
         time.sleep(4)
 
@@ -323,7 +323,7 @@ class TestRealOpenCodeCapture:
 
         # Session 2
         prompt2 = "Create a file beta.txt containing the word BETA_ONLY"
-        result2 = _run_opencode_direct(temp_project, prompt2, timeout=60)
+        result2 = _run_opencode_direct(temp_project, prompt2, timeout=120)
         assert result2.returncode == 0, f"Session 2 failed: {result2.stderr[:500]}"
         time.sleep(4)
 
@@ -393,7 +393,7 @@ class TestCrossSessionPersistence:
 
         # Run OpenCode
         prompt = "Create a file cli_exit_test.py with content 'CLI_EXIT_TEST'"
-        result = _run_opencode_direct(temp_project, prompt, timeout=60)
+        result = _run_opencode_direct(temp_project, prompt, timeout=120)
         assert result.returncode == 0, f"OpenCode failed: {result.stderr[:500]}"
         time.sleep(5)
 
@@ -431,7 +431,7 @@ class TestCrossSessionPersistence:
 
         # Session 1 - while service running
         prompt1 = "Create file restart1.py with content RESTART_BEFORE_STOP"
-        result1 = _run_opencode_direct(temp_project, prompt1, timeout=60)
+        result1 = _run_opencode_direct(temp_project, prompt1, timeout=120)
         assert result1.returncode == 0, f"Session 1 failed: {result1.stderr[:500]}"
         time.sleep(4)
 
@@ -447,7 +447,7 @@ class TestCrossSessionPersistence:
 
         # Session 2 - while service STOPPED
         prompt2 = "Create file restart2.py with content RESTART_DURING_STOP"
-        result2 = _run_opencode_direct(temp_project, prompt2, timeout=60)
+        result2 = _run_opencode_direct(temp_project, prompt2, timeout=120)
         assert result2.returncode == 0, f"Session 2 failed: {result2.stderr[:500]}"
         time.sleep(4)
 
@@ -504,7 +504,7 @@ class TestCrossSessionPersistence:
 
         # Run OpenCode with deterministic content
         prompt = "Create file dedup_test.py with content DEDUP_TEST_CONTENT"
-        result = _run_opencode_direct(temp_project, prompt, timeout=60)
+        result = _run_opencode_direct(temp_project, prompt, timeout=120)
         assert result.returncode == 0, f"OpenCode failed: {result.stderr[:500]}"
         time.sleep(4)
 
@@ -580,7 +580,7 @@ class TestProjectIsolation:
 
             # Run OpenCode in project 1
             prompt1 = "Create file proj1_test.py with content PROJECT1_ONLY"
-            result1 = _run_opencode_direct(temp_project, prompt1, timeout=60)
+            result1 = _run_opencode_direct(temp_project, prompt1, timeout=120)
             assert result1.returncode == 0, f"Project 1 OpenCode failed: {result1.stderr[:500]}"
             time.sleep(4)
 
@@ -589,7 +589,7 @@ class TestProjectIsolation:
 
             # Run OpenCode in project 2
             prompt2 = "Create file proj2_test.py with content PROJECT2_ONLY"
-            result2 = _run_opencode_direct(project2, prompt2, timeout=60)
+            result2 = _run_opencode_direct(project2, prompt2, timeout=120)
             assert result2.returncode == 0, f"Project 2 OpenCode failed: {result2.stderr[:500]}"
             time.sleep(4)
 

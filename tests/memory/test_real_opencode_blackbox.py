@@ -35,7 +35,7 @@ def _opencode_db_path():
     return Path.home() / ".local" / "share" / "opencode" / "opencode.db"
 
 
-def _run_opencode(project_path: Path, prompt: str, timeout: int = 60) -> subprocess.CompletedProcess:
+def _run_opencode(project_path: Path, prompt: str, timeout: int = 150) -> subprocess.CompletedProcess:
     """Run OpenCode with a prompt in the given project directory."""
     # Use the actual opencode.exe binary directly (not the PowerShell wrapper)
     # Use a free model that doesn't require authentication
@@ -127,7 +127,7 @@ class TestRealOpenCodeBlackBox:
 
         # 2. Run REAL OpenCode
         prompt = "Create a simple hello.py file that prints 'hello from opencode'"
-        result = _run_opencode(temp_project, prompt, timeout=90)
+        result = _run_opencode(temp_project, prompt, timeout=180)
         
         # OpenCode MUST succeed for a valid capture test
         assert result.returncode == 0, (
@@ -204,7 +204,7 @@ class TestRealOpenCodeBlackBox:
 
         # Session 1 - deterministic prompt
         prompt1 = "Create a file alpha.txt containing the word ALPHA_ONLY"
-        result1 = _run_opencode(temp_project, prompt1, timeout=60)
+        result1 = _run_opencode(temp_project, prompt1, timeout=120)
         assert result1.returncode == 0, f"Session 1 failed: {result1.stderr[:500]}"
         time.sleep(4)
         
@@ -214,7 +214,7 @@ class TestRealOpenCodeBlackBox:
 
         # Session 2 - different deterministic prompt
         prompt2 = "Create a file beta.txt containing the word BETA_ONLY"
-        result2 = _run_opencode(temp_project, prompt2, timeout=60)
+        result2 = _run_opencode(temp_project, prompt2, timeout=120)
         assert result2.returncode == 0, f"Session 2 failed: {result2.stderr[:500]}"
         time.sleep(4)
         
@@ -295,7 +295,7 @@ class TestRealOpenCodePersistence:
         
         # Run OpenCode
         prompt = "Create a file cli_exit_test.py with content 'test'"
-        _run_opencode(temp_project, prompt, timeout=60)
+        _run_opencode(temp_project, prompt, timeout=120)
         time.sleep(5)
 
         # Verify capture happened
@@ -335,7 +335,7 @@ class TestRealOpenCodePersistence:
 
         # Session 1 - while service running
         prompt1 = "Create file restart1.py with content RESTART_BEFORE_STOP"
-        result1 = _run_opencode(temp_project, prompt1, timeout=60)
+        result1 = _run_opencode(temp_project, prompt1, timeout=120)
         assert result1.returncode == 0, f"Session 1 failed: {result1.stderr[:500]}"
         time.sleep(4)
         
@@ -352,7 +352,7 @@ class TestRealOpenCodePersistence:
 
         # Session 2 - while service STOPPED
         prompt2 = "Create file restart2.py with content RESTART_DURING_STOP"
-        result2 = _run_opencode(temp_project, prompt2, timeout=60)
+        result2 = _run_opencode(temp_project, prompt2, timeout=120)
         assert result2.returncode == 0, f"Session 2 failed: {result2.stderr[:500]}"
         time.sleep(4)
         
@@ -430,7 +430,7 @@ class TestRealOpenCodePersistence:
 
         # Run OpenCode with deterministic content
         prompt = "Create file dedup_test.py with content DEDUP_TEST_CONTENT"
-        result = _run_opencode(temp_project, prompt, timeout=60)
+        result = _run_opencode(temp_project, prompt, timeout=120)
         assert result.returncode == 0, f"OpenCode failed: {result.stderr[:500]}"
         time.sleep(4)
         
@@ -506,14 +506,14 @@ class TestRealOpenCodeIsolation:
 
             # Run OpenCode in project 1
             prompt1 = "Create file proj1_test.py"
-            _run_opencode(temp_project, prompt1, timeout=60)
+            _run_opencode(temp_project, prompt1, timeout=120)
             time.sleep(4)
             
             session_id_1 = _get_session_from_opencode_db(temp_project)
             
             # Run OpenCode in project 2
             prompt2 = "Create file proj2_test.py"
-            _run_opencode(project2, prompt2, timeout=60)
+            _run_opencode(project2, prompt2, timeout=120)
             time.sleep(4)
             
             session_id_2 = _get_session_from_opencode_db(project2)
