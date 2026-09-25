@@ -24,6 +24,7 @@ from memory.capture import (
     SessionInfo,
 )
 from memory import store as store_mod
+from memory import synthetic as synthetic_mod
 from memory import transcript as transcript_mod
 from memory import episodic as episodic_mod
 from trace_memory import project as project_mod
@@ -304,7 +305,11 @@ class OpenCodeDatabaseMonitor:
         
         role = message_data.get("role", "assistant")
         content = message_data.get("content", "")
-        
+
+        if synthetic_mod.is_synthetic_memory_text(content):
+            # TRACE-injected memory must not become ordinary transcript memory.
+            return
+
         if content:
             # Determine session_id from the message
             session_id = message.get("session_id", "")
@@ -346,6 +351,9 @@ class OpenCodeDatabaseMonitor:
         if part_type == "text":
             # Text content - could be user or assistant message
             text_content = part_data.get("text", "")
+            if synthetic_mod.is_synthetic_memory_text(text_content):
+                # TRACE-injected memory must not become ordinary transcript memory.
+                return
             if text_content:
                 # Attribute user vs assistant via the parent message row.
                 role = self._parent_message_role(part["message_id"]) or "assistant"

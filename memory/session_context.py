@@ -27,6 +27,7 @@ from typing import Any
 
 from memory import redact as redact_mod
 from memory import store as store_mod
+from memory import synthetic as synthetic_mod
 from memory import transcript as transcript_mod
 
 MAX_TAIL_MESSAGES = 10
@@ -75,6 +76,9 @@ def _tail_messages(conn: sqlite3.Connection, exclude_session_id: str | None) -> 
             except AttributeError:
                 continue
             if role not in ("user", "assistant") or not content:
+                continue
+            if synthetic_mod.is_synthetic_memory_text(content):
+                # Injected memory must never be re-surfaced as prior content.
                 continue
             text, _ = _truncate(content, MAX_ITEM_CHARS)
             items.append({"kind": "message", "role": role, "text": redact_mod.redact_text(text)})

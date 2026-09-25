@@ -178,15 +178,21 @@ class TestAutomaticContinuity:
         # A. Deterministic retrieval proof (no model involved): recompute
         # exactly what the plugin assembled for session 2 and require the
         # marker-bearing block. This fails only on a real retrieval bug.
-        from memory import session_context as session_context_mod
+        from memory import message_context as message_context_mod
+        from memory import synthetic as synthetic_mod
+        from tests.memory.test_real_opencode_blackbox import _opencode_db_path
 
-        recomputed = session_context_mod.get_session_start_context(
-            project_mod.db_path(project), exclude_session_id=session_id_2
+        recomputed = message_context_mod.get_message_start_context(
+            project_mod.db_path(project),
+            opencode_db_path=_opencode_db_path(),
+            project_dir=project,
         )
+        assert recomputed["stats"]["resolved"] is True
+        assert recomputed["stats"]["currentSession"] == session_id_2
         assert MARKER in recomputed["text"], (
             "retrieval layer did not produce marker-bearing context for session 2"
         )
-        assert recomputed["text"].startswith("<TRACE MEMORY>")
+        assert recomputed["text"].startswith(synthetic_mod.SYNTHETIC_TITLE)
 
         # B. Mechanism proof from the plugin sidecar (not MCP, not manual).
         entries = _retrieval_log_entries(project)
@@ -198,6 +204,7 @@ class TestAutomaticContinuity:
             f"expected exactly one injection for session 2, got {len(session2_injections)}: "
             f"{json.dumps(entries)[:1000]}"
         )
+        assert session2_injections[0].get("channel") == "messages.transform"
         assert session2_injections[0].get("items", 0) >= 1
         assert session2_injections[0].get("error") in (None, "")
         print(f"injection overhead: {session2_injections[0].get('latencyMs')}ms")

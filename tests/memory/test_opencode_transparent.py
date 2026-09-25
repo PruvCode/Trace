@@ -215,10 +215,13 @@ def test_setup_installs_memory_plugin(temp_project):
     assert plugin_path.exists()
     source = plugin_path.read_text(encoding="utf-8")
 
-    # Hook registration + once-per-session guard present.
-    assert "experimental.chat.system.transform" in source
-    assert "traceInjectedSessions" in source
-    assert "output.system.push" in source
+    # Hook registration + resolved-session guard present. The user-channel
+    # path replaces system injection; the old hook must be gone.
+    assert "experimental.chat.messages.transform" in source
+    assert "experimental.chat.system.transform" not in source
+    assert "traceMsgInjectedSessions" in source
+    assert "output.messages.unshift" in source
+    assert "synthetic" in source
     # Thin glue only: no database logic, no npm dependencies in JS.
     assert "sqlite" not in source.lower()
     assert "node_modules" not in source
@@ -228,7 +231,8 @@ def test_setup_installs_memory_plugin(temp_project):
     assert all('node:' in imp for imp in dynamic_imports), dynamic_imports
     # Baked absolute paths (consistent with the MCP command).
     assert ".agent-memory" in source and "memory.db" in source
-    assert "memory.session_context" in source
+    assert "opencode.db" in source
+    assert "memory.message_context" in source
     # Fail-open: every fallible section is guarded.
     assert source.count("try {") >= 2
 
