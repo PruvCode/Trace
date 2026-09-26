@@ -677,9 +677,13 @@ class OpenCodeTransparentAdapter(CaptureAdapter):
         finally:
             conn.close()
 
-    # Automatic retrieval is handled via MCP - when OpenCode starts with the
-    # TRACE MCP server configured, it can call search_transcripts/get_transcript_session
-    # automatically. This is configured in the opencode.json created by setup_integration.
+    # Automatic retrieval is handled by the project-local plugin
+    # (memory.opencode_plugin / memory.message_context): on
+    # experimental.chat.messages.transform it resolves the current session
+    # from OpenCode's session table, assembles the bounded prior-session
+    # block, and unshifts one labeled synthetic user-channel message.
+    # The MCP server remains for explicit agent queries
+    # (search_transcripts / get_transcript_session / search_events).
 
 
 def create_opencode_transparent_adapter(config: Optional[CaptureConfig] = None) -> OpenCodeTransparentAdapter:

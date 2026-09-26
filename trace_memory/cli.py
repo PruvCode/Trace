@@ -144,7 +144,7 @@ def build_parser() -> argparse.ArgumentParser:
     setup_sub = sub.add_parser("setup", help="configure automatic capture for a coding agent")
     setup_sub.add_argument("agent", choices=["opencode"], help="agent to integrate")
     setup_sub.add_argument("--project", default=".", help="project directory (default: current directory)")
-    setup_sub.add_argument("--transparent", action="store_true", help="enable transparent capture (monitor OpenCode database)")
+    setup_sub.add_argument("--transparent", action="store_true", help="enable automatic capture and memory injection (monitor OpenCode database + install retrieval plugin)")
     setup_sub.set_defaults(func=cmd_setup)
 
     # Capture subcommand for running a session with automatic capture
@@ -498,7 +498,7 @@ def cmd_setup(args) -> int:
         print(json.dumps(result, sort_keys=True, default=str))
         if result.get("status") == "created":
             if args.transparent:
-                print("Transparent capture enabled. Run 'opencode' normally - TRACE will capture automatically.", file=sys.stderr)
+                print("Automatic OpenCode memory enabled. Run 'opencode' normally - TRACE captures automatically and injects prior-session memory automatically.", file=sys.stderr)
             else:
                 print("Run 'trace capture opencode \"your prompt\"' to start a session with automatic capture.", file=sys.stderr)
         return EXIT_OK
