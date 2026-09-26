@@ -6,11 +6,13 @@ neutral AgentResult contract. Lives alongside LLMAgent; selected via config
 `agent: opencode`.
 
 Per-run setup:
-- `<workspace>/opencode.json`: fixed permission profile, written by this
-  adapter. The benchmark runner (which owns the memory seam) adds the local
-  memory-server section for reference runs before this agent executes, and
-  this agent removes the file afterwards. The raw event stream is kept at
-  `<workspace>/.agent-memory/opencode_transcript.jsonl`.
+- `<workspace>/opencode.json`: minimal config (schema only), written by this
+  adapter. No `permission` block is written: any custom permission block
+  makes free-tier `opencode run` fail with 403 FreeTierError, verified
+  against the live provider. The benchmark runner (which owns the memory
+  seam) adds the local memory-server section for reference runs before this
+  agent executes, and this agent removes the file afterwards. The raw event
+  stream is kept at `<workspace>/.agent-memory/opencode_transcript.jsonl`.
 
 Metric mapping (documented, no estimation):
 - turns = step_start events; tool_calls = tool_use parts; usage = summed
@@ -48,19 +50,13 @@ MEMORY_TOOL_NAMES = frozenset(
     }
 )
 
-# File-navigation basics allowed (read/edit/glob/grep); everything else the
-# TRACE core tools do not provide stays denied (no shell, no subagents, no
-# network). Identical for baseline and reference runs.
-PERMISSION_PROFILE = {
-    "read": "allow",
-    "edit": "allow",
-    "glob": "allow",
-    "grep": "allow",
-    "bash": "deny",
-    "task": "deny",
-    "webfetch": "deny",
-    "websearch": "deny",
-}
+# NOTE: no permission profile is emitted. An earlier revision restricted tools
+# here (read/edit/glob/grep allowed; bash/task/web denied), but any custom
+# `permission` block makes free-tier `opencode run` fail with 403
+# FreeTierError, so benchmark runs must not write one. Both arms therefore
+# run under default tool permissions; fairness holds because the generated
+# config is identical apart from the runner-owned `mcp` section, and the
+# runner records the full tool log per run for post-hoc attribution.
 
 CONFIG_FILENAME = "opencode.json"
 TRANSCRIPT_FILENAME = "opencode_transcript.jsonl"
@@ -76,10 +72,13 @@ def canonical_tool_name(reported: str) -> str:
 
 
 def build_opencode_config() -> dict:
-    """Permission-only per-run opencode.json content (no secrets)."""
+    """Minimal per-run opencode.json content (no secrets, no permission block).
+
+    The `permission` key is deliberately absent: free-tier `opencode run`
+    rejects custom permission blocks with 403 FreeTierError.
+    """
     return {
         "$schema": "https://opencode.ai/config.json",
-        "permission": dict(PERMISSION_PROFILE),
     }
 
 

@@ -54,12 +54,28 @@ def test_parse_events_no_usage_stays_unknown():
 
 
 def test_build_config_baseline_has_no_mcp(tmp_path):
-    # Agent adapter stays permission-only; the memory seam lives in the runner.
+    # Agent adapter stays minimal; the memory seam lives in the runner.
     _ = tmp_path
     config = build_opencode_config()
     assert "mcp" not in config
-    assert config["permission"]["bash"] == "deny"
-    assert config["permission"]["edit"] == "allow"
+    assert config["$schema"] == "https://opencode.ai/config.json"
+
+
+def test_generated_configs_have_no_permission_block(tmp_path):
+    # Free-tier `opencode run` rejects custom permission blocks with 403
+    # FreeTierError, so neither arm may emit one. Baseline and reference
+    # differ only by the runner-owned `mcp` section.
+    import sys
+
+    from benchmark.runner import build_opencode_config_with_memory
+
+    base = build_opencode_config()
+    assert "permission" not in base
+    with_memory = build_opencode_config_with_memory(
+        [sys.executable, "-m", "memory.mcp_server"]
+    )
+    assert "permission" not in with_memory
+    assert with_memory["mcp"]["trace_memory"]["type"] == "local"
 
 
 def test_build_config_reference_points_at_run_db(tmp_path):

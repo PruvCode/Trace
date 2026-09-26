@@ -87,11 +87,13 @@ def _create_agent(config: dict, mock_behavior_override: str | None = None):
 
 
 def build_opencode_config_with_memory(mcp_command: list[str]) -> dict:
-    """Runner-owned seam: permission profile + local trace_memory server.
+    """Runner-owned seam: local trace_memory server on the minimal base config.
 
     Baseline never calls this (no ``mcp`` key). Reference calls it with the
     backend's MCPConfig.command so the out-of-process OpenCode binary spawns
-    the same per-run database. Lives in the runner (not the agent) to keep
+    the same per-run database. Neither arm writes a `permission` block:
+    free-tier `opencode run` rejects custom permission blocks with 403
+    FreeTierError. Lives in the runner (not the agent) to keep
     memory/MCP details out of the agent layer; runner.py already holds the
     narrow ``mcp`` architecture exemption for this purpose.
     """
@@ -112,7 +114,7 @@ def write_opencode_config_for_run(
     """Write the per-run opencode.json when a memory server exists.
 
     No-op when ``mcp_command`` is empty (baseline): the agent writes its
-    permission-only config itself. The file lives inside the isolated
+    minimal config itself. The file lives inside the isolated
     per-run workspace and the agent removes it afterwards.
     """
     if not mcp_command:
