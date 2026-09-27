@@ -153,7 +153,7 @@ def test_retrieval_error_fails_open(tmp_path):
 
 def test_secrets_redacted_before_injection(trace_db):
     secrets = [
-        "api_key = sk-abcdefghij1234567890ABCDEFGHIJKLMNOP",
+        "api_key = sk-test",
         "bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dummy-signature-value-here",
         "password = hunter2-secret",
         "postgres://admin:s3cretpw@db.internal:5432/app",

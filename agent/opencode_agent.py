@@ -55,7 +55,7 @@ MEMORY_TOOL_NAMES = frozenset(
 # `permission` block makes free-tier `opencode run` fail with 403
 # FreeTierError, so benchmark runs must not write one. Both arms therefore
 # run under default tool permissions; fairness holds because the generated
-# config is identical apart from the runner-owned `mcp` section, and the
+# config is identical apart from the runner-owned memory-server section, and the
 # runner records the full tool log per run for post-hoc attribution.
 
 CONFIG_FILENAME = "opencode.json"

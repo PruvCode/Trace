@@ -1,0 +1,6 @@
+# CODEOWNERS for TRACE.
+#
+# Owner handle below is taken from the repository's configured origin
+# (github.com/PruvCode/Trace). Verify it matches the intended maintainer
+# before relying on review enforcement.
+* @PruvCode

@@ -1,0 +1,8 @@
+# Dependabot: weekly pip updates for TRACE runtime + dev dependencies.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5

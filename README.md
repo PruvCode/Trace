@@ -303,15 +303,15 @@ sole benchmark orchestrator, `agent/` stays provider-neutral, and the new
 
 ## Testing
 
-Full suite: 404 tests collected, all local —
-no network, keys, or models required for the deterministic tests.
-Latest run: 385/385 deterministic tests passed. The remaining 19 are
+Full suite: 405 tests collected.
+The 388 deterministic tests are all local — no network, keys, or models
+required. Latest run: 388 passed, 1 teardown error. The remaining 17 are
 real-OpenCode integration tests that run the actual `opencode` binary
-against the free-tier model: timing-sensitive, with occasional provider
-latency/timeout flakes, and on Windows their fixtures can hit external
-file-lock teardown flakes (`WinError 32` from lingering handles) even
-when every test body passes. These limitations are environmental, not
-assertion failures in TRACE logic.
+against the free-tier model (network + model required): timing-sensitive,
+with occasional provider latency/timeout flakes, and on Windows their
+fixtures can hit external file-lock teardown flakes (`WinError 32` from
+lingering handles) even when every test body passes. These limitations
+are environmental, not assertion failures in TRACE logic.
 
 ## Limitations
 
@@ -349,3 +349,8 @@ don't add services, network calls, or dependencies without discussion.
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+The MIT license covers the TRACE software. The project name, tagline,
+and any logos are not a grant of endorsement: forks and derivatives
+should avoid implying affiliation with the TRACE maintainers. No
+trademark registration is claimed.
