@@ -3,7 +3,7 @@
 **TRACE gives coding agents persistent local memory across sessions — and measures whether that memory actually helps.**
 
 ```powershell
-git clone <repo-url> TRACE
+git clone https://github.com/PruvCode/Trace.git TRACE
 cd TRACE
 python -m pip install -e .
 trace init
@@ -51,7 +51,7 @@ Session N records findings → Session N+1 retrieves them. See
 Requirements: Python 3.11+. TRACE is installed from source:
 
 ```powershell
-git clone <repo-url> TRACE
+git clone https://github.com/PruvCode/Trace.git TRACE
 cd TRACE
 python -m venv .venv
 .venv\Scripts\Activate.ps1
@@ -72,7 +72,7 @@ The recommended workflow uses **transparent automatic capture** — TRACE monito
 
 ```powershell
 # 1. Install TRACE
-git clone <repo-url> TRACE
+git clone https://github.com/PruvCode/Trace.git TRACE
 cd TRACE
 python -m venv .venv
 .venv\Scripts\Activate.ps1
