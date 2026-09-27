@@ -46,6 +46,17 @@ your project                    agent (any MCP-compatible client)
 Session N records findings → Session N+1 retrieves them. See
 [`examples/auth-debug`](examples/auth-debug) for a 5-minute walkthrough.
 
+## Architecture
+
+![TRACE architecture](docs/architecture/trace-architecture.png)
+
+- **Agent layer** — OpenCode (automatic path validated with 1.18.32); any MCP-compatible client for explicit queries.
+- **TRACE memory layer** — structural, episodic, Git, and transcript services over one interface.
+- **Local storage** — one SQLite + FTS5 database per project (`.agent-memory/memory.db`); nothing leaves the machine.
+- **Automatic OpenCode path** — a monitor captures sessions into memory; a plugin injects bounded prior-session context at session start.
+- **MCP explicit-query path** — 9 tools over stdio; not required for automatic retrieval.
+- **Benchmark/research subsystem** — isolated baseline-vs-memory runs with mechanical evaluation ([interactive diagram](docs/architecture/trace-architecture.html), [memory flow](docs/architecture/trace-memory-flow.html), [benchmark flow](docs/architecture/trace-benchmark-flow.html)).
+
 ## Installation
 
 Requirements: Python 3.11+. TRACE is installed from source:
