@@ -16,6 +16,7 @@ build/
 # TRACE run outputs (generated, never committed)
 runs/
 .agent-memory/
+.trace-service/
 
 # Generated fixture git repos (seeded by scripts/seed_*.py)
 # Working trees are regenerated locally; only the seed scripts are tracked.
