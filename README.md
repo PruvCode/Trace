@@ -323,6 +323,18 @@ with Python 3.11+. Git-history features need a git repository. Temporary
 and run directories should live outside cloud-synced folders (OneDrive,
 etc.) for performance.
 
+### Compatibility matrix (honest, as of 2026-10-29)
+
+| Surface | Tested | Status / claim |
+|---|---|---|
+| OpenCode 1.18.32 — capture, plugin injection, MCP, per-request memory block | E2E in disposable environments (deterministic suites + live probes; 439-test suite green) | **Validated** on this version |
+| OpenCode 2.x (2.1.4 is installed locally) | not run | **NOT validated** — no compatibility claim |
+| OpenCode ~1.18.x neighbors (1.18.0–1.18.31, 1.18.33+) | not individually run | untested minor patches; hook DB schema expected stable within 1.18.x, unverified |
+| Any MCP-compatible agent (explicit `trace mcp` tools) | MCP server exercised in tests | tool layer agent-agnostic; automatic capture/injection needs the OpenCode hook path |
+| Python 3.11 (Windows) | full deterministic suite | validated |
+| Linux / macOS | code paths exist (`start_new_session`, POSIX signals); CI-environment testing | **not exercised** by this project's runs |
+| Structural indexing | Python files | Python-only by design |
+
 ## Development
 
 ```powershell
