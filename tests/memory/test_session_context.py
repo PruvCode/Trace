@@ -203,3 +203,22 @@ def test_repeated_assembly_is_deterministic(trace_db):
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+def test_query_pulls_older_relevant_message_past_the_recency_tail(tmp_path):
+    db = tmp_path / "memory.db"
+    conn = store_mod.connect(db)
+    store_mod.init_schema(conn)
+    transcript_mod.record_message(conn, session_id="ses_old", role="user",
+                                  content="Incident: accounts u-comp-7 and u-comp-19 were compromised; revoke their tokens.")
+    for i in range(12):
+        transcript_mod.record_message(conn, session_id="ses_new", role="assistant",
+                                      content=f"Unrelated pagination work, step {i}.")
+    conn.close()
+    plain = sc_mod.get_session_start_context(db, exclude_session_id="ses_now")
+    assert "u-comp-7" not in plain["text"]  # pushed out by the newer session
+    aware = sc_mod.get_session_start_context(
+        db, exclude_session_id="ses_now",
+        query="Revoke tokens tied to the recent account-compromise incident")
+    assert "u-comp-7" in aware["text"]
+    assert aware["stats"]["relevant_items"] == 1

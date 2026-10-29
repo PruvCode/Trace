@@ -39,7 +39,24 @@
   request. Independent A/B probe running; do not record product claims from either until
   the probe completes.
 
-## Risks to watch
+## Risks & new findings from the Phase-0 probes
+
+- **Invariant discovered (guide for future work): TRACE memory-effect evaluation lives at
+  the MECHANISM layer.** A raw free-model agent did not complete even a trivial recall
+  artifact under either injection policy — behavior-level measurement must come from
+  preregistered Phase-2 arms with stronger models or tighter task design, not intuition.
+- Session-A `setup_integration.monitoring` returned `"error"` in 4 of 5 A-sessions this
+  session (both policies), and the STOP-flush returned `busy: a monitor is already
+  capturing` — capture still recovered through the plugin's per-request `--ensure-capture`
+  (store facts present at end). Reproducible across probe runs: worth a dedicated
+  reliability investigation for the service start/stop lifecycle. Tracked below as DEF-2.
+- **DEF-2 (new) — capture service lifecycle instability at probe scale.** Symptom:
+  `monitoring:error` at setup + `capture busy` at flush while facts still got captured via
+  ensure-capture. Reproduced only in probe sandboxes so far (4/5 trials). Caveat: probe
+  homed-workspaces are short-lived; the pytest suite's monitor tests all pass. Needs a
+  focused repro before classification (service restart / lock contention on copied DBs).
+
+## Ongoing risks (recovery-era, still open)
 
 - Pinned tasks must never hard-reference SHA-256 of fixture *working trees* other than via
   the deterministic seeder SHAs (verified for history now).

@@ -36,9 +36,10 @@ artifacts.)
 | Recovery branch | DONE — `recovery/trace-2026-10-29` @ `2b72a71` pushed to GitHub. |
 | DEF-1 clean-checkout fixtures | FIXED — commit `246eea2` (track 12 source-backed fixtures) + `6aace71` (history fixture untracked; seeder owns its source). Pins re-verified. |
 | `test_analyze` failure | ROOT-CAUSED (empty task mapping from unseeded fixtures), not order dependence. |
-| Full deterministic suite, clean checkout | PASS — 438 passed, 29 skipped, 1 xfailed, 0 fail/err in 268.71s (468 collected, matches historical collection). |
-| Injection policy A/B probe | RUNNING — 2 trials per policy, content-free, disposable OpenCode 1.18.32 + `opencode/big-pickle`. |
-| Memory-test adoption (Claude's 3 test files) | PENDING — audit + revalidation after policy decision. |
+| Full deterministic suite, clean checkout | **PASS — 438/29/1(0) pre-adoption; 439/29/1(0) after adoption**, zero failures. |
+| Injection policy A/B probe | **DONE** — persistence premise verified (never persisted), A=1/9+1/8 injections, B=5/5, no dups; semantic recall inconclusive (weak model; honest record). Policy B adopted. |
+| Memory-test adoption (Claude's 3 test files) | DONE — audited (no weakening; policy-faithful re-encodings), 51 passed/1 xfailed focused, full suite green. |
+| Compatibility matrix | OpenCode 1.18.32 disposable VALIDATED E2E (capture, plugin injection, retrieval) again this session; 2.1.4 (installed) NOT RUN. |
 
 ## Pushed to GitHub (verified via ls-remote)
 

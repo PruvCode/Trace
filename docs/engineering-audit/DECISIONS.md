@@ -16,14 +16,17 @@ history from embedded constants (tracked final-state files would corrupt commit 
 commit 3 a no-op). Claude's one-line `seeded_fixture` workaround inside
 `test_task_categories_mapping` is documented but not adopted once the root cause only.
 
-**GLM-D3 (in progress) — injection policy decided by measurement, not narrative.** Claude's
-rationale (D3 there) is plausible but its evidence was self-run + one inject-once probe whose
-task used the fact in the first request. Phase 0 requires an independent, content-free A/B
-probe (`research/phase0/probe_injection_policy.py`): per policy, session A seeds a store fact
-via a real run; session B must run a tool call and then write a recall answer from memory on
-a later request; evidence = injection counts per request (retrieval.log), persistence probe
-of the synthetic block in the OpenCode store, deterministic recall scoring, tokens/latency.
-NO pragmatic decision until both trials complete.
+**GLM-D3 — FINAL: adopt per-request injection (Claude's baedd4b memory code + tests) on
+`phase/0-reliability`; reject once-per-session.** Evidence: independent probe
+(`research/phase0/probe_injection_policy.py`, jsonl evidence in-repo) — OpenCode never
+persists the synthetic block (verified under both policies via message/part-store scan);
+once-per-session thus structurally loses memory from request 2 onward (observed 1/9 and
+1/8 injection spread), while per-request supplies memory every request with dedup (5/5)
+and bounded overhead (`MAX_CHARS`, helper cached ~1 spawn/second). Claude's rewritten
+tests were audited for weakening and judged faithful re-encodings of the policy (including
+`sum(spawned) == 2` and leak checks). Semantic recall remains INCONCLUSIVE (weak free
+model failed the recall artifact under both policies; no product claim made from it) —
+proper semantic A/B belongs to Phase 2 arms, not this probe.
 
 **GLM-D4 — Permission-D overreach documented, not repeated.** Claude's `sanitize_pairs.py`
 opened per-project `.agent-memory` capture stores (read-only; COUNT queries only; a privacy

@@ -125,10 +125,11 @@ def test_recoverable_failure_is_retried_once_then_injects(helper_env, tmp_path):
     db = _trace_db_with(tmp_path, empty=False)
     report = _run_scenario(helper_env, tmp_path, db, requests=4, fail_times=1, name="retry1")
     assert report["spawns"] == 2, report["seen"]  # failed spawn + one repeat
-    # Injected exactly once per session (second attempt); later requests skip.
+    # Injected from the second attempt on, into every later request (the
+    # synthetic message is never persisted), and never as a duplicate.
     injected = [e["injected"] for e in report["seen"]]
-    assert injected == [False, True, False, False], report["seen"]
-    assert [e["copies"] for e in report["seen"]] == [0, 1, 0, 0], report["seen"]
+    assert injected == [False, True, True, True], report["seen"]
+    assert [e["copies"] for e in report["seen"]] == [0, 1, 1, 1], report["seen"]
 
 
 def test_permanent_failure_is_bounded(helper_env, tmp_path):
@@ -209,8 +210,10 @@ def test_diagnostic_line_reports_outcome(helper_env, tmp_path):
         assert key in first, (key, first)
     assert first["sessionID"] == "ses_B" and first["spawned"] is True
     injected_later = [e for e in entries if e.get("injected") is True]
-    assert len(injected_later) == 1, entries  # exactly one injection per session
-    assert injected_later[0]["items"] >= 1 and injected_later[0]["chars"] > 0
+    assert len(injected_later) == 3, entries  # every request after the retry
+    assert all(e["chars"] > 0 for e in injected_later)
+    assert injected_later[0]["spawned"] and injected_later[0]["items"] >= 1
+    assert sum(e["spawned"] for e in entries) == 2  # helper not rerun per request
     # Diagnostics never contain memory content (only sizes/flags).
     exported = json.dumps(entries)
     assert FACT_TEXT not in exported, "diagnostic log leaked memory content"

@@ -515,7 +515,7 @@ def test_prefixed_memory_tool_calls_captured_when_complete(env):
 
 # 9. Injection on later requests (the real plugin, run under node) ------------------
 
-def test_plugin_injects_once_per_session(tmp_path):
+def test_plugin_injects_every_request_without_duplicates(tmp_path):
     node = shutil.which("node")
     if node is None:
         pytest.skip("node is not installed")
@@ -570,9 +570,8 @@ await hook({}, already);
 // not add a second copy (the carried copy stays the only one).
 const carried = { messages: [msgC("user", blockText)] };
 await hook({}, carried);
-const blocks = [...already.messages, ...carried.messages]
-  .filter((m) => m.parts[0].text.startsWith("[TRACE PROJECT MEMORY")).length;
-console.log(JSON.stringify({ spawns, seen, blocks }));
+const count = (o) => o.messages.filter((m) => m.parts[0].text.startsWith("[TRACE PROJECT MEMORY")).length;
+console.log(JSON.stringify({ spawns, seen, blocks: [count(already), count(carried)] }));
 """,
         encoding="utf-8",
     )
@@ -582,15 +581,13 @@ console.log(JSON.stringify({ spawns, seen, blocks }));
     assert run.returncode == 0, run.stderr
     report = json.loads(run.stdout.strip().splitlines()[-1])
     assert report["spawns"] == 2, "python must run once per session (ses_B, ses_C), not once per request"
-    # The transform hook fires on every model request; the block is injected
-    # exactly once (first request). Later requests are skipped, not duplicated.
-    assert report["seen"][0]["first"].startswith("[TRACE PROJECT MEMORY"), report["seen"][0]
-    assert report["seen"][0]["count"] == 2 and report["seen"][0]["hasFact"]
-    for step in report["seen"][1:]:
-        assert not step["first"].startswith("[TRACE PROJECT MEMORY"), step
-        assert step["hasFact"] is False, "a later request injected the block again"
-    assert [s["count"] for s in report["seen"]] == [2, 2, 3]
-    assert report["blocks"] == 1, "a request already carrying the block must not get a second copy"
+    # The transform hook fires on every model request and the injected
+    # message is never persisted, so every request needs the block again.
+    for step in report["seen"]:
+        assert step["first"].startswith("[TRACE PROJECT MEMORY"), step
+        assert step["hasFact"], "a later agent step lost the memory block"
+    assert [s["count"] for s in report["seen"]] == [2, 3, 4]
+    assert report["blocks"] == [1, 1], "a request already carrying the block must not get a second copy"
 
 
 def test_helper_emits_utf8_on_a_piped_stdout(tmp_path):

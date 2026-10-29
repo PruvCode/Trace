@@ -20,10 +20,11 @@ So the plugin:
   and restarting capture first), caching the block in memory; a helper
   crash or non-zero exit is retried at most once more, while a clean
   run that injects nothing is final (never retried)
-- injects that block exactly once for the session (the transform hook
-  fires on every model request of the session, and the injected synthetic
-  message is never persisted, so the plugin marks the session injected
-  itself; later requests are skipped, never duplicated)
+- injects that block on every model request of the session: the injected
+  synthetic message is never persisted, so injecting only once would drop
+  the memory from every later agent step (e.g. right after a tool call)
+  and change the prompt prefix between requests; a request that already
+  carries a block never gets a second copy
 - appends a content-free JSON diagnostic line to
   ``.agent-memory/retrieval.log``
 - fails open on any error: OpenCode must keep working without memory
@@ -65,10 +66,6 @@ const traceBlocks = new Map();
 // still bounding spawns when the helper is broken for good.
 const traceAttempts = new Map();
 const TRACE_HELPER_ATTEMPTS = 2;
-// sessionID -> true once the block was injected; a session receives the
-// memory block exactly once (the injected synthetic message is never
-// persisted by OpenCode, so the plugin must track this itself).
-const traceInjected = new Set();
 
 function hasTraceBlock(messages) {
   return messages.some((m) => Array.isArray(m && m.parts) && m.parts.some(
@@ -93,6 +90,12 @@ export const TraceMemoryPlugin = async ({ directory }) => {
           return;
         }
         const owner = output.messages.find((m) => m && m.info && m.info.sessionID);
+        // The new session's own request text drives task-aware retrieval.
+        const userMsg = output.messages.find((m) => m && m.info && m.info.role === "user");
+        const taskText = userMsg && Array.isArray(userMsg.parts)
+          ? userMsg.parts.filter((p) => p && p.type === "text" && !p.synthetic && typeof p.text === "string")
+              .map((p) => p.text).join(" ").slice(0, 2000)
+          : "";
         sessionID = owner ? owner.info.sessionID : null;
         if (!sessionID) {
           reason = "no-session-id";
@@ -114,6 +117,7 @@ export const TraceMemoryPlugin = async ({ directory }) => {
               "--project-dir", directory,
               "--session-id", sessionID,
               "--ensure-capture",
+              ...(taskText ? ["--query", taskText] : []),
             ], { cwd: directory, stderr: "pipe", stdout: "pipe" });
           } catch (spawnError) {
             reason = "spawn-failed";
@@ -145,19 +149,14 @@ export const TraceMemoryPlugin = async ({ directory }) => {
         if (!block) {
           return;
         }
-        if (traceInjected.has(sessionID) || hasTraceBlock(output.messages)) {
-          // Duplicate injection prevention: a session receives the block
-          // exactly once. The transform hook fires on every model request
-          // of the session, but the injected synthetic message is never
-          // persisted, so the plugin itself must remember the injection.
-          reason = traceInjected.has(sessionID) ? "already-injected" : "already-present";
+        if (hasTraceBlock(output.messages)) {
+          reason = "already-present";
           return;
         }
         output.messages.unshift({
           info: { role: "user", sessionID },
           parts: [{ type: "text", synthetic: true, text: block }],
         });
-        traceInjected.add(sessionID);
         injected = true;
         chars = block.length;
       } catch (e) {

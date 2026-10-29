@@ -25,6 +25,7 @@ Policy:
 from __future__ import annotations
 
 import argparse
+import re
 import json
 import sqlite3
 import sys
@@ -115,6 +116,44 @@ def _tail_messages(
             remaining -= len(group)
     ordered = [item for group in reversed(groups) for item in group]
     return ordered, [group[0]["session"] for group in groups]
+
+
+_STOP = frozenset("""about after again also before being could does done each from have into just like make more most
+must need only other over same should some such than that their them then there these they this those through under
+until very want were what when where which while will with without would your code file files change changes""".split())
+
+
+def _query_terms(text: str, limit: int = 12) -> str | None:
+    """Longest distinctive words of the task prompt, OR-joined for FTS."""
+    words = dict.fromkeys(w.lower() for w in re.findall(r"[A-Za-z_][A-Za-z0-9_]{3,}", text or ""))
+    terms = [w for w in words if w not in _STOP][:limit]
+    return " OR ".join(terms) if terms else None
+
+
+def _relevant_messages(conn: sqlite3.Connection, query: str, exclude_session_id: str | None,
+                       limit: int = MAX_TAIL_MESSAGES) -> list[dict]:
+    """Prior-session messages ranked by match with the current task (best first)."""
+    terms = _query_terms(query)
+    if not terms:
+        return []
+    try:
+        hits = transcript_mod.search_messages(conn, query=terms, limit=limit * 3)
+    except (sqlite3.Error, ValueError, store_mod.SearchQueryError):
+        return []
+    out: list[dict] = []
+    for msg in hits:
+        content = (msg.content or "").strip()
+        if (msg.session_id == exclude_session_id or not content
+                or msg.role not in ("user", "assistant")
+                or synthetic_mod.is_synthetic_memory_text(content)
+                or transcript_mod.session_parent(conn, msg.session_id)):
+            continue
+        cap = MAX_ASSISTANT_ITEM_CHARS if msg.role == "assistant" else MAX_ITEM_CHARS
+        out.append({"kind": "message", "role": msg.role, "text": redact_mod.redact_text(_truncate(content, cap)[0]),
+                    "session": msg.session_id, "when": msg.timestamp})
+        if len(out) >= limit:
+            break
+    return out
 
 
 def _is_captured_tool_activity(data: object) -> bool:
@@ -262,8 +301,12 @@ def get_session_start_context(
     exclude_session_id: str | None = None,
     max_items: int = MAX_ITEMS,
     max_chars: int = MAX_CHARS,
+    query: str | None = None,
 ) -> dict[str, Any]:
     """Assemble bounded prior-session context. Never raises for DB problems.
+
+    With ``query`` (the new session's task prompt), prior messages that match
+    it are kept ahead of the plain recency tail.
 
     Returns {"items", "text", "truncated", "stats"}. Empty memory, missing
     DB, or any retrieval error yields items=[] and text="".
@@ -282,6 +325,13 @@ def get_session_start_context(
         conn = store_mod.connect(db_path)
         try:
             messages, prior_sessions = _tail_messages(conn, exclude_session_id)
+            if query:
+                seen = {m["text"] for m in messages}
+                relevant = [m for m in _relevant_messages(conn, query, exclude_session_id)
+                            if m["text"] not in seen]
+                # _select keeps the END of the list first, so relevant hits win.
+                messages = messages + list(reversed(relevant))
+                stats["relevant_items"] = len(relevant)
             # Staleness checks need the project tree: <project>/.agent-memory/memory.db
             root = db_path.resolve().parent.parent if db_path.parent.name == ".agent-memory" else None
             findings = _recent_findings(conn, root)
