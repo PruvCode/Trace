@@ -2,19 +2,30 @@
 
 TRACE owns retrieval (memory.message_context over memory.session_context);
 this module only owns the thin JavaScript glue installed into
-``.opencode/plugins/trace-memory.js``:
+``.opencode/plugins/trace-memory.js``.
 
-- registers ``experimental.chat.messages.transform`` (verified on 1.18.32)
-- runs ``python -m memory.message_context`` for the project directory
-- unshifts one clearly labeled synthetic user-channel message carrying a
-  bounded prior-memory block, once per session
-- the messages.transform hook carries no session identifier, so the
-  helper resolves the current session from OpenCode's own session table
-  (newest session row for this project directory) and the plugin guards
-  on that resolved identifier; unresolvable sessions inject nothing
-- appends a content-free JSON diagnostic line per attempt to
+Verified against OpenCode 1.18.34 with an isolated data directory:
+
+- ``experimental.chat.messages.transform`` fires on EVERY model request of a
+  session (one per agent step), with ``input = {}``
+- each message in ``output.messages`` carries ``info.sessionID``, so the
+  current session needs no guessing
+- a message unshifted by the hook is NOT persisted: it is absent from the
+  next request's ``output.messages``
+
+So the plugin:
+
+- reads the session id from the messages themselves
+- runs ``python -m memory.message_context`` once per session (catching up
+  and restarting capture first), caching the block in memory; a helper
+  crash or non-zero exit is retried at most once more, while a clean
+  run that injects nothing is final (never retried)
+- injects that block exactly once for the session (the transform hook
+  fires on every model request of the session, and the injected synthetic
+  message is never persisted, so the plugin marks the session injected
+  itself; later requests are skipped, never duplicated)
+- appends a content-free JSON diagnostic line to
   ``.agent-memory/retrieval.log``
-  (sessionID, channel, items, chars, injected, latency, error, reason)
 - fails open on any error: OpenCode must keep working without memory
 
 No SQLite in JS. No npm dependencies. No network.
@@ -25,10 +36,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from memory.opencode_service import default_opencode_db_path
 from trace_memory import project as project_mod
 
 PLUGIN_FILENAME = "trace-memory.js"
 PLUGIN_DIRNAME = ".opencode/plugins"
+PLUGIN_HEADER = "// TRACE automatic session-start memory (installed by TRACE setup)."
 
 
 def _js_string(value: str) -> str:
@@ -36,73 +49,117 @@ def _js_string(value: str) -> str:
     return json.dumps(value)
 
 
-def default_opencode_db_path() -> Path:
-    """Locate OpenCode's global database (same resolution as the monitor)."""
-    return Path.home() / ".local" / "share" / "opencode" / "opencode.db"
-
-
-PLUGIN_JS_TEMPLATE = """\
-// TRACE automatic session-start memory (installed by TRACE setup).
+PLUGIN_JS_TEMPLATE = PLUGIN_HEADER + """
 // PATHS BAKED AT INSTALL TIME - regenerated on every setup_integration.
 const TRACE_PYTHON = __TRACE_PYTHON__;
 const TRACE_DB = __TRACE_DB__;
 const OPENCODE_DB = __OPENCODE_DB__;
+const TRACE_LABEL = "[TRACE PROJECT MEMORY";
 
-const traceMsgInjectedSessions = new Set();
+// sessionID -> memory block ("" when there is nothing to inject).
+const traceBlocks = new Map();
+// sessionID -> helper spawn attempts used. A helper that runs and reports
+// "nothing to inject" (exit 0 + stats) is final, never retried. A crash or
+// non-zero exit is recoverable and may be retried at most ONCE more, so a
+// transient failure cannot permanently disable memory for a session while
+// still bounding spawns when the helper is broken for good.
+const traceAttempts = new Map();
+const TRACE_HELPER_ATTEMPTS = 2;
+// sessionID -> true once the block was injected; a session receives the
+// memory block exactly once (the injected synthetic message is never
+// persisted by OpenCode, so the plugin must track this itself).
+const traceInjected = new Set();
+
+function hasTraceBlock(messages) {
+  return messages.some((m) => Array.isArray(m && m.parts) && m.parts.some(
+    (p) => p && p.type === "text" && typeof p.text === "string" && p.text.startsWith(TRACE_LABEL)));
+}
 
 export const TraceMemoryPlugin = async ({ directory }) => {
   return {
     "experimental.chat.messages.transform": async (input, output) => {
       const started = Date.now();
-      let sessionID = "unknown";
+      let sessionID = null;
+      let spawned = false;
+      let injected = false;
       let items = 0;
       let chars = 0;
-      let injected = false;
-      let error = null;
       let reason = null;
+      let capture = null;
+      let error = null;
       try {
-        // The messages.transform hook carries no session identifier, so the
-        // helper resolves the current session from OpenCode's session table
-        // (newest row for this project directory) and excludes it from
-        // retrieval. Anything ambiguous resolves to no injection (fail open).
-        // Guard: inject once per resolved session. Later requests already
-        // carry accumulated turns; re-injection would only duplicate tokens.
-        // Marked only on successful push, so a failed first attempt may
-        // still succeed once later in the same session.
         if (!output || !Array.isArray(output.messages)) {
+          reason = "no-messages";
           return;
         }
-        const proc = Bun.spawnSync([
-          TRACE_PYTHON,
-          "-m",
-          "memory.message_context",
-          "--db",
-          TRACE_DB,
-          "--opencode-db",
-          OPENCODE_DB,
-          "--project-dir",
-          directory,
-        ], { cwd: directory, stderr: "pipe", stdout: "pipe" });
-        const block = proc.stdout ? proc.stdout.toString().trim() : "";
-        let stats = {};
-        try {
-          stats = JSON.parse(proc.stderr ? proc.stderr.toString() : "{}");
-        } catch {}
-        sessionID = stats.currentSession || "unknown";
-        items = stats.items || 0;
-        chars = stats.chars || 0;
-        reason = stats.reason || null;
-        if (proc.exitCode === 0 && block && stats.resolved === true && sessionID !== "unknown") {
-          if (traceMsgInjectedSessions.has(sessionID)) {
+        const owner = output.messages.find((m) => m && m.info && m.info.sessionID);
+        sessionID = owner ? owner.info.sessionID : null;
+        if (!sessionID) {
+          reason = "no-session-id";
+          return;
+        }
+        if (!traceBlocks.has(sessionID)) {
+          if ((traceAttempts.get(sessionID) || 0) >= TRACE_HELPER_ATTEMPTS) {
+            reason = "helper-failed";
             return;
           }
-          output.messages.unshift({
-            info: { role: "user" },
-            parts: [{ type: "text", synthetic: true, text: block }],
-          });
-          traceMsgInjectedSessions.add(sessionID);
-          injected = true;
+          spawned = true;
+          traceAttempts.set(sessionID, (traceAttempts.get(sessionID) || 0) + 1);
+          let proc = null;
+          try {
+            proc = Bun.spawnSync([
+              TRACE_PYTHON, "-m", "memory.message_context",
+              "--db", TRACE_DB,
+              "--opencode-db", OPENCODE_DB,
+              "--project-dir", directory,
+              "--session-id", sessionID,
+              "--ensure-capture",
+            ], { cwd: directory, stderr: "pipe", stdout: "pipe" });
+          } catch (spawnError) {
+            reason = "spawn-failed";
+          }
+          const out = proc && proc.stdout ? proc.stdout.toString().trim() : "";
+          let stats = {};
+          try {
+            stats = JSON.parse(proc && proc.stderr ? proc.stderr.toString() : "{}");
+          } catch {}
+          reason = reason || stats.reason || null;
+          capture = stats.capture || null;
+          items = stats.items || 0;
+          const exitCode = proc && typeof proc.exitCode === "number" ? proc.exitCode : 1;
+          if (out.startsWith(TRACE_LABEL)) {
+            traceBlocks.set(sessionID, out);
+            traceAttempts.delete(sessionID);
+          } else if (exitCode === 0 && stats.reason !== undefined) {
+            // Helper ran and deliberately injected nothing (fail-open reason):
+            // a final result for this session, not a retryable failure.
+            traceBlocks.set(sessionID, "");
+            traceAttempts.delete(sessionID);
+          } else if ((traceAttempts.get(sessionID) || 0) >= TRACE_HELPER_ATTEMPTS) {
+            traceBlocks.set(sessionID, "");
+            reason = "helper-failed";
+          }
+          // else: nothing cached yet, so the next request retries once.
         }
+        const block = traceBlocks.get(sessionID);
+        if (!block) {
+          return;
+        }
+        if (traceInjected.has(sessionID) || hasTraceBlock(output.messages)) {
+          // Duplicate injection prevention: a session receives the block
+          // exactly once. The transform hook fires on every model request
+          // of the session, but the injected synthetic message is never
+          // persisted, so the plugin itself must remember the injection.
+          reason = traceInjected.has(sessionID) ? "already-injected" : "already-present";
+          return;
+        }
+        output.messages.unshift({
+          info: { role: "user", sessionID },
+          parts: [{ type: "text", synthetic: true, text: block }],
+        });
+        traceInjected.add(sessionID);
+        injected = true;
+        chars = block.length;
       } catch (e) {
         error = String((e && e.message) || e);
       } finally {
@@ -113,9 +170,11 @@ export const TraceMemoryPlugin = async ({ directory }) => {
             ts: new Date().toISOString(),
             sessionID,
             channel: "messages.transform",
+            spawned,
+            injected,
             items,
             chars,
-            injected,
+            capture,
             latencyMs: Date.now() - started,
             error,
             reason,
@@ -139,18 +198,43 @@ def render_plugin(python_exe: str, trace_db: str, opencode_db: str) -> str:
     )
 
 
+def plugin_path(project_path: Path) -> Path:
+    return project_path.resolve() / PLUGIN_DIRNAME / PLUGIN_FILENAME
+
+
 def install_plugin(project_path: Path, opencode_db_path: Path | None = None) -> dict:
     """Write the project-local TRACE plugin. Returns status info."""
     project_path = project_path.resolve()
     trace_db = str(project_mod.db_path(project_path))
     python_exe = project_mod.mcp_server_command(project_path)[0]
-    opencode_db = str(opencode_db_path) if opencode_db_path is not None else str(default_opencode_db_path())
-    plugin_path = project_path / PLUGIN_DIRNAME / PLUGIN_FILENAME
-    plugin_path.parent.mkdir(parents=True, exist_ok=True)
-    existed = plugin_path.exists()
-    plugin_path.write_text(render_plugin(python_exe, trace_db, opencode_db), encoding="utf-8")
+    opencode_db = str(opencode_db_path or default_opencode_db_path())
+    target = plugin_path(project_path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    existed = target.exists()
+    target.write_text(render_plugin(python_exe, trace_db, opencode_db), encoding="utf-8")
     return {
         "status": "updated" if existed else "created",
-        "plugin_path": str(plugin_path),
+        "plugin_path": str(target),
         "message": "OpenCode TRACE memory plugin installed",
     }
+
+
+def uninstall_plugin(project_path: Path) -> dict:
+    """Remove the plugin only if TRACE wrote it (its header line matches)."""
+    target = plugin_path(project_path)
+    if not target.exists():
+        return {"status": "absent", "plugin_path": str(target)}
+    try:
+        first_line = target.read_text(encoding="utf-8").splitlines()[0]
+    except (OSError, IndexError):
+        first_line = ""
+    if first_line != PLUGIN_HEADER:
+        return {"status": "kept", "plugin_path": str(target),
+                "message": "file was not written by TRACE; left in place"}
+    target.unlink()
+    for parent in (target.parent, target.parent.parent):
+        try:
+            parent.rmdir()  # only succeeds when empty
+        except OSError:
+            break
+    return {"status": "removed", "plugin_path": str(target)}

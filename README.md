@@ -161,47 +161,55 @@ while keeping recorded events and transcripts.
 
 ### How it works
 
-1. **Setup** (`trace setup opencode --transparent`): Creates `opencode.json` with TRACE's MCP
-   memory server configured and installs a project-local retrieval plugin
-   (`.opencode/plugins/trace-memory.js`). One-time per project. Starts a background monitor
-   that watches OpenCode's database (`~/.local/share/opencode/opencode.db`).
+1. **Setup** (`trace setup opencode --transparent`): adds only a `trace-memory` entry to the
+   project's `opencode.json` (refusing, with the exact entry to add by hand, if the file is
+   not plain JSON — e.g. it has comments), installs a project-local plugin
+   (`.opencode/plugins/trace-memory.js`), and starts one background capture monitor for the
+   project. OpenCode's database is found via `$XDG_DATA_HOME` (default
+   `~/.local/share/opencode/opencode.db`). `trace teardown opencode` reverses all of this
+   and keeps your memory.
 
-2. **Capture** (Automatic): Run `opencode` normally. The monitor detects new sessions,
-   messages, and tool calls in real-time by watching OpenCode's SQLite database:
-   - User/assistant messages → Transcript memory
-   - Memory tool calls (find_definition, search_events, etc.) → Episodic events
-   - Tool results → Searchable context
+2. **Capture** (Automatic): Run `opencode` normally. The monitor copies rows once OpenCode has
+   finished writing them (streaming replies are captured complete, not half-written):
+   - User/assistant text → Transcript memory (status rows such as step-finish are not stored)
+   - Completed memory-tool calls (prefixed `trace-memory_*` names included) → searchable
+     capture activity (`trace events`), never shown as a "finding"
+   - Every row has a stable source id, so restarts and replays never duplicate it; a row that
+     fails to save is retried, never skipped, and the error is logged in
+     `.trace-service/service.log` (no message content) and shown by `trace service status`.
+   - After a crash or reboot, the next OpenCode session start catches up and restarts capture.
 
-3. **Retrieval** (Automatic): Run `opencode` again. The project-local plugin resolves
-   the current session, assembles a bounded block of prior-session memory from the
-   project's TRACE database, and injects it as one clearly labeled contextual message
-   (`[TRACE PROJECT MEMORY - ...]`) once per session — no manual TRACE command needed.
-   The MCP server remains available for explicit queries (`search_transcripts`,
-   `get_transcript_session`, `search_events`), and you can also use
-   `trace context "query"` to manually retrieve context for debugging.
+3. **Retrieval** (Automatic): Run `opencode` again. At the first model request of a session the
+   plugin builds a bounded block of prior memory (one Python run per session) and adds it,
+   clearly labeled (`[TRACE PROJECT MEMORY - ...]`), to **every** model request of that
+   session — OpenCode does not keep plugin-added messages between requests, so injecting
+   once would hide memory from later agent steps. The MCP server remains available for
+   explicit queries, and `trace context "query"` retrieves context manually.
 
 ### What is captured automatically
 
 | Event Type | Stored As | Queryable Via |
 |------------|-----------|---------------|
 | User message | Transcript | `trace transcript search`, `trace context` |
-| Assistant response | Transcript | `trace transcript search`, `trace context` |
-| Memory tool call (find_definition, search_events, etc.) | Episodic event | `trace events`, `trace context` |
-| Memory tool result | Transcript + Event | `trace transcript search`, `trace events` |
+| Assistant response (once complete) | Transcript | `trace transcript search`, `trace context` |
+| Completed memory-tool call | Event (`source=capture`) | `trace events` |
 
 ### What is NOT captured automatically
 
-- Shell commands (bash, git, etc.) — OpenCode permission profile denies these
-- Web searches / fetches — Denied by permission profile
-- File reads/writes outside memory tools — Not exposed in OpenCode's event stream
-- Secrets in messages — Redacted before storage (API keys, tokens, passwords)
+- Other tool calls and their output (shell, file reads/writes, web fetches)
+- Step markers and finish reasons ("tool-calls", "stop")
+- Sessions from other project directories (each project has its own database)
 
 ### Privacy
 
 - All capture happens locally — no network calls by TRACE
-- Secrets are redacted before persistence (basic patterns for API keys, tokens, passwords)
+- Best-effort redaction before storage and again before injection (Anthropic/OpenAI/GitHub/
+  Stripe/AWS/Slack/Google key formats, private keys, JWTs, connection strings, and
+  `password=`/`API_KEY=`-style assignments). Pattern matching cannot catch every secret:
+  do not treat captured transcripts as safe to share.
 - Transcript data stored in same local SQLite DB as other memory layers
-- User controls retention via `trace reset` or `trace monitor stop`
+- `trace service stop` pauses capture (it stays off until `trace service start`);
+  `trace reset . --yes` stops capture and deletes the project's memory
 
 ## Agent Integration
 
@@ -239,11 +247,26 @@ current or future OpenCode version exposes identical hooks.
 - Structural rows are rebuilt deterministically on `trace index`;
   episodic events are append-only until you run `trace reset`.
 - All queries are parameterized and result-bounded (default 10, max 50).
-- Automatic session-start retrieval policy: the most recent prior session's
-  tail (at most 10 user/assistant messages) plus recent episodic findings
-  (at most 5), capped at 20 items / 4000 characters, project-scoped,
-  deterministically ordered, fail-open (ambiguous sessions inject nothing),
-  with best-effort secret redaction.
+- Automatic session-start retrieval policy: the newest 10 user/assistant
+  messages — from the most recent prior session first, older sessions only
+  fill unused budget, subagent sessions skipped — plus up to 5 recent
+  recorded findings, capped at 20 items / 4000 characters (oldest messages
+  yield first; long messages keep head and tail), project-scoped,
+  deterministically ordered, fail-open, with best-effort secret redaction.
+- Recorded findings can carry a lifecycle (stored in the event payload; older
+  events stay valid): `status` is `hypothesis`, `observed` or `verified`, and
+  `supersedes` names earlier event ids a finding replaces
+  (`trace record --status verified --supersedes 12`, or the MCP
+  `record_event` tool's `status`/`supersedes` arguments). New sessions are
+  shown only current findings, with hypotheses and verified findings
+  labeled; superseded ones stay searchable (`superseded_by` in
+  `search_events`). A finding linked to a `file` is flagged
+  "may be stale" when that file changed or disappeared after it was
+  recorded; unrelated changes never flag it. Earlier transcript messages
+  carry no lifecycle: they are shown as history, labeled by session.
+- Search matches each word literally (so `refresh-token` and `v1.2.3` work),
+  ranks best match first with newer entries breaking ties, and reports a
+  query with no searchable words as an error rather than "no results".
 - Injected synthetic memory is labeled `[TRACE PROJECT MEMORY - ...]` and
   is never re-captured as ordinary transcript memory.
 - Inspect with `trace status` / `trace report`, or open the SQLite file
@@ -340,7 +363,7 @@ are environmental, not assertion failures in TRACE logic.
 - Model usefulness has been tested only within bounded conditions (single
   unambiguous prior fact: 9/9 valid recalls; multi-fact selection is weaker).
   No claim is made that memory improves coding performance.
-- Secret redaction uses basic pattern matching — not guaranteed to catch all secrets.
+- Secret redaction is best-effort pattern matching — not guaranteed to catch all secrets.
 - Benchmark evidence is pilot-scale; no effectiveness claims are made.
 - MCP integration is labeled by what it is (MCP-compatible agents),
   not by an exhaustive tested-client matrix.

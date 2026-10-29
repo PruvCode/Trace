@@ -98,14 +98,17 @@ def get_message_start_context(
     *,
     opencode_db_path: str | Path,
     project_dir: str | Path,
+    session_id: str | None = None,
     max_items: int = session_context_mod.MAX_ITEMS,
     max_chars: int = session_context_mod.MAX_CHARS,
 ) -> dict[str, Any]:
     """Assemble the user-channel memory block. Never raises for DB problems.
 
+    ``session_id`` is the current session as reported by the hook's own
+    messages (``info.sessionID``); when absent the session is resolved from
+    OpenCode's session table (legacy path, fails open on ambiguity).
     Returns ``{"items", "text", "truncated", "stats"}`` where ``stats``
-    carries ``resolved``/``reason``/``currentSession``. Unresolvable
-    sessions yield ``items=[]`` and ``text=""``.
+    carries ``resolved``/``reason``/``currentSession``.
     """
     started = time.perf_counter()
     stats: dict[str, Any] = {
@@ -116,7 +119,10 @@ def get_message_start_context(
         "finding_items": 0,
         "latency_ms": 0,
     }
-    resolution = resolve_current_session(opencode_db_path, project_dir)
+    if session_id:
+        resolution = {"ok": True, "session_id": session_id, "reason": "hook"}
+    else:
+        resolution = resolve_current_session(opencode_db_path, project_dir)
     stats["reason"] = resolution["reason"]
     if not resolution["ok"]:
         return {"items": [], "text": "", "truncated": False, "stats": stats}
@@ -141,20 +147,45 @@ def get_message_start_context(
 
 def main(argv: list[str] | None = None) -> int:
     """CLI: print the user-channel block (or nothing). Always fail-open."""
+    # The plugin reads our pipes as UTF-8. On Windows a piped stdout defaults
+    # to the ANSI code page (cp1252), where one "→" in memory raised
+    # UnicodeEncodeError and silently disabled injection for the session.
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description="Assemble TRACE user-channel memory")
     parser.add_argument("--db", required=True, help="TRACE memory.db path")
     parser.add_argument("--opencode-db", required=True, help="OpenCode opencode.db path")
     parser.add_argument("--project-dir", required=True, help="Project directory to resolve")
+    parser.add_argument("--session-id", default=None, help="Current session id (from the hook)")
+    parser.add_argument(
+        "--ensure-capture", action="store_true",
+        help="catch up and (re)start the capture service before assembling",
+    )
     args = parser.parse_args(argv)
+    capture: dict = {}
+    if args.ensure_capture:
+        try:
+            from memory import opencode_service as service_mod
+
+            capture = service_mod.get_service(
+                Path(args.project_dir), opencode_db_path=Path(args.opencode_db)
+            ).ensure_running()
+        except Exception as exc:  # noqa: BLE001 - memory must never break OpenCode
+            capture = {"status": "error", "message": f"{type(exc).__name__}"}
     try:
         result = get_message_start_context(
-            args.db, opencode_db_path=args.opencode_db, project_dir=args.project_dir
+            args.db,
+            opencode_db_path=args.opencode_db,
+            project_dir=args.project_dir,
+            session_id=args.session_id,
         )
     except Exception:
         return 0
     stats = dict(result.get("stats", {}))
     stats["items"] = len(result.get("items", []))
     stats["chars"] = sum(len(item.get("text", "")) for item in result.get("items", []))
+    if capture:
+        stats["capture"] = capture.get("status")
     sys.stderr.write(json.dumps(stats, sort_keys=True) + "\n")
     if result["text"]:
         sys.stdout.write(result["text"] + "\n")

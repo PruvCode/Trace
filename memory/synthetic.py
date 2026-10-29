@@ -31,6 +31,39 @@ def is_synthetic_memory_text(content: object) -> bool:
     return isinstance(content, str) and content.startswith(SYNTHETIC_LABEL)
 
 
+def render_lines(items: list[dict]) -> list[str]:
+    """Body lines shared by every memory block.
+
+    Messages are grouped per source session (chronological); the most
+    recent session is headed "Previous session", older ones "Earlier
+    session", each with its last-activity time when known.
+    """
+    lines: list[str] = []
+    messages = [i for i in items if i.get("kind") == "message"]
+    findings = [i for i in items if i.get("kind") == "finding"]
+    groups: list[list[dict]] = []
+    for item in messages:
+        if groups and groups[-1][0].get("session") == item.get("session"):
+            groups[-1].append(item)
+        else:
+            groups.append([item])
+    for index, group in enumerate(groups):
+        label = "Previous session" if index == len(groups) - 1 else "Earlier session"
+        when = group[0].get("when")
+        if lines:
+            lines.append("")
+        lines.append(f"{label} ({when}):" if when else f"{label}:")
+        for item in group:
+            lines.append(f"  - {item.get('role')}: {item.get('text')}")
+    if findings:
+        if lines:
+            lines.append("")
+        lines.append("Recent findings:")
+        for item in findings:
+            lines.append(f"  - {item.get('role')}: {item.get('text')}")
+    return lines
+
+
 def render_user_block(items: list[dict]) -> str:
     """Render budgeted retrieval items as a labeled user-channel block.
 
@@ -40,16 +73,4 @@ def render_user_block(items: list[dict]) -> str:
     """
     if not items:
         return ""
-    lines = [SYNTHETIC_TITLE, "Previous session:"]
-    messages = [i for i in items if i.get("kind") == "message"]
-    findings = [i for i in items if i.get("kind") == "finding"]
-    for item in messages:
-        lines.append(f"  - {item.get('role')}: {item.get('text')}")
-    if findings:
-        lines.append("")
-        lines.append("Recent findings:")
-        for item in findings:
-            lines.append(f"  - {item.get('role')}: {item.get('text')}")
-    lines.append("")
-    lines.append(SYNTHETIC_FOOTER)
-    return "\n".join(lines)
+    return "\n".join([SYNTHETIC_TITLE, *render_lines(items), "", SYNTHETIC_FOOTER])
