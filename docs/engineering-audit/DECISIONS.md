@@ -38,3 +38,15 @@ certified evidence without re-derivation.
 **GLM-D5 — Ledger home is `docs/engineering-audit/`.** Claude's `docs/autopilot/` (only on
 its local branch) remains research evidence to be cherry-picked and reconciled; this ledger
 carries engineering decisions, sync, and test truth for work done in `trace-glm`.
+
+**GLM-D6 — Phase 1 adopted as evidence, not as completed research.** `phase/1-research`
+carries Claude's committed `docs/autopilot/` decision/evidence record + its final
+uncommitted edits, and `research/phase1/` (sanitizer + capture audit + AI-assisted
+labels), all verbatim with a `PROVENANCE.md` reading guide (status semantics,
+supersessions, Permission-D caveat). Positions taken: (a) pilot labels are AI-assisted
+only and reviewers disagree — no human ground truth exists yet (B2 pending); (b)
+Phase-1 synthetic-material capture/retrieval quality evidence already in-tree is the
+deterministic suite + the Phase-0 probes; no new private-store access is authorized or
+performed; (c) Claude's B5 `fixtures_src/` recommendation is superseded by the Phase-0
+in-place root-cause fix; (d) anything REPORTED-not-reexecuted (E7, E8) stays labeled as
+such and cannot anchor release claims.

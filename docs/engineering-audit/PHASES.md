@@ -3,9 +3,9 @@
 | Phase | Status | Gate evidence | Branch → push |
 |---|---|---|---|
 | Recovery (TASK 4/6) | **COMPLETE** | 28/28 WIP fidelity; scans clean; remote SHA verified | `recovery/trace-2026-10-29` @ `2b72a71` ✔ pushed |
-| Phase 0 — reconcile/stabilize | **GATE PASSED (pending final commit/PR)** | fixtures reproducible; clean-checkout suites green pre- and post-adoption; A/B probe evidence recorded; policy B adopted | `phase/0-reliability` (adoption commit follows) |
-| Phase 1 — memory research | BLOCKED (human labels) / partial | selection-bias analysis verified; capture-audit derived with documented Permission-D caveat; pilot review AI-assisted only | not pushed yet |
-| Phase 2 — controlled evaluation | NOT STARTED (harness validated; prereg exists) | requires Phase 0 stable baseline | — |
+| Phase 0 — reconcile/stabilize | **GATE PASSED** | fixtures reproducible; suites green pre/post adoption; A/B probe evidence; policy B adopted; DEF-2 classified; compatibility matrix | `phase/0-reliability` @ `309f58a` ✔ pushed; PR #1 open |
+| Phase 1 — memory research | **EVIDENCE ADOPTED** (research artifacts + docs reconcile); human labels & paid-model arms still BLOCKED (B1/B2) | AI-assisted labels verified content-free; PROVENANCE.md reading rules; synthetic-material quality = suite + Phase-0 probes | `phase/1-research` (this branch) |
+| Phase 2 — controlled evaluation | NOT STARTED (harness validated; prereg binding) | requires Phase 0 stable baseline | next branch |
 | Phase 3 — justified improvements | NOT STARTED | gated on Phase 1/2 evidence | — |
 | Phase 4 — hardening/release | NOT STARTED | incl. OpenCode 2.x + docs accuracy + final audit | — |
 

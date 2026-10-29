@@ -1,0 +1,6 @@
+{"reviewer":"B","kind":"AI-assisted (Claude subagent), NOT human","pairs":[
+{"pair":"pair1","P1":"yes","P2":"no","P3":"unclear","memory_would_help":"yes","steps_saveable":15,"confidence":"high"},
+{"pair":"pair2","P1":"yes","P2":"yes","P3":"unclear","memory_would_help":"yes","steps_saveable":12,"confidence":"med"},
+{"pair":"pair3","P1":"yes","P2":"yes","P3":"unclear","memory_would_help":"yes","steps_saveable":8,"confidence":"med"},
+{"pair":"pair4","P1":"yes","P2":"no","P3":"unclear","memory_would_help":"partial","steps_saveable":5,"confidence":"low"},
+{"pair":"pair5","P1":"yes","P2":"no","P3":"unclear","memory_would_help":"partial","steps_saveable":6,"confidence":"med"}]}
