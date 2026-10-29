@@ -50,3 +50,19 @@ deterministic suite + the Phase-0 probes; no new private-store access is authori
 performed; (c) Claude's B5 `fixtures_src/` recommendation is superseded by the Phase-0
 in-place root-cause fix; (d) anything REPORTED-not-reexecuted (E7, E8) stays labeled as
 such and cannot anchor release claims.
+
+**GLM-D7 — Phase-2 run dispositions, fixed BEFORE the run (2026-10-29, staged on
+`phase/2-eval` before the full preregistered run produced any outcome row).**
+(a) The preregistration is binding as written (10 tasks, C0–C3, reps=2, seed 20261028,
+shuffles per task, hidden eval scoring, task-cluster bootstrap 10k, ±30–40 pp
+distinguishability, smaller diffs reported INCONCLUSIVE).
+(b) Validation smoke runs are engineering-only, written to a separate root
+(`%TEMP%\trace_p2_smoke`), and EXCLUDED from the analysis dataset — they are junked
+after log-level sanity checks and never pooled with the preregistered data.
+(c) No third rep is planned (decided now, before outcomes; the prereg reserves a third
+rep only for time-allowing cases, decided before looking at outcome differences).
+(d) Workers=2 (interleaved tasks; prior agent ran the same way; per-task isolation is
+by separate workspaces/homes).
+(e) The prior agent's partial `run1.jsonl`/`smoke.jsonl` are kept as provenance-only
+prior data and are NOT pooled into the dataset or the analysis.
+(f) Analysis uses the adopted `analyze_phase2.py` run ONLY on the GLM full-run JSONL.
