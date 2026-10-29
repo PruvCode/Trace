@@ -26,6 +26,7 @@ runs/
 fixtures/*/.git/
 fixtures/*/.agent-memory/
 fixtures/swebench_repo/
+fixtures/history_repo/
 fixtures/toy_repo/.git/
 fixtures/history_repo/.git/
 fixtures/deps_repo/.git/
