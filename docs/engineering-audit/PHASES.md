@@ -16,4 +16,5 @@
 - [x] Root-caused `test_analyze` failure (fixture absence → empty category mapping), no test weakening.
 - [x] Justified injection policy: per-request adopted on probe evidence (A spread 1/9+1/8, B 5/5, non-persistence verified both, no dups, audit of Claude's tests = no weakening); semantic recall recorded as INCONCLUSIVE.
 - [x] Honest compatibility matrix (OpenCode 1.18.32 disposable E2E validated this session; 2.1.4 NOT VALIDATED — recorded).
+- [x] DEF-2 classified (model-free repro): `monitoring:error` = documented "OpenCode DB not found" precondition (probe lacked the harness primer; self-healed via plugin ensure-capture); flush `busy` = capture_once single-capture guard. No product fix; Phase-3 candidate status (`not_ready`) recorded.
 - [ ] Phase ledger updated with final SHAs; branch pushed; PR opened; merge only after full gate review.

@@ -48,13 +48,29 @@
 - Session-A `setup_integration.monitoring` returned `"error"` in 4 of 5 A-sessions this
   session (both policies), and the STOP-flush returned `busy: a monitor is already
   capturing` — capture still recovered through the plugin's per-request `--ensure-capture`
-  (store facts present at end). Reproducible across probe runs: worth a dedicated
-  reliability investigation for the service start/stop lifecycle. Tracked below as DEF-2.
-- **DEF-2 (new) — capture service lifecycle instability at probe scale.** Symptom:
-  `monitoring:error` at setup + `capture busy` at flush while facts still got captured via
-  ensure-capture. Reproduced only in probe sandboxes so far (4/5 trials). Caveat: probe
-  homed-workspaces are short-lived; the pytest suite's monitor tests all pass. Needs a
-  focused repro before classification (service restart / lock contention on copied DBs).
+  (store facts present at end). CLASSIFIED — see DEF-2.
+- **DEF-2 — CLASSIFIED: no capture-service defect; two designed behaviors.** Focused,
+  model-free repro (`%TEMP%\trace_recon\def2_repro.py`, evidence below) reproduced both
+  symptoms deterministically:
+  1. `monitoring:"error"` at setup = the documented precondition path: a fresh XDG home
+     where OpenCode has never run has no `data/opencode/opencode.db`, and
+     `start_monitoring` fails fast with message "OpenCode database not found … Run
+     OpenCode at least once first." GLM's A/B probe ran session-A setup BEFORE the first
+     OpenCode invocation (Claude's Phase-2 harness had an `opencode models` primer; our
+     probe lacked it). After priming, the identical call returns `"started"`. The
+     plugin's `ensure_running` then legitimately recovers capture once OpenCode runs —
+     the observed "self-heal". Not a defect.
+  2. `capture busy: a monitor is already capturing` at flush = `capture_once`'s
+     concurrency guard correctly refusing to double-capture while the plugin-started
+     monitor holds the lock; after `stop()`, `capture_once` returns `ok` (captured 0).
+     Not a defect.
+  Phase-3 candidate (record only): `setup_integration` could return a distinct
+  precondition status (e.g. `not_ready`) instead of generic `error`, so harnesses can
+  distinguish "OpenCode not run yet" from a genuine failure; plus auto-priming guidance
+  in docs. Evidence (deterministic): no-db → exact error message with the sandbox path;
+  primer (rc 0, db created) → `{"monitoring": {"status": "started", "pid": …}}`;
+  flush-while-live → busy + `living: true` + clean `stopped`; flush-after-stop →
+  `{"status": "ok", "captured": 0}` + `living: false`.
 
 ## Ongoing risks (recovery-era, still open)
 

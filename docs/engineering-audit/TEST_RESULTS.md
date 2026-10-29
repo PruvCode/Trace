@@ -55,3 +55,18 @@ Verified conclusions (mechanism-level):
    (`spawns == 2` across sessions), as asserted by the updated plugin tests.
 
 Probe JSONL evidence: `research/phase0/results/probe_policy{A,B}_trial.jsonl`.
+
+## DEF-2 focused repro (model-free, `%TEMP%\trace_recon\def2_repro.py`)
+
+| Step | Expected | Observed |
+|---|---|---|
+| setup_integration, fresh home, no OpenCode DB | precondition error, verbatim message | `{"monitoring": {"status": "error", "message": "OpenCode database not found at <sandbox>\data\opencode\opencode.db. Run OpenCode at least once first."}}` |
+| `opencode models` primer (disposable 1.18.32) | rc 0 and DB created | rc 0; `db exists now: True` |
+| setup_integration again | service starts | `{"monitoring": {"status": "started", "pid": 5364}}` |
+| `capture_once` while monitor live | busy guard | `{"status": "busy", "message": "a monitor is already capturing"}`, `living: true` |
+| `stop()` | clean stop | `{"status": "stopped"}` |
+| `capture_once` after stop | idle catch-up ok | `{"status": "ok", "captured": 0}`, `living: false` |
+
+Verdict: both probe-era DEF-2 symptoms are designed behavior (precondition fail-fast +
+single-capture guard); no product fix. Phase-3 candidate recorded: distinct
+`not_ready` status instead of generic `error`.
