@@ -37,6 +37,7 @@ def validate_message(
     content: str,
     timestamp: str | None = None,
     metadata: dict | None = None,
+    source_id: str | None = None,
 ) -> dict:
     """Normalize one transcript message or raise ValueError describing the problem."""
     if not isinstance(session_id, str) or not session_id.strip():
@@ -49,6 +50,8 @@ def validate_message(
         metadata = {}
     if not isinstance(metadata, dict):
         raise ValueError("metadata must be a dict or None")
+    if source_id is not None and (not isinstance(source_id, str) or not source_id.strip()):
+        raise ValueError("source_id must be a non-empty string or None")
     try:
         metadata_text = json.dumps(metadata, sort_keys=True)
     except (TypeError, ValueError) as exc:
@@ -60,23 +63,43 @@ def validate_message(
         "timestamp": timestamp or utcnow_iso(),
         "metadata": metadata,
         "metadata_text": metadata_text,
+        "source_id": source_id.strip() if source_id else None,
     }
 
 
-def record_message(conn: sqlite3.Connection, **fields) -> int:
-    """Validate, persist, and index one transcript message; return its id."""
+def record_message(conn: sqlite3.Connection, autocommit: bool = True, **fields) -> int:
+    """Validate, persist, and index one transcript message; return its id.
+
+    ``source_id`` is the stable identity of the upstream record (an OpenCode
+    part/message/session id). When present, recording the same source twice is
+    a no-op: the second call returns the existing row's id instead of
+    inserting a duplicate. This makes replay after an interrupted capture
+    safe even when the monitor's ROWID cursor has rolled back.
+
+    Without a ``source_id`` the call behaves as before and always inserts,
+    because nothing can distinguish a genuine repeat from a replay.
+    ``autocommit=False`` leaves the transaction open for a caller that batches.
+    """
     msg = validate_message(**fields)
-    cursor = conn.execute(
-        "INSERT INTO transcript_messages (session_id, role, content, timestamp, metadata)"
-        " VALUES (?, ?, ?, ?, ?)",
-        (
-            msg["session_id"],
-            msg["role"],
-            msg["content"],
-            msg["timestamp"],
-            msg["metadata_text"],
-        ),
-    )
+    values = (msg["session_id"], msg["role"], msg["content"], msg["timestamp"], msg["metadata_text"])
+    columns = "session_id, role, content, timestamp, metadata"
+    if msg["source_id"] is None:
+        # Plain insert: also works on databases not yet migrated.
+        cursor = conn.execute(
+            f"INSERT INTO transcript_messages ({columns}) VALUES (?, ?, ?, ?, ?)", values
+        )
+    else:
+        cursor = conn.execute(
+            f"INSERT INTO transcript_messages ({columns}, source_id) VALUES (?, ?, ?, ?, ?, ?)"
+            " ON CONFLICT(source_id) WHERE source_id IS NOT NULL AND source_id <> '' DO NOTHING",
+            (*values, msg["source_id"]),
+        )
+    if cursor.rowcount == 0:
+        # Already recorded from this source. Return the existing id.
+        row = conn.execute(
+            "SELECT id FROM transcript_messages WHERE source_id = ?", (msg["source_id"],)
+        ).fetchone()
+        return row[0]
     msg_id = cursor.lastrowid
     conn.execute(
         "INSERT INTO transcript_messages_fts (rowid, session_id, role, content)"
@@ -88,7 +111,8 @@ def record_message(conn: sqlite3.Connection, **fields) -> int:
             msg["content"],
         ),
     )
-    conn.commit()
+    if autocommit:
+        conn.commit()
     return msg_id
 
 
@@ -111,9 +135,11 @@ def search_messages(
     query: str | None = None,
     limit: int = 10,
 ) -> list[TranscriptMessage]:
-    """Narrow bounded retrieval. Insertion-ordered (deterministic).
+    """Narrow bounded retrieval.
 
-    Malformed FTS queries return [] by design, mirroring search_symbols.
+    Without a text query results are insertion-ordered. With one, the best
+    match comes first and newer messages break ties. Query terms match
+    literally; an unusable query raises store.SearchQueryError.
     """
     if role is not None and role not in ROLES:
         raise ValueError(f"unknown role filter {role!r}; expected one of {sorted(ROLES)}")
@@ -128,20 +154,22 @@ def search_messages(
     if role is not None:
         clauses.append("tm.role = ?")
         params.append(role)
+    join = ""
+    order = "tm.id"
     if query is not None and query.strip():
-        clauses.append(
-            "tm.id IN (SELECT rowid FROM transcript_messages_fts WHERE transcript_messages_fts MATCH ?)"
-        )
-        params.append(query.strip())
+        join = " JOIN transcript_messages_fts ON transcript_messages_fts.rowid = tm.id"
+        clauses.append("transcript_messages_fts MATCH ?")
+        params.append(store_mod.fts_query(query))
+        order = "bm25(transcript_messages_fts), tm.id DESC"
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     try:
         rows = conn.execute(
             "SELECT tm.id, tm.session_id, tm.role, tm.content, tm.timestamp, tm.metadata"
-            f" FROM transcript_messages tm {where} ORDER BY tm.id LIMIT ?",
+            f" FROM transcript_messages tm{join} {where} ORDER BY {order} LIMIT ?",
             (*params, store_mod.clamp_limit(limit)),
         ).fetchall()
-    except sqlite3.OperationalError:
-        return []
+    except sqlite3.OperationalError as exc:
+        raise store_mod.SearchQueryError(f"transcript search failed: {exc}") from exc
     return [_row_to_message(row) for row in rows]
 
 
@@ -162,13 +190,66 @@ def get_session_messages(
     return [_row_to_message(row) for row in rows]
 
 
+# Captured OpenCode parts that are status markers, not conversation.
+NON_CONVERSATIONAL_PART_TYPES = ("step-finish", "step-start", "tool", "reasoning")
+
+
+def get_recent_conversation(
+    conn: sqlite3.Connection,
+    session_id: str,
+    limit: int = 10,
+) -> list[TranscriptMessage]:
+    """The newest ``limit`` user/assistant messages of a session, oldest first.
+
+    Status rows captured from OpenCode (``step-finish`` reasons such as
+    "tool-calls"/"stop", step markers) are excluded in SQL so they can never
+    use up the budget, including rows stored by older capture versions.
+    Text from an abandoned turn (``metadata.incomplete``) stays searchable
+    but is never offered as conversation: it can stop mid-sentence.
+    """
+    if not isinstance(session_id, str) or not session_id.strip():
+        raise ValueError("session_id must be a non-empty string")
+    placeholders = ", ".join("?" for _ in NON_CONVERSATIONAL_PART_TYPES)
+    rows = conn.execute(
+        "SELECT id, session_id, role, content, timestamp, metadata"
+        " FROM transcript_messages"
+        " WHERE session_id = ? AND role IN ('user', 'assistant')"
+        " AND trim(content) <> ''"
+        " AND COALESCE(json_extract(CASE WHEN json_valid(metadata) THEN metadata END,"
+        f" '$.part_type'), '') NOT IN ({placeholders})"
+        " AND NOT COALESCE(json_extract(CASE WHEN json_valid(metadata) THEN metadata END,"
+        " '$.incomplete'), 0)"
+        " ORDER BY id DESC LIMIT ?",
+        (session_id.strip(), *NON_CONVERSATIONAL_PART_TYPES, store_mod.clamp_limit(limit)),
+    ).fetchall()
+    return [_row_to_message(row) for row in reversed(rows)]
+
+
+def session_parent(conn: sqlite3.Connection, session_id: str) -> str | None:
+    """Parent session id recorded at capture time (subagent sessions), if any."""
+    row = conn.execute(
+        "SELECT metadata FROM transcript_messages WHERE session_id = ? AND role = 'system'"
+        " AND source_id = ? LIMIT 1",
+        (session_id, f"session:{session_id}"),
+    ).fetchone()
+    if not row:
+        return None
+    try:
+        meta = json.loads(row[0])
+    except (TypeError, ValueError):
+        return None
+    parent = meta.get("parent_id") if isinstance(meta, dict) else None
+    return parent or None
+
+
 def list_sessions(conn: sqlite3.Connection, limit: int = 50) -> list[dict]:
     """List distinct session_ids with message counts, newest first."""
     rows = conn.execute(
         "SELECT session_id, COUNT(*) as count, MAX(timestamp) as last_activity"
         " FROM transcript_messages"
         " GROUP BY session_id"
-        " ORDER BY last_activity DESC"
+        # Timestamps have one-second precision; ties go to the latest insert.
+        " ORDER BY last_activity DESC, MAX(id) DESC"
         " LIMIT ?",
         (store_mod.clamp_limit(limit),),
     ).fetchall()

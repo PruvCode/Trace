@@ -80,8 +80,10 @@ def test_unknown_and_malformed_queries(indexed_db):
     assert store_mod.find_callers(conn, "no_such_symbol") == []
     assert store_mod.find_definition(conn, "   ") == []
     assert store_mod.search_symbols(conn, "") == []
-    assert store_mod.search_symbols(conn, '"unbalanced') == []
-    assert store_mod.search_symbols(conn, "OR") == []
+    assert store_mod.search_symbols(conn, '"unbalanced') == []  # literal term, no hits
+    # Nothing searchable is an error, distinct from a valid query with no hits.
+    with pytest.raises(store_mod.SearchQueryError):
+        store_mod.search_symbols(conn, "OR")
 
 
 def test_import_edges_recorded(indexed_db):

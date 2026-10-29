@@ -100,12 +100,24 @@ def record_event(
     file: str | None = None,
     symbol: str | None = None,
     payload: dict | None = None,
+    status: str | None = None,
+    supersedes: list[int] | None = None,
 ) -> dict:
     """Record one episodic event (investigation/attempt/decision/observation).
 
     Agent-reported events are claims, not ground truth; use source="git"
-    only for deterministic derivations. Invalid input raises to the client.
+    only for deterministic derivations. ``status`` is "hypothesis" (not yet
+    checked), "observed" or "verified" (checked, e.g. by a passing test).
+    ``supersedes`` lists ids of earlier events this one replaces; they stay
+    searchable but are no longer offered as current findings. Link a finding
+    to the ``file`` it depends on so later sessions are warned when that file
+    changes. Invalid input raises to the client.
     """
+    payload = dict(payload or {})
+    if status is not None:
+        payload["status"] = status
+    if supersedes:
+        payload["supersedes"] = list(supersedes)
     conn = _connect()
     try:
         event_id = episodic_mod.record_event(

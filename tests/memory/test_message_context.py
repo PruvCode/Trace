@@ -277,10 +277,14 @@ def test_plugin_registers_guarded_user_channel(tmp_path):
     source = (proj / ".opencode" / "plugins" / "trace-memory.js").read_text(encoding="utf-8")
     assert "experimental.chat.messages.transform" in source
     assert "experimental.chat.system.transform" not in source
-    assert "traceMsgInjectedSessions" in source
+    # One Python spawn per session (cached block), injected on every request
+    # because OpenCode does not persist transformed messages (verified 1.18.34),
+    # deduplicated if a request already carries it.
+    assert "traceBlocks" in source
+    assert "info.sessionID" in source
+    assert "hasTraceBlock(output.messages)" in source
     assert "output.messages.unshift" in source
     assert "synthetic" in source
-    assert "stats.resolved === true" in source
     assert '"channel": "messages.transform"' in source or 'channel: "messages.transform"' in source
 
 
@@ -572,9 +576,10 @@ def test_three_session_continuity_without_echo(tmp_path):
         trace_db, opencode_db_path=ocdb, project_dir=proj
     )
     assert result["stats"]["currentSession"] == "ses-3"
-    # Most-recent-prior policy surfaces ses-2 only; the planted echo is skipped.
+    # Multi-session retrieval: both prior sessions (ses-2 and ses-1) are surfaced
+    # within budget; the synthetic echo in ses-2 is filtered out.
     assert "CONT-B-MARKER" in result["text"]
-    assert "CONT-A-MARKER" not in result["text"]
+    assert "CONT-A-MARKER" in result["text"]
     assert "worst-case echo" not in result["text"]
 
 

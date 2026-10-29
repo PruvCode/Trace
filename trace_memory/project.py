@@ -549,12 +549,21 @@ def reset_project(project: Path) -> dict:
     project = project.resolve()
     mem = memory_dir(project)
     db = db_path(project)
+    # A running monitor holds the database open (and would recreate it).
+    service = opencode_service_mod.get_service(project).stop(disable=True)
     if not mem.exists():
-        return {"project": str(project), "removed": False}
+        return {"project": str(project), "removed": False, "service": service}
     import shutil
 
     shutil.rmtree(mem, ignore_errors=False)
-    return {"project": str(project), "removed": True, "db_was": str(db)}
+    return {"project": str(project), "removed": True, "db_was": str(db), "service": service}
+
+
+def teardown_opencode(project: Path) -> dict:
+    """Reverse OpenCode setup: stop capture, remove plugin + MCP entry; keep memory."""
+    project = project.resolve()
+    adapter = opencode_transparent_mod.create_opencode_transparent_adapter()
+    return adapter.teardown_integration(project)
 
 
 def setup_opencode_integration(project: Path) -> dict:
