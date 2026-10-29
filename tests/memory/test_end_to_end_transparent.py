@@ -12,6 +12,8 @@ This test simulates the full flow by directly manipulating OpenCode's database
 and verifying TRACE captures and persists the data correctly.
 """
 
+from contextlib import closing
+from memory.opencode_service import default_opencode_db_path  # noqa: E402
 import time
 import sqlite3
 import tempfile
@@ -70,6 +72,15 @@ def temp_project():
                 time.sleep(2)
         except Exception as e:
             print(f"[temp_project teardown] best-effort service stop: {e}")
+        # OpenCode orphans can hold the TRACE database past CLI exit; reap
+        # test-owned trees (matched by the disposable directory path) first.
+        from tests.memory.test_real_opencode_blackbox import (
+            _reap_test_owned_opencode_processes,
+        )
+
+        reaped = _reap_test_owned_opencode_processes(tmp)
+        if reaped:
+            print(f"[temp_project teardown] reaped opencode tree pids: {reaped}")
         _rmtree_with_retry(Path(tmp))
 
 
@@ -106,10 +117,10 @@ def test_end_to_end_transparent_capture(temp_project):
     
     # Step 2: Simulate Session 1 - User codes with OpenCode
     # We simulate by inserting directly into OpenCode's database
-    opencode_db = Path.home() / ".local" / "share" / "opencode" / "opencode.db"
+    opencode_db = default_opencode_db_path()
     session_id = f"ses_e2e_test_session_1_{int(time.time() * 1000)}"
     
-    with sqlite3.connect(opencode_db) as conn:
+    with closing(sqlite3.connect(opencode_db)) as conn:
         cursor = conn.cursor()
         # Insert session using dict-based insert to avoid column count issues
         session_data = {
@@ -163,13 +174,16 @@ def test_end_to_end_transparent_capture(temp_project):
         """, (msg_id_2, session_id, int(time.time() * 1000) + 1000, int(time.time() * 1000) + 1000,
               '{"role":"assistant","content":"I will create a quantum_banana.py module with a calculate_banana_tax function"}'))
         
-        # Insert tool call (memory tool)
+        # Insert a completed memory-tool call, named the way OpenCode reports
+        # MCP tools ("<server>_<tool>"). Lookups are captured as searchable
+        # activity; record_event calls are not, because the MCP server already
+        # stores that event and capturing the call would duplicate it.
         part_id = f"prt_e2e_tool_1_{int(time.time() * 1000)}"
         cursor.execute("""
             INSERT INTO part (id, message_id, session_id, time_created, time_updated, data)
             VALUES (?, ?, ?, ?, ?, ?)
         """, (part_id, msg_id_2, session_id, int(time.time() * 1000) + 500, int(time.time() * 1000) + 500,
-              '{"type":"tool","tool":"record_event","callID":"call_123","state":{"status":"completed","input":{"type":"observation","symbol":"calculate_banana_tax","payload":{"finding":"quantum tax is 42"}}}}'))
+              '{"type":"tool","tool":"trace-memory_search_events","callID":"call_123","state":{"status":"completed","input":{"query":"quantum tax is 42","symbol":"calculate_banana_tax"},"output":"[]"}}'))
         conn.commit()
 
     # The transaction above is committed at block exit. Prove it with a
@@ -186,7 +200,7 @@ def test_end_to_end_transparent_capture(temp_project):
     
     # Step 4: Verify TRACE captured the session
     trace_db = project_mod.db_path(temp_project)
-    with sqlite3.connect(trace_db) as conn:
+    with closing(sqlite3.connect(trace_db)) as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM transcript_messages WHERE session_id = ?", (session_id,))
         rows = cursor.fetchall()
@@ -214,7 +228,7 @@ def test_end_to_end_transparent_capture(temp_project):
     
     # Step 6: Simulate Session 2 - New OpenCode session
     session_id_2 = f"ses_e2e_test_session_2_{int(time.time() * 1000)}"
-    with sqlite3.connect(opencode_db) as conn:
+    with closing(sqlite3.connect(opencode_db)) as conn:
         cursor = conn.cursor()
         # Insert session using dict-based insert to avoid column count issues
         session_data_2 = {

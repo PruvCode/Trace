@@ -6,6 +6,9 @@ session data automatically. They do NOT simulate by inserting into the database.
 REAL_OPENCode_TEST = POSSIBLE
 """
 
+from contextlib import closing
+from memory.opencode_service import default_opencode_db_path  # noqa: E402
+import os
 import tempfile
 import time
 import sqlite3
@@ -19,27 +22,171 @@ from trace_memory import project as project_mod
 from memory import transcript as transcript_mod
 
 
+def _db_hold_probe(path: Path) -> str:
+    """Exclusive-open probe: 'free' iff no process holds any handle on the path."""
+    import ctypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateFileW.restype = ctypes.c_void_p  # default c_int truncates INVALID_HANDLE_VALUE to -1 and breaks the check below
+    INVALID = ctypes.c_void_p(-1).value
+    handle = kernel32.CreateFileW(str(path), 0x80000000, 0, None, 3, 0, None)
+    if handle != INVALID and handle is not None:
+        kernel32.CloseHandle(handle)
+        return "free"
+    return "HELD"
+
+
+def _rmtree_with_retries(path: Path, timeout: float = 120.0) -> None:
+    """Remove a tree, retrying transient Windows file locks with backoff.
+
+    Mirrors test_441_environment._rmtree_with_retry (defined here once so
+    both files share one implementation without import cycles; that module
+    imports this one). Every retry logs the hold state of any memory.db
+    under the tree so a teardown failure is self-diagnosing.
+    """
+    import gc
+    import shutil
+
+    # Release any GC-delayed sqlite handles held by this process itself.
+    gc.collect()
+    pending = list(path.rglob("memory.db"))
+    deadline = time.time() + timeout
+    attempt = 0
+    while True:
+        try:
+            shutil.rmtree(path, ignore_errors=False)
+            return
+        except PermissionError:
+            attempt += 1
+            states = ("; ".join(f"{db.parent.parent.name}: {_db_hold_probe(db)}"
+                                for db in pending) or "n/a")
+            if time.time() >= deadline:
+                print(f"[rmtree retries exhausted after {attempt} attempts] holds: {states}")
+                raise
+            print(f"[rmtree retry {attempt}] holds: {states}")
+            time.sleep(2.0)
+
+
+def _reap_test_owned_opencode_processes(marker: str, timeout: float = 30.0) -> list[int]:
+    """Terminate test-owned OpenCode/plugin trees left behind by a run.
+
+    The real ``opencode run`` CLI can leave an orphaned serve/plugin/MCP tree
+    alive for minutes after it returns its exit code (observed on this
+    machine with 1.18.32: the tree holds the project's TRACE database open,
+    breaking rmtree for over 120s). Such processes are identified strictly
+    by OUR unique disposable-directory ``marker`` appearing in their command
+    line (the ``--dir`` argument and ``--db`` path arguments), which a user's
+    own OpenCode session can never contain, and are force-killed with
+    taskkill /T (the same validated last resort the capture service itself
+    uses for orphaned monitors). Returns the reaped pids for diagnostics.
+    """
+    import time as _time
+
+    if not marker:
+        return []
+
+    listing = subprocess.run(
+        ["powershell", "-NoProfile", "-Command",
+         "Get-CimInstance Win32_Process | Where-Object { $_.Name -in "
+         "'opencode.exe','python.exe','node.exe' } | ForEach-Object "
+         "{ \"$($_.ProcessId)|$($_.Name)|$($_.CommandLine)\" }"],
+        capture_output=True, text=True, timeout=timeout)
+    reaped = []
+    for line in listing.stdout.splitlines():
+        parts = line.split("|", 2)
+        if len(parts) != 3 or marker not in parts[2]:
+            continue
+        pid = parts[0].strip()
+        if pid.isdigit() and pid not in reaped:
+            reaped.append(pid)
+            subprocess.run(["taskkill", "/F", "/T", "/PID", pid],
+                           capture_output=True, text=True, timeout=timeout)
+    # Forceful kills; give the OS a moment to complete teardown of the trees.
+    # (No process-list confirmation here: a -like probe on the marker would
+    # match this helper's own CommandLine. The retry-rmtree that follows is
+    # the bounded safety net for any straggler.)
+    if reaped:
+        _time.sleep(1.0)
+    else:
+        # Diagnostics: nothing matched the unique marker. Scope out which
+        # opencode/python/node processes were alive at teardown; a persisting
+        # database hold with none of these points at an external holder
+        # (e.g. an antivirus scanner) rather than a leaked test process.
+        candidates = [line for line in listing.stdout.splitlines()
+                      if line.strip()]
+        shortened = [c[:110] for c in candidates][:12]
+        print(f"[reaper] no marker-matched processes; candidates seen: {shortened}")
+    return [int(pid) for pid in reaped]
+
+
 @pytest.fixture()
 def temp_project():
     """Create a temporary project with TRACE initialized."""
-    with tempfile.TemporaryDirectory() as tmp:
+    from memory.opencode_service import get_service
+
+    tmp = tempfile.mkdtemp()
+    marker = tmp  # unique disposable path: strict ownership marker for reaping
+    try:
         project = Path(tmp) / "project"
         project.mkdir()
         (project / "main.py").write_text("def hello():\n    return 'world'\n", encoding="utf-8")
         project_mod.init_project(project)
         yield project
+    finally:
+        # The capture service (started in-body or by the plugin's helper) must
+        # be stopped before the directory disappears from under it.
+        try:
+            service = get_service(Path(tmp) / "project")
+            stopped = service.stop()
+            deadline = time.time() + 20.0
+            while service.is_running() and time.time() < deadline:
+                time.sleep(0.5)
+            if not stopped.get("stopped"):  # informational only
+                print(f"[temp_project teardown] service stop: {stopped}")
+        except Exception as exc:  # best effort; the reaper handles the rest
+            print(f"[temp_project teardown] best-effort service stop: {exc}")
+        # OpenCode 1.18 orphans its serve/plugin/MCP tree past CLI exit; those
+        # children hold the TRACE database, so reap before tree removal.
+        reaped = _reap_test_owned_opencode_processes(marker)
+        if reaped:
+            print(f"[temp_project teardown] reaped opencode tree pids: {reaped}")
+        _rmtree_with_retries(Path(tmp))
 
 
 def _opencode_db_path():
     """Get the OpenCode database path."""
-    return Path.home() / ".local" / "share" / "opencode" / "opencode.db"
+    return default_opencode_db_path()
+
+
+def _opencode_binary() -> str:
+    """Locate the real OpenCode executable (not a shell shim).
+
+    TRACE_OPENCODE_BIN selects a version-pinned, disposable install first
+    (the automatic path is validated with OpenCode 1.18.x; newer installed
+    versions may be incompatible). Otherwise: the npm install layout
+    changed across versions — ``opencode-ai/bin`` became
+    ``@opencode/cli/bin``; PATH may expose only the npm ``opencode`` shims
+    (.cmd/.ps1). Prefer the actual .exe beside the shim so no shell
+    wrapper layer is involved; otherwise use what PATH serves. Raises
+    (instead of returning None) so live tests fail with a clear message.
+    """
+    resolved = (os.environ.get("TRACE_OPENCODE_BIN")
+                or shutil.which("opencode") or shutil.which("opencode.cmd"))
+    if resolved is None:
+        raise FileNotFoundError(
+            "opencode executable not found on PATH; needed by live OpenCode tests")
+    candidate = Path(resolved).resolve()
+    npm_exe = candidate.parent / "node_modules" / "@opencode" / "cli" / "bin" / "opencode.exe"
+    if npm_exe.exists():
+        return str(npm_exe)
+    return str(candidate)
 
 
 def _run_opencode(project_path: Path, prompt: str, timeout: int = 150) -> subprocess.CompletedProcess:
     """Run OpenCode with a prompt in the given project directory."""
     # Use the actual opencode.exe binary directly (not the PowerShell wrapper)
     # Use a free model that doesn't require authentication
-    opencode_exe = Path.home() / "AppData" / "Roaming" / "npm" / "node_modules" / "opencode-ai" / "bin" / "opencode.exe"
+    opencode_exe = _opencode_binary()
     
     cmd = [
         str(opencode_exe),
@@ -48,7 +195,7 @@ def _run_opencode(project_path: Path, prompt: str, timeout: int = 150) -> subpro
         "--format", "json",
         "--dir", str(project_path),
         "--auto",  # auto-approve permissions
-        "--model", "opencode/nemotron-3-ultra-free",
+        "--model", "opencode/big-pickle",  # README-validated free model; 441 uses it
     ]
     result = subprocess.run(
         cmd,
@@ -65,7 +212,7 @@ def _get_session_from_opencode_db(project_path: Path) -> str | None:
     db_path = _opencode_db_path()
     # Normalize path for comparison (OpenCode stores with forward slashes)
     project_str = str(project_path.resolve()).replace("\\", "/")
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn:
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         cursor.execute("""
@@ -81,7 +228,7 @@ def _get_session_from_opencode_db(project_path: Path) -> str | None:
 def _count_transcript_messages(project_path: Path, session_id: str) -> int:
     """Count transcript messages in TRACE for a session."""
     trace_db = project_mod.db_path(project_path)
-    with sqlite3.connect(trace_db) as conn:
+    with closing(sqlite3.connect(trace_db)) as conn:
         cursor = conn.cursor()
         cursor.execute(
             "SELECT COUNT(*) FROM transcript_messages WHERE session_id = ?",
@@ -93,7 +240,7 @@ def _count_transcript_messages(project_path: Path, session_id: str) -> int:
 def _count_events(project_path: Path, session_id: str) -> int:
     """Count episodic events in TRACE for a session."""
     trace_db = project_mod.db_path(project_path)
-    with sqlite3.connect(trace_db) as conn:
+    with closing(sqlite3.connect(trace_db)) as conn:
         cursor = conn.cursor()
         cursor.execute(
             "SELECT COUNT(*) FROM events WHERE payload LIKE ?",
@@ -127,7 +274,7 @@ class TestRealOpenCodeBlackBox:
 
         # 2. Run REAL OpenCode
         prompt = "Create a simple hello.py file that prints 'hello from opencode'"
-        result = _run_opencode(temp_project, prompt, timeout=180)
+        result = _run_opencode(temp_project, prompt, timeout=480)
         
         # OpenCode MUST succeed for a valid capture test
         assert result.returncode == 0, (
@@ -154,7 +301,7 @@ class TestRealOpenCodeBlackBox:
 
         # 6. Verify actual interaction content
         trace_db = project_mod.db_path(temp_project)
-        with sqlite3.connect(trace_db) as conn:
+        with closing(sqlite3.connect(trace_db)) as conn:
             cursor = conn.cursor()
             cursor.execute(
                 "SELECT session_id, role, content FROM transcript_messages WHERE session_id = ? ORDER BY id",
@@ -204,7 +351,7 @@ class TestRealOpenCodeBlackBox:
 
         # Session 1 - deterministic prompt
         prompt1 = "Create a file alpha.txt containing the word ALPHA_ONLY"
-        result1 = _run_opencode(temp_project, prompt1, timeout=120)
+        result1 = _run_opencode(temp_project, prompt1, timeout=480)
         assert result1.returncode == 0, f"Session 1 failed: {result1.stderr[:500]}"
         time.sleep(4)
         
@@ -214,7 +361,7 @@ class TestRealOpenCodeBlackBox:
 
         # Session 2 - different deterministic prompt
         prompt2 = "Create a file beta.txt containing the word BETA_ONLY"
-        result2 = _run_opencode(temp_project, prompt2, timeout=120)
+        result2 = _run_opencode(temp_project, prompt2, timeout=480)
         assert result2.returncode == 0, f"Session 2 failed: {result2.stderr[:500]}"
         time.sleep(4)
         
@@ -237,7 +384,7 @@ class TestRealOpenCodeBlackBox:
 
         # Verify content isolation - session 1 has ALPHA_ONLY, session 2 has BETA_ONLY
         trace_db = project_mod.db_path(temp_project)
-        with sqlite3.connect(trace_db) as conn:
+        with closing(sqlite3.connect(trace_db)) as conn:
             cursor = conn.cursor()
             
             # Check session 1 has ALPHA_ONLY
@@ -295,7 +442,7 @@ class TestRealOpenCodePersistence:
         
         # Run OpenCode
         prompt = "Create a file cli_exit_test.py with content 'test'"
-        _run_opencode(temp_project, prompt, timeout=120)
+        _run_opencode(temp_project, prompt, timeout=480)
         time.sleep(5)
 
         # Verify capture happened
@@ -335,7 +482,7 @@ class TestRealOpenCodePersistence:
 
         # Session 1 - while service running
         prompt1 = "Create file restart1.py with content RESTART_BEFORE_STOP"
-        result1 = _run_opencode(temp_project, prompt1, timeout=120)
+        result1 = _run_opencode(temp_project, prompt1, timeout=480)
         assert result1.returncode == 0, f"Session 1 failed: {result1.stderr[:500]}"
         time.sleep(4)
         
@@ -352,7 +499,7 @@ class TestRealOpenCodePersistence:
 
         # Session 2 - while service STOPPED
         prompt2 = "Create file restart2.py with content RESTART_DURING_STOP"
-        result2 = _run_opencode(temp_project, prompt2, timeout=120)
+        result2 = _run_opencode(temp_project, prompt2, timeout=480)
         assert result2.returncode == 0, f"Session 2 failed: {result2.stderr[:500]}"
         time.sleep(4)
         
@@ -372,7 +519,7 @@ class TestRealOpenCodePersistence:
         # Verify session 1 not duplicated
         count1_after = _count_transcript_messages(temp_project, session_id_1)
         trace_db = project_mod.db_path(temp_project)
-        with sqlite3.connect(trace_db) as conn:
+        with closing(sqlite3.connect(trace_db)) as conn:
             cursor = conn.cursor()
             cursor.execute(
                 "SELECT COUNT(*) FROM transcript_messages WHERE session_id = ?",
@@ -430,7 +577,7 @@ class TestRealOpenCodePersistence:
 
         # Run OpenCode with deterministic content
         prompt = "Create file dedup_test.py with content DEDUP_TEST_CONTENT"
-        result = _run_opencode(temp_project, prompt, timeout=120)
+        result = _run_opencode(temp_project, prompt, timeout=480)
         assert result.returncode == 0, f"OpenCode failed: {result.stderr[:500]}"
         time.sleep(4)
         
@@ -444,7 +591,7 @@ class TestRealOpenCodePersistence:
 
         # Verify content before restart
         trace_db = project_mod.db_path(temp_project)
-        with sqlite3.connect(trace_db) as conn:
+        with closing(sqlite3.connect(trace_db)) as conn:
             cursor = conn.cursor()
             cursor.execute(
                 "SELECT content FROM transcript_messages WHERE session_id = ? AND role = 'user'",
@@ -466,7 +613,7 @@ class TestRealOpenCodePersistence:
         assert count_after == count_before, f"Duplicates detected: {count_before} -> {count_after}"
 
         # Verify content unchanged
-        with sqlite3.connect(trace_db) as conn:
+        with closing(sqlite3.connect(trace_db)) as conn:
             cursor = conn.cursor()
             cursor.execute(
                 "SELECT content FROM transcript_messages WHERE session_id = ? AND role = 'user'",
@@ -487,18 +634,19 @@ class TestRealOpenCodeIsolation:
         Test that two different projects have isolated capture.
         """
         # Create second project
-        with tempfile.TemporaryDirectory() as tmp2:
+        tmp2 = tempfile.mkdtemp()
+        try:
             project2 = Path(tmp2) / "project2"
             project2.mkdir()
             (project2 / "main.py").write_text("def hello():\n    return 'world'\n", encoding="utf-8")
             project_mod.init_project(project2)
 
             from memory.opencode_transparent import create_opencode_transparent_adapter
-            
+
             # Set up both projects
             adapter1 = create_opencode_transparent_adapter()
             adapter1.setup_integration(temp_project)
-            
+
             adapter2 = create_opencode_transparent_adapter()
             adapter2.setup_integration(project2)
 
@@ -506,32 +654,38 @@ class TestRealOpenCodeIsolation:
 
             # Run OpenCode in project 1
             prompt1 = "Create file proj1_test.py"
-            _run_opencode(temp_project, prompt1, timeout=120)
+            _run_opencode(temp_project, prompt1, timeout=480)
             time.sleep(4)
-            
+
             session_id_1 = _get_session_from_opencode_db(temp_project)
-            
+
             # Run OpenCode in project 2
             prompt2 = "Create file proj2_test.py"
-            _run_opencode(project2, prompt2, timeout=120)
+            _run_opencode(project2, prompt2, timeout=480)
             time.sleep(4)
-            
+
             session_id_2 = _get_session_from_opencode_db(project2)
-            
+
             # Verify isolation
             assert session_id_1 is not None
             assert session_id_2 is not None
             assert session_id_1 != session_id_2
 
-            count1 = _count_transcript_messages(temp_project, session_id_1)
-            count2 = _count_transcript_messages(project2, session_id_2)
-            
+            # Capture is eventual: poll to the guarantee instead of a fixed sleep
+            deadline = time.time() + 30.0
+            while time.time() < deadline:
+                count1 = _count_transcript_messages(temp_project, session_id_1)
+                count2 = _count_transcript_messages(project2, session_id_2)
+                if count1 >= 2 and count2 >= 2:
+                    break
+                time.sleep(1.0)
+
             assert count1 >= 2
             assert count2 >= 2
 
             # Cross-check: project 1 session not in project 2 TRACE
             trace_db2 = project_mod.db_path(project2)
-            with sqlite3.connect(trace_db2) as conn:
+            with closing(sqlite3.connect(trace_db2)) as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     "SELECT COUNT(*) FROM transcript_messages WHERE session_id = ?",
@@ -544,6 +698,9 @@ class TestRealOpenCodeIsolation:
             adapter2.stop_monitoring(project2)
             # Give extra time for service to release DB lock
             time.sleep(3)
+        finally:
+            _reap_test_owned_opencode_processes(tmp2)
+            _rmtree_with_retries(Path(tmp2))
 
 
 class TestNullDirectoryRegression:

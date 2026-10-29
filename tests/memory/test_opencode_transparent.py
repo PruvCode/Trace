@@ -219,7 +219,8 @@ def test_setup_installs_memory_plugin(temp_project):
     # path replaces system injection; the old hook must be gone.
     assert "experimental.chat.messages.transform" in source
     assert "experimental.chat.system.transform" not in source
-    assert "traceMsgInjectedSessions" in source
+    assert "traceBlocks" in source
+    assert "hasTraceBlock(output.messages)" in source
     assert "output.messages.unshift" in source
     assert "synthetic" in source
     # Thin glue only: no database logic, no npm dependencies in JS.

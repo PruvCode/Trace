@@ -6,7 +6,7 @@ Schema:
   symbols_fts: FTS5 index over (name, kind, file, signature), rowid = symbols.id
   events(type, timestamp, source, repo, commit?, file?, symbol?, payload JSON)
   events_fts: FTS5 index over (type, symbol, file, payload_text), rowid = events.id
-  transcript_messages(id, session_id, role, content, timestamp, metadata JSON)
+  transcript_messages(id, session_id, role, content, timestamp, metadata JSON, source_id)
   transcript_messages_fts: FTS5 index over (session_id, role, content), rowid = transcript_messages.id
 
 All queries are parameterized. All results are bounded (default 10, max 50).
@@ -15,6 +15,7 @@ FTS5 is an implementation detail of this backend; callers only see dicts.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from pathlib import Path
 
@@ -52,7 +53,8 @@ CREATE TABLE IF NOT EXISTS events (
     commit_sha TEXT,
     file TEXT,
     symbol TEXT,
-    payload TEXT NOT NULL DEFAULT '{}'
+    payload TEXT NOT NULL DEFAULT '{}',
+    source_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_events_type ON events(type);
 CREATE INDEX IF NOT EXISTS idx_events_symbol ON events(symbol);
@@ -65,7 +67,8 @@ CREATE TABLE IF NOT EXISTS transcript_messages (
     role TEXT NOT NULL,
     content TEXT NOT NULL,
     timestamp TEXT NOT NULL,
-    metadata TEXT NOT NULL DEFAULT '{}'
+    metadata TEXT NOT NULL DEFAULT '{}',
+    source_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_transcript_session ON transcript_messages(session_id);
 CREATE INDEX IF NOT EXISTS idx_transcript_timestamp ON transcript_messages(timestamp);
@@ -99,7 +102,110 @@ def connect(db_path: Path) -> sqlite3.Connection:
 
 def init_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(_SCHEMA)
+    _migrate_transcript_source_id(conn)
+    _migrate_events_source_id(conn)
     conn.commit()
+
+
+def _table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
+    return {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+
+
+SCHEMA_VERSION = 2
+
+
+def canonical_source_id(
+    source_id: str | None,
+    session_id: str,
+    role: str,
+    content: str,
+    metadata: dict,
+) -> str | None:
+    """The one source-id format shared by migration and capture.
+
+    ``part:<id>`` / ``message:<id>`` / ``session:<id>``. Older captured rows
+    carry the upstream id only in metadata (or, from an earlier unreleased
+    migration, as a bare id); both normalize to the same key, so a replay of
+    an already-captured part can never insert a second row.
+    """
+    if source_id and ":" in source_id:
+        return source_id
+    meta = metadata if isinstance(metadata, dict) else {}
+    # Only metadata shapes the capture path writes; a manual record that
+    # happens to carry one of these keys is left unconstrained.
+    if meta.get("part_id") and meta.get("part_type"):
+        return f"part:{meta['part_id']}"
+    if meta.get("message_id") and set(meta) == {"message_id"}:
+        return f"message:{meta['message_id']}"
+    if (
+        role == "system"
+        and meta.get("agent") == "opencode"
+        and isinstance(content, str)
+        and content.startswith("Session started")
+    ):
+        return f"session:{session_id}"
+    return source_id or None
+
+
+def _migrate_transcript_source_id(conn: sqlite3.Connection) -> None:
+    """Add ``transcript_messages.source_id`` (canonical format) + uniqueness.
+
+    Replaying a captured OpenCode row after an abrupt stop must be a no-op,
+    so every captured row needs a stable upstream identity backed by a
+    unique index. Data-preserving: rows without an identifiable source
+    (e.g. ``trace transcript record``) are untouched; only rows that
+    provably came from the same upstream record are collapsed, keeping the
+    earliest, and their FTS rows go with them. Runs once per database
+    (``PRAGMA user_version``).
+    """
+    if "source_id" not in _table_columns(conn, "transcript_messages"):
+        conn.execute("ALTER TABLE transcript_messages ADD COLUMN source_id TEXT")
+    version = conn.execute("PRAGMA user_version").fetchone()[0]
+    if version < SCHEMA_VERSION:
+        keep: dict[str, int] = {}
+        updates: list[tuple[str, int]] = []
+        drop: list[int] = []
+        rows = conn.execute(
+            "SELECT id, session_id, role, content, metadata, source_id"
+            " FROM transcript_messages ORDER BY id"
+        ).fetchall()
+        for row in rows:
+            try:
+                meta = json.loads(row[4]) if row[4] else {}
+            except (TypeError, ValueError):
+                meta = {}
+            key = canonical_source_id(row[5], row[1], row[2], row[3], meta)
+            if not key:
+                continue
+            if key in keep:
+                drop.append(row[0])
+                continue
+            keep[key] = row[0]
+            if key != row[5]:
+                updates.append((key, row[0]))
+        for row_id in drop:
+            conn.execute("DELETE FROM transcript_messages WHERE id = ?", (row_id,))
+            conn.execute("DELETE FROM transcript_messages_fts WHERE rowid = ?", (row_id,))
+        for key, row_id in updates:
+            conn.execute(
+                "UPDATE transcript_messages SET source_id = ? WHERE id = ?", (key, row_id)
+            )
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_transcript_source_id "
+        "ON transcript_messages(source_id) "
+        "WHERE source_id IS NOT NULL AND source_id <> ''"
+    )
+
+
+def _migrate_events_source_id(conn: sqlite3.Connection) -> None:
+    """Add ``events.source_id`` so captured events replay idempotently."""
+    if "source_id" not in _table_columns(conn, "events"):
+        conn.execute("ALTER TABLE events ADD COLUMN source_id TEXT")
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_events_source_id "
+        "ON events(source_id) WHERE source_id IS NOT NULL AND source_id <> ''"
+    )
+    conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
 
 def clear(conn: sqlite3.Connection) -> None:
@@ -212,6 +318,19 @@ def set_monitor_cursor(conn: sqlite3.Connection, project_name: str, source_table
     conn.commit()
 
 
+def set_monitor_cursors(conn: sqlite3.Connection, project_name: str, cursors: dict) -> None:
+    """Store all monitor cursors and commit (with any pending captured rows)."""
+    import datetime
+    updated_at = datetime.datetime.utcnow().isoformat() + "Z"
+    for source_table, last_rowid in cursors.items():
+        conn.execute(
+            "INSERT OR REPLACE INTO monitor_cursors (project_name, source_table, last_rowid, updated_at) "
+            "VALUES (?, ?, ?, ?)",
+            (project_name, source_table, int(last_rowid), updated_at),
+        )
+    conn.commit()
+
+
 def get_all_monitor_cursors(conn: sqlite3.Connection, project_name: str) -> dict[str, int]:
     """Get all monitor cursors for a project."""
     rows = conn.execute(
@@ -249,22 +368,65 @@ def find_callers(conn: sqlite3.Connection, name: str, limit: int = 10) -> list[d
     return _rows_to_dicts(rows)
 
 
-def search_symbols(conn: sqlite3.Connection, query: str, limit: int = 10) -> list[dict]:
-    """Lexical search over name/kind/file/signature. Narrow excerpts only.
+class SearchQueryError(ValueError):
+    """A search query that cannot be run (as opposed to one with no hits)."""
 
-    Malformed FTS5 queries (unbalanced quotes, bare operators) return [] by
-    design instead of raising: retrieval quality is measured downstream by
-    task outcomes, never by query cleverness.
+
+def fts_query(query: str) -> str:
+    """Turn user text into a literal FTS5 query: every term must match.
+
+    Each whitespace-separated term is quoted, so identifiers such as
+    ``refresh-token``, ``v1.2.3`` or ``foo.bar()`` match literally instead of
+    being parsed as FTS5 syntax. Uppercase ``AND``/``OR``/``NOT`` between
+    terms stay operators; a trailing ``*`` keeps prefix search. Raises
+    SearchQueryError when nothing searchable remains (e.g. ``"()"``) or the
+    operators are malformed, so callers can tell an unusable query from a
+    query with no results.
+    """
+    terms = []
+    for raw in (query or "").split():
+        if raw in ("AND", "OR", "NOT"):
+            terms.append(raw)
+            continue
+        prefix = raw.endswith("*") and len(raw) > 1
+        term = raw[:-1] if prefix else raw
+        if not any(ch.isalnum() for ch in term):
+            continue
+        quoted = '"' + term.replace('"', '""') + '"'
+        if terms and terms[-1] not in ("AND", "OR", "NOT"):
+            terms.append("AND")
+        terms.append(quoted + ("*" if prefix else ""))
+    # Dangling operators (leading, trailing, doubled) are noise, not syntax.
+    ops = ("AND", "OR", "NOT")
+    cleaned: list[str] = []
+    for term in terms:
+        if term in ops and (not cleaned or cleaned[-1] in ops):
+            continue
+        cleaned.append(term)
+    while cleaned and cleaned[-1] in ops:
+        cleaned.pop()
+    if not cleaned:
+        raise SearchQueryError(f"search query {query!r} has no searchable terms")
+    return " ".join(cleaned)
+
+
+def search_symbols(conn: sqlite3.Connection, query: str, limit: int = 10) -> list[dict]:
+    """Lexical search over name/kind/file/signature, best match first.
+
+    Terms are matched literally (see fts_query). An unusable query raises
+    SearchQueryError; a valid query with no hits returns [].
     """
     if not query or not query.strip():
         return []
+    match = fts_query(query)
     try:
         rows = conn.execute(
             "SELECT s.name, s.kind, s.file, s.line, s.signature"
-            " FROM symbols_fts f JOIN symbols s ON s.id = f.rowid"
-            " WHERE symbols_fts MATCH ? LIMIT ?",
-            (query.strip(), clamp_limit(limit)),
+            " FROM symbols_fts JOIN symbols s ON s.id = symbols_fts.rowid"
+            " WHERE symbols_fts MATCH ?"
+            " ORDER BY bm25(symbols_fts), s.id LIMIT ?",
+            (match, clamp_limit(limit)),
         ).fetchall()
-    except sqlite3.OperationalError:
-        return []
+    except sqlite3.OperationalError as exc:
+        raise SearchQueryError(f"search query {query!r} failed: {exc}") from exc
     return _rows_to_dicts(rows)

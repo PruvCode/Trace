@@ -6,6 +6,7 @@ session data automatically. They do NOT simulate by inserting into the database.
 REAL_OPENCode_TEST = POSSIBLE
 """
 
+from memory.opencode_service import default_opencode_db_path  # noqa: E402
 import re
 import json
 import sqlite3
@@ -38,10 +39,10 @@ from memory import opencode_transparent as opencode_transparent_mod
 from tests.memory.test_real_opencode_blackbox import (
     _get_session_from_opencode_db,
     _count_transcript_messages,
+    _opencode_binary,
+    _reap_test_owned_opencode_processes,
+    _rmtree_with_retries,
 )
-
-# Path to the actual OpenCode executable (not the PowerShell wrapper)
-OPENCODE_EXE = Path.home() / "AppData" / "Roaming" / "npm" / "node_modules" / "opencode-ai" / "bin" / "opencode.exe"
 
 # Minimum OpenCode version TRACE requires (major, minor). Patch releases float.
 MIN_OPENCODE_VERSION = (1, 18)
@@ -50,7 +51,7 @@ MIN_OPENCODE_VERSION = (1, 18)
 def _run_opencode_direct(project_path: Path, prompt: str, timeout: int = 150) -> subprocess.CompletedProcess:
     """Run OpenCode with a prompt in the given project directory using the actual .exe."""
     cmd = [
-        str(OPENCODE_EXE),
+        str(_opencode_binary()),
         "run",
         prompt,
         "--format", "json",
@@ -107,27 +108,9 @@ def _stop_service_and_wait(adapter, project_path: Path, timeout: float = 20.0) -
     time.sleep(2)
 
 
-def _rmtree_with_retry(path: Path, timeout: float = 120.0) -> None:
-    """Remove a tree, retrying transient Windows file locks.
-
-    On Windows, handles to the TRACE database can be mirrored by sandbox
-    supervisor sidecars and released on their own schedule (observed holds
-    exceed 30s). Retry with backoff; if the lock persists past the budget
-    the last error is re-raised so cleanup failures are never suppressed.
-    """
-    import shutil
-
-    deadline = time.time() + timeout
-    last_error: OSError | None = None
-    while True:
-        try:
-            shutil.rmtree(path, ignore_errors=False)
-            return
-        except PermissionError as e:
-            last_error = e
-            if time.time() >= deadline:
-                raise
-            time.sleep(2.0)
+# Shared with test_real_opencode_blackbox (single implementation, no cycles);
+# test_end_to_end_transparent imports this name from here.
+_rmtree_with_retry = _rmtree_with_retries
 
 
 @pytest.fixture()
@@ -158,6 +141,11 @@ def temp_project(monkeypatch):
                 time.sleep(2)
         except Exception as e:
             print(f"[temp_project teardown] best-effort service stop: {e}")
+        # OpenCode 1.18 orphans its serve/plugin/MCP tree past CLI exit; those
+        # children hold the TRACE database, so reap before tree removal.
+        reaped = _reap_test_owned_opencode_processes(tmp)
+        if reaped:
+            print(f"[temp_project teardown] reaped opencode tree pids: {reaped}")
         _rmtree_with_retry(Path(tmp))
 
 
@@ -166,7 +154,7 @@ class TestRealOpenCodeEnvironment:
 
     def test_opencode_available(self):
         """Verify OpenCode is installed and meets the minimum supported version."""
-        result = subprocess.run([str(OPENCODE_EXE), "--version"], capture_output=True, text=True)
+        result = subprocess.run([str(_opencode_binary()), "--version"], capture_output=True, text=True)
         assert result.returncode == 0
         match = re.search(r"(\d+)\.(\d+)\.(\d+)", result.stdout)
         assert match is not None, f"Unparseable OpenCode version: {result.stdout!r}"
@@ -177,12 +165,12 @@ class TestRealOpenCodeEnvironment:
 
     def test_opencode_db_exists(self):
         """Verify OpenCode database exists."""
-        db_path = Path.home() / ".local" / "share" / "opencode" / "opencode.db"
+        db_path = default_opencode_db_path()
         assert db_path.exists(), f"OpenCode DB not found at {db_path}"
 
     def test_free_model_available(self):
         """Verify the free model used by these tests is available."""
-        result = subprocess.run([str(OPENCODE_EXE), "models"], capture_output=True, text=True)
+        result = subprocess.run([str(_opencode_binary()), "models"], capture_output=True, text=True)
         assert result.returncode == 0
         assert "big-pickle" in result.stdout
 
@@ -193,7 +181,7 @@ class TestRealOpenCodeEnvironment:
             project.mkdir()
             (project / "test.py").write_text("print('hello')\n", encoding="utf-8")
 
-            result = _run_opencode_direct(project, "Say hello", timeout=120)
+            result = _run_opencode_direct(project, "Say hello", timeout=480)
             # OpenCode should run and produce JSON output
             assert result.returncode in (0, 1)  # May exit with 1 due to rate limits but should run
             assert "step_start" in result.stdout or "error" in result.stdout
@@ -223,7 +211,7 @@ class TestRealOpenCodeCapture:
 
         # 2. Run REAL OpenCode with a free model - STRICT: must succeed
         prompt = "Create a simple hello.py file that prints 'hello from opencode'"
-        result = _run_opencode_direct(temp_project, prompt, timeout=180)
+        result = _run_opencode_direct(temp_project, prompt, timeout=480)
 
         # OpenCode MUST succeed for a valid capture test
         assert result.returncode == 0, (
@@ -313,7 +301,7 @@ class TestRealOpenCodeCapture:
 
         # Session 1 - deterministic prompt
         prompt1 = "Create a file alpha.txt containing the word ALPHA_ONLY"
-        result1 = _run_opencode_direct(temp_project, prompt1, timeout=120)
+        result1 = _run_opencode_direct(temp_project, prompt1, timeout=480)
         assert result1.returncode == 0, f"Session 1 failed: {result1.stderr[:500]}"
         time.sleep(4)
 
@@ -323,7 +311,7 @@ class TestRealOpenCodeCapture:
 
         # Session 2
         prompt2 = "Create a file beta.txt containing the word BETA_ONLY"
-        result2 = _run_opencode_direct(temp_project, prompt2, timeout=120)
+        result2 = _run_opencode_direct(temp_project, prompt2, timeout=480)
         assert result2.returncode == 0, f"Session 2 failed: {result2.stderr[:500]}"
         time.sleep(4)
 
@@ -393,7 +381,7 @@ class TestCrossSessionPersistence:
 
         # Run OpenCode
         prompt = "Create a file cli_exit_test.py with content 'CLI_EXIT_TEST'"
-        result = _run_opencode_direct(temp_project, prompt, timeout=120)
+        result = _run_opencode_direct(temp_project, prompt, timeout=480)
         assert result.returncode == 0, f"OpenCode failed: {result.stderr[:500]}"
         time.sleep(5)
 
@@ -431,7 +419,7 @@ class TestCrossSessionPersistence:
 
         # Session 1 - while service running
         prompt1 = "Create file restart1.py with content RESTART_BEFORE_STOP"
-        result1 = _run_opencode_direct(temp_project, prompt1, timeout=120)
+        result1 = _run_opencode_direct(temp_project, prompt1, timeout=480)
         assert result1.returncode == 0, f"Session 1 failed: {result1.stderr[:500]}"
         time.sleep(4)
 
@@ -447,7 +435,7 @@ class TestCrossSessionPersistence:
 
         # Session 2 - while service STOPPED
         prompt2 = "Create file restart2.py with content RESTART_DURING_STOP"
-        result2 = _run_opencode_direct(temp_project, prompt2, timeout=120)
+        result2 = _run_opencode_direct(temp_project, prompt2, timeout=480)
         assert result2.returncode == 0, f"Session 2 failed: {result2.stderr[:500]}"
         time.sleep(4)
 
@@ -504,7 +492,7 @@ class TestCrossSessionPersistence:
 
         # Run OpenCode with deterministic content
         prompt = "Create file dedup_test.py with content DEDUP_TEST_CONTENT"
-        result = _run_opencode_direct(temp_project, prompt, timeout=120)
+        result = _run_opencode_direct(temp_project, prompt, timeout=480)
         assert result.returncode == 0, f"OpenCode failed: {result.stderr[:500]}"
         time.sleep(4)
 
@@ -580,7 +568,7 @@ class TestProjectIsolation:
 
             # Run OpenCode in project 1
             prompt1 = "Create file proj1_test.py with content PROJECT1_ONLY"
-            result1 = _run_opencode_direct(temp_project, prompt1, timeout=120)
+            result1 = _run_opencode_direct(temp_project, prompt1, timeout=480)
             assert result1.returncode == 0, f"Project 1 OpenCode failed: {result1.stderr[:500]}"
             time.sleep(4)
 
@@ -589,7 +577,7 @@ class TestProjectIsolation:
 
             # Run OpenCode in project 2
             prompt2 = "Create file proj2_test.py with content PROJECT2_ONLY"
-            result2 = _run_opencode_direct(project2, prompt2, timeout=120)
+            result2 = _run_opencode_direct(project2, prompt2, timeout=480)
             assert result2.returncode == 0, f"Project 2 OpenCode failed: {result2.stderr[:500]}"
             time.sleep(4)
 
@@ -599,8 +587,25 @@ class TestProjectIsolation:
             # Verify isolation
             assert session_id_1 != session_id_2
 
-            count1 = _count_transcript_messages(temp_project, session_id_1)
-            count2 = _count_transcript_messages(project2, session_id_2)
+            def _wait_for_min_messages(project, session_id, minimum, deadline_s=30.0):
+                """Capture is eventual (1s service passes); poll, don't fixed-sleep.
+
+                Polls until at least `minimum` transcript messages exist for the
+                session or the deadline passes; the caller asserts on the count.
+                A capture defect surfaces as the assertion, not as a masked wait.
+                """
+                deadline = time.time() + deadline_s
+                count = 0
+                while True:
+                    count = _count_transcript_messages(project, session_id)
+                    if count >= minimum:
+                        return count
+                    if time.time() >= deadline:
+                        return count
+                    time.sleep(1.0)
+
+            count1 = _wait_for_min_messages(temp_project, session_id_1, 3)
+            count2 = _wait_for_min_messages(project2, session_id_2, 3)
 
             assert count1 >= 3
             assert count2 >= 3
@@ -646,6 +651,9 @@ class TestProjectIsolation:
                     time.sleep(2)
             except Exception as e:
                 print(f"[test_two_projects_isolated teardown] best-effort service stop: {e}")
+            reaped = _reap_test_owned_opencode_processes(tmp2)
+            if reaped:
+                print(f"[isolation teardown] reaped opencode tree pids: {reaped}")
             _rmtree_with_retry(Path(tmp2))
 
 

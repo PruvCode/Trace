@@ -1,0 +1,77 @@
+{
+ "pairs": 5,
+ "lint_violations": 0,
+ "lint_paths": [],
+ "capture_audit": [
+  {
+   "pair": "pair1",
+   "side": "earlier",
+   "opencode_parts": 44,
+   "trace_store": "present",
+   "captured_rows": 0
+  },
+  {
+   "pair": "pair1",
+   "side": "later",
+   "opencode_parts": 64,
+   "trace_store": "present",
+   "captured_rows": 0
+  },
+  {
+   "pair": "pair2",
+   "side": "earlier",
+   "opencode_parts": 2503,
+   "trace_store": "present",
+   "captured_rows": 0
+  },
+  {
+   "pair": "pair2",
+   "side": "later",
+   "opencode_parts": 217,
+   "trace_store": "present",
+   "captured_rows": 0
+  },
+  {
+   "pair": "pair3",
+   "side": "earlier",
+   "opencode_parts": 337,
+   "trace_store": "present",
+   "captured_rows": 0
+  },
+  {
+   "pair": "pair3",
+   "side": "later",
+   "opencode_parts": 149,
+   "trace_store": "present",
+   "captured_rows": 0
+  },
+  {
+   "pair": "pair4",
+   "side": "earlier",
+   "opencode_parts": 415,
+   "trace_store": "absent",
+   "captured_rows": null
+  },
+  {
+   "pair": "pair4",
+   "side": "later",
+   "opencode_parts": 91,
+   "trace_store": "absent",
+   "captured_rows": null
+  },
+  {
+   "pair": "pair5",
+   "side": "earlier",
+   "opencode_parts": 84,
+   "trace_store": "absent",
+   "captured_rows": null
+  },
+  {
+   "pair": "pair5",
+   "side": "later",
+   "opencode_parts": 415,
+   "trace_store": "absent",
+   "captured_rows": null
+  }
+ ]
+}
