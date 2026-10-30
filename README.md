@@ -53,7 +53,7 @@ Session N records findings → Session N+1 retrieves them. See
 - **Agent layer** — OpenCode (automatic path validated with 1.18.32); any MCP-compatible client for explicit queries.
 - **TRACE memory layer** — structural, episodic, Git, and transcript services over one interface.
 - **Local storage** — one SQLite + FTS5 database per project (`.agent-memory/memory.db`); nothing leaves the machine.
-- **Automatic OpenCode path** — a monitor captures sessions into memory; a plugin injects bounded prior-session context at session start.
+- **Automatic OpenCode path** — a monitor captures sessions into memory; a plugin injects bounded prior-session context into every model request.
 - **MCP explicit-query path** — 9 tools over stdio; not required for automatic retrieval.
 - **Benchmark/research subsystem** — isolated baseline-vs-memory runs with mechanical evaluation ([interactive diagram](docs/architecture/trace-architecture.html), [memory flow](docs/architecture/trace-memory-flow.html), [benchmark flow](docs/architecture/trace-benchmark-flow.html)).
 
@@ -182,7 +182,8 @@ while keeping recorded events and transcripts.
 3. **Retrieval** (Automatic): Run `opencode` again. At the first model request of a session the
    plugin builds a bounded block of prior memory (one Python run per session) and adds it,
    clearly labeled (`[TRACE PROJECT MEMORY - ...]`), to **every** model request of that
-   session — OpenCode does not keep plugin-added messages between requests, so injecting
+   session. Messages matching the session's first prompt are added to the block
+   (`TRACE_TASK_AWARE=0` turns this off) — OpenCode does not keep plugin-added messages between requests, so injecting
    once would hide memory from later agent steps. The MCP server remains available for
    explicit queries, and `trace context "query"` retrieves context manually.
 
@@ -223,8 +224,8 @@ local process). Any MCP-compatible agent can use it:
 
 With the supported OpenCode integration (validated with OpenCode 1.18.32),
 both directions are automatic: the background monitor captures sessions,
-and the project-local plugin injects bounded prior-session memory at
-session start as one labeled contextual message — the agent does not need
+and the project-local plugin adds bounded prior-session memory to every
+model request as one labeled contextual message — the agent does not need
 to call any retrieval tool for the previous session to be available.
 The 9 MCP tools remain for explicit querying (`search_transcripts`,
 `get_transcript_session`, `search_events`, etc.) whenever the agent (or you,
@@ -288,6 +289,13 @@ Token counts come from exact provider `usage`, never estimates. TRACE
 makes no claim that memory saves tokens — it gives you the numbers to
 compare baseline vs. memory runs yourself.
 
+A preregistered two-session comparison (10 synthetic tasks, one free model,
+two runs) found that on tasks needing earlier-session knowledge, memory beat
+no memory (83% vs 38% pooled), but **TRACE did not beat a plain AGENTS.md
+notes file** (83% vs 83%, inconclusive at this sample size) and used about
+twice the input tokens. See
+[`docs/engineering-audit/CURRENT_STATE_AUDIT.md`](docs/engineering-audit/CURRENT_STATE_AUDIT.md).
+
 Separately, the automatic retrieval path itself has bounded experimental
 evidence: 9/9 valid single-fact recall trials succeeded under the tested
 conditions (OpenCode 1.18.32, `opencode/big-pickle`, zero-tool clean
@@ -327,7 +335,7 @@ etc.) for performance.
 
 | Surface | Tested | Status / claim |
 |---|---|---|
-| OpenCode 1.18.32 — capture, plugin injection, MCP, per-request memory block | E2E in disposable environments (deterministic suites + live probes; 439-test suite green) | **Validated** on this version |
+| OpenCode 1.18.32 — capture, plugin injection, MCP, per-request memory block | E2E in disposable environments (80-run controlled comparisons; deterministic suite green) | **Validated** on this version |
 | OpenCode 2.x (2.1.4 is installed locally) | not run | **NOT validated** — no compatibility claim |
 | OpenCode ~1.18.x neighbors (1.18.0–1.18.31, 1.18.33+) | not individually run | untested minor patches; hook DB schema expected stable within 1.18.x, unverified |
 | Any MCP-compatible agent (explicit `trace mcp` tools) | MCP server exercised in tests | tool layer agent-agnostic; automatic capture/injection needs the OpenCode hook path |
@@ -349,10 +357,11 @@ sole benchmark orchestrator, `agent/` stays provider-neutral, and the new
 
 ## Testing
 
-Full suite: 405 tests collected.
-The 388 deterministic tests are all local — no network, keys, or models
-required. Latest run: 388 passed, 1 teardown error. The remaining 17 are
-real-OpenCode integration tests that run the actual `opencode` binary
+Full suite: 469 tests collected.
+The deterministic tests are all local — no network, keys, or models
+required. Latest run, on a fresh clone: 439 passed, 29 skipped, 1 expected
+failure. Eight of the skips need the `corpus` extra (`pyarrow`). The other 21
+are real-OpenCode integration tests that run the actual `opencode` binary
 against the free-tier model (network + model required): timing-sensitive,
 with occasional provider latency/timeout flakes, and on Windows their
 fixtures can hit external file-lock teardown flakes (`WinError 32` from
@@ -376,6 +385,10 @@ are environmental, not assertion failures in TRACE logic.
   unambiguous prior fact: 9/9 valid recalls; multi-fact selection is weaker).
   No claim is made that memory improves coding performance.
 - Secret redaction is best-effort pattern matching — not guaranteed to catch all secrets.
+- Stored memory is injected as text: hostile content an agent repeated in a session can
+  reach later sessions, and the block's labels do not stop it from imitating them.
+- With TRACE enabled, `opencode run` was measured exiting about 100 seconds after the agent
+  finished (cause not yet found).
 - Benchmark evidence is pilot-scale; no effectiveness claims are made.
 - MCP integration is labeled by what it is (MCP-compatible agents),
   not by an exhaustive tested-client matrix.

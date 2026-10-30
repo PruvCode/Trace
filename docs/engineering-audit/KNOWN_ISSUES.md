@@ -79,3 +79,9 @@
 - Local SQLite artifacts inside copied fixture material must never be committed: the
   heartbeat-`.agent-memory` ignore rules (`fixtures/*/.agent-memory/`) exist precisely to
   stop that; the toy fixture on the old disk contained a capture store — never adopt it.
+
+## Update, 2026-10-30
+
+DEF-1 was only partly fixed: a default Windows clone still failed 28 tests until `.gitattributes`
+pinned fixture bytes and `test_c_tasks_load` declared its fixture. The Phase-2 entries above are out
+of date: two complete runs exist. Current defect list: `CURRENT_STATE_AUDIT.md` section 8.
