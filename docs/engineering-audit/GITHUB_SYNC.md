@@ -18,3 +18,11 @@ Remote: `https://github.com/PruvCode/Trace` (verify every push below with `git l
 
 Pending during Phase 0: PRs opened only when `phase/0-reliability` passes its full gate
 (probe-verified injection policy + adopted tests + ledger).
+
+## Current-state audit publication (2026-10-30)
+
+Branch `release/trace-current-audit`, stacked on `phase/2-eval`, carries all work from
+`phase/0-reliability`, `phase/1-research` and `phase/2-eval`, plus the audit commits. First push at
+`f66236b`, verified with `git ls-remote`. `main` stayed at `eb467f89`; no force-push; no branch
+deleted. A pull request needs a signed-in session, which was not available to the auditing agent;
+it stays a draft until the blockers in `CURRENT_STATE_AUDIT.md` are closed.
