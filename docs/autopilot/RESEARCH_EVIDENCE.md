@@ -56,3 +56,36 @@ Ground truth first (OpenCode part counts per session), then TRACE stores at each
 ## Phase 1 decision
 
 Real-history evidence supports a narrow claim: later sessions often **re-orient** on the same files, and sometimes repeat **environment/procedure dead-ends**. It does not show frequent repeated failed approaches (0/79 strict; 2/5 per one AI reviewer on a biased sample). The knowledge most often worth carrying is short procedural/environment notes — the thing an agent-maintained AGENTS.md also carries. → Phase 2 must compare TRACE against an AGENTS.md baseline, not only against no memory.
+
+## Phase 2 results
+
+Two complete runs of the preregistered design. Summary and caveats: `docs/engineering-audit/CURRENT_STATE_AUDIT.md`.
+Reproduce: `python research/phase2/analyze_phase2.py research/phase2/run1.jsonl` (or `run2_glm.jsonl`, or both for the pooled table).
+
+Run 1 is the preregistered analysis. Run 2 is a separate agent's replication at the same runtime code. Pooling was not preregistered and is exploratory.
+
+| C_episodic per task, passes (C0 / C1 / C2 / C3) | Run 1 of 2 each | Run 2 of 2 each |
+|---|---|---|
+| task_01 failed attempt | 2 / 2 / 2 / 2 | 2 / 2 / 2 / 2 |
+| task_02 decision | 0 / 2 / 2 / 2 | 0 / 2 / 2 / 2 |
+| task_03 incident blocklist | 0 / 2 / 1 / 1 | 0 / 2 / 1 / 1 |
+| task_04 reverted cache key | 2 / 2 / 2 / 2 | 1 / 2 / 1 / 2 |
+| task_05 cursor rollout | 2 / 2 / 2 / 2 | 0 / 0 / 2 / 1 |
+| task_06 migration | 0 / 1 / 1 / 2 | 0 / 1 / 2 / 1 |
+
+Task-cluster bootstrap 95% CIs on C_episodic, percentage points:
+
+| Difference | Run 1 | Run 2 | Pooled |
+|---|---|---|---|
+| C1 − C0 | +42 (8, 75) | +50 (17, 83) | +46 (13, 79) |
+| C2 − C0 | +33 (8, 67) | +58 (25, 92) | +46 (17, 75) |
+| C3 − C0 | +42 (8, 75) | +50 (25, 75) | +46 (21, 75) |
+| C2 − C1 | −8 (−25, 0) | +8 (−33, 50) | 0 (−25, 25) |
+| C3 − C1 | 0 (−25, 25) | 0 (−25, 25) | 0 (−21, 17) |
+| C3 − C2 | +8 (0, 25) | −8 (−33, 17) | 0 (−13, 13) |
+
+Hypotheses: H1 supported. H2 supported. H3 not supported. H4 passed in run 1 (8/8 every arm) but weakly tested, and void in run 2. H5 **not supported**, inconclusive at this sample size.
+
+Failures and voids. Run 1: 7 of 10 failures involved a timeout or error exit, so some are model stalls, not missing knowledge. Run 2: 36/80 rows timed out, 32 of them with zero tool calls, most likely from the provider's `Free usage limit reached`, which a direct probe confirmed on 2026-10-30 after the run ended. Those rows count as failures in the preregistered tables. Post-hoc removal of the 33 void rows gives C_episodic C0 41%, C1 83%, C2 87%, C3 95%, and D tasks 100% in every arm (n=9–10).
+
+Capture: key facts in the store in 18/20 Session A runs; in AGENTS.md in 15/20. One store miss was probably redaction removing a credential value. Agents recorded 1 finding in 20 sessions. Session B called memory tools in 6/80 C2/C3 runs.
