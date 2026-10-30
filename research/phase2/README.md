@@ -12,10 +12,12 @@ model `opencode/big-pickle`, hidden `eval_command` scoring, outco‌me rows as J
 - `run_phase2.py` — harness. Adopted from the prior agent's branch (committed state at
   `4363ff4`, byte-identical) with ONE GLM change: `PY` no longer hardcodes a OneDrive
   venv path — it uses `sys.executable` so the harness runs from any checkout.
-- `run1.jsonl`, `smoke.jsonl` — the prior agent's PARTIAL data (91 + 6 rows): A-phase
-  rows and a few B-phase conditions for the two C_episodic tasks, produced on its own
-  worktree with the equivalent memory code (baedd4b = the per-request policy adopted in
-  PR #1). Treated as prior-agent partial data, NOT merged into our dataset.
+- `run1.jsonl` — complete run at `4363ff4`: 10 Session A rows and all 80 Session B rows.
+  (An earlier version of this file called it partial; that was wrong.)
+- `run2_glm.jsonl` — complete run at `12e245e`, converted from UTF-16 to UTF-8, otherwise
+  unchanged. 32 rows are void: those runs made no tool calls and timed out, most likely
+  from the free-tier limit. Its D tasks are unusable.
+- `smoke.jsonl` — harness validation only, not analysis data.
 - `analyze_phase2.py` — prior agent's analysis script (unaudited until used).
 
 ## Operating rules for GLM runs
