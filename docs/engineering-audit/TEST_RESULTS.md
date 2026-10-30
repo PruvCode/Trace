@@ -70,3 +70,10 @@ Probe JSONL evidence: `research/phase0/results/probe_policy{A,B}_trial.jsonl`.
 Verdict: both probe-era DEF-2 symptoms are designed behavior (precondition fail-fast +
 single-capture guard); no product fix. Phase-3 candidate recorded: distinct
 `not_ready` status instead of generic `error`.
+
+## Current-state audit, 2026-10-30
+
+See `CURRENT_STATE_AUDIT.md` section 4. Fresh default Windows clone at `2489795`:
+**439 passed, 0 failed, 29 skipped, 1 xfailed** in 601 s; `tests/corpus` with `pyarrow`: 80 passed.
+T6 and T8 above do not reproduce on a default clone (28 failed before the fix). The 21 live tests
+were not run: the provider returned `Free usage limit reached`.

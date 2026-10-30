@@ -55,3 +55,8 @@ artifacts.)
 - B3 OpenCode 2.x compatibility: NOT RUN.
 - B4 Claude Code integration: NOT RUN.
 - Phase-2 full evaluation (C0–C3): NOT RUN; harness validated, A-phase partial only.
+
+## Update, 2026-10-30
+
+Current state, rating and corrections to this ledger: `CURRENT_STATE_AUDIT.md`. Phase 2 has run;
+the blockers above still hold, and live model runs are also blocked by the free-tier limit.
