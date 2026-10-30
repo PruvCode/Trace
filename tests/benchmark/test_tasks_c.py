@@ -122,7 +122,7 @@ def test_preseed_changes_task_version(tmp_path):
     )
 
 
-def test_c_tasks_load(repo_root):
+def test_c_tasks_load(repo_root, seeded_history):
     c1, c2 = _load_both(repo_root)
     assert (c1.task_id, c1.category) == ("task_01_failed_attempt", "C_episodic")
     assert (c2.task_id, c2.category) == ("task_02_decision", "C_episodic")
