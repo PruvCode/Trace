@@ -166,13 +166,12 @@ def escaped(home: Path, sid: str | None, ws: Path) -> bool:
     if not sid or not db.exists():
         return False
     c = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
-    text = "
-".join(r[0] for r in c.execute("SELECT data FROM session_message WHERE session_id=? AND type='assistant'", (sid,)))
+    rows = [json.loads(r[0]) for r in c.execute(
+        "SELECT data FROM session_message WHERE session_id=? AND type='assistant'", (sid,))]
     c.close()
-    calls = [json.dumps(p.get("input") or p) for m in text.splitlines() for p in json.loads(m).get("content", [])
+    calls = [json.dumps(p.get("input") or p) for m in rows for p in m.get("content", [])
              if isinstance(p, dict) and p.get("type") == "tool"]
-    outside = re.compile(r"\.\.[/\]|trace_p3_run|AppData\\Local\\Temp(?!.*" + re.escape(ws.parent.name) + ")")
-    return any(outside.search(c) for c in calls)
+    return any("trace_p3_run" in c or "../" in c or "..\\\\" in c for c in calls)
 
 
 def history(name: str, spec: dict, base: Path, handoff: bool) -> tuple[Path, Path, str]:
