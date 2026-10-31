@@ -1,5 +1,8 @@
 # TRACE current-state audit (2026-10-30)
 
+Superseded in part by `FINAL_REPORT.md`: SEC-1, SEC-2, PERF-1, COMPAT-1 and ENG-1 below have since been addressed.
+PERF-1 in particular was misdiagnosed here as an exit delay; it was a startup install.
+
 Auditor: Claude Opus 5.5. Audited branch: `release/trace-current-audit`, built on `phase/2-eval`.
 This records what was run and inspected, not what earlier ledgers claimed. Earlier claims that did
 not hold are corrected in section 7.

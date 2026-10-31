@@ -66,3 +66,21 @@ by separate workspaces/homes).
 (e) The prior agent's partial `run1.jsonl`/`smoke.jsonl` are kept as provenance-only
 prior data and are NOT pooled into the dataset or the analysis.
 (f) Analysis uses the adopted `analyze_phase2.py` run ONLY on the GLM full-run JSONL.
+
+**CL-D1 — Stored text is data.** Each memory record is one JSON line inside a content-hashed boundary. The line
+framing stops forging; a model can still choose to obey text, so that risk is documented, not closed.
+
+**CL-D2 — Redaction has one home and bounded patterns.** Applied on every write and again on the way out.
+
+**CL-D3 — The "exit delay" was a startup install.** OpenCode 1.x runs `npm install` for `.opencode/plugins`. The plugin
+moved to `.trace-service` and is listed in config, so the cost is per user, not per project.
+
+**CL-D4 — Four MCP tools by default.** Three of nine were never called in 80 runs and schemas repeat per request.
+
+**CL-D5 — Port to OpenCode 2.x on the documented hook.** It uses `session.hook("context")` and edits messages, never
+the system prompt. The default background-service mode stays unverified.
+
+**CL-D6 — Session B is isolated.** A smoke run read earlier sessions from a sibling folder, so Phase 3 uses random
+folders under a separate root and flags runs that leave them. Phase 2 had the same exposure.
+
+**CL-D7 — Stay on the preregistered model.** The replacement failed most calls, so the rerun waits for the limit.

@@ -60,3 +60,8 @@ artifacts.)
 
 Current state, rating and corrections to this ledger: `CURRENT_STATE_AUDIT.md`. Phase 2 has run;
 the blockers above still hold, and live model runs are also blocked by the free-tier limit.
+
+## Update, 2026-10-31
+
+Security, redaction, the startup delay, OpenCode 2.x and CI are done. Phase 3 is preregistered and waiting on the free
+model's usage limit. Latest detail: `TEST_RESULTS.md`, `DECISIONS.md`, `FINAL_REPORT.md`.

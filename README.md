@@ -50,7 +50,7 @@ Session N records findings → Session N+1 retrieves them. See
 
 ![TRACE architecture](docs/architecture/trace-architecture.png)
 
-- **Agent layer** — OpenCode (automatic path validated with 1.18.32); any MCP-compatible client for explicit queries.
+- **Agent layer** — OpenCode (see the compatibility matrix); any MCP-compatible client for explicit queries.
 - **TRACE memory layer** — structural, episodic, Git, and transcript services over one interface.
 - **Local storage** — one SQLite + FTS5 database per project (`.agent-memory/memory.db`); nothing leaves the machine.
 - **Automatic OpenCode path** — a monitor captures sessions into memory; a plugin injects bounded prior-session context into every model request.
@@ -223,8 +223,7 @@ local process). Any MCP-compatible agent can use it:
 3. The agent can now call the memory tools via MCP; everything it records
    persists in `<project>/.agent-memory/memory.db` for the next session.
 
-With the supported OpenCode integration (validated with OpenCode 1.18.32),
-both directions are automatic: the background monitor captures sessions,
+With the OpenCode integration, both directions are automatic: the background monitor captures sessions,
 and the project-local plugin adds bounded prior-session memory to every
 model request as one labeled contextual message — the agent does not need
 to call any retrieval tool for the previous session to be available.
@@ -237,10 +236,9 @@ commands cover the rest.
 Supported: any agent that speaks MCP over stdio and can spawn a local
 command (e.g. OpenCode with MCP configured) can use explicit MCP querying.
 The automatic zero-touch workflow (capture + injection with no manual
-commands) is validated with OpenCode 1.18.32 only — other agents do not
-automatically inherit it unless a corresponding integration exists, and
-untested clients should be treated as experimental. Do not assume every
-current or future OpenCode version exposes identical hooks.
+commands) has been run on the OpenCode versions in the compatibility matrix.
+Other agents do not inherit it unless a corresponding integration exists, and
+untested clients should be treated as experimental.
 
 ## Memory Storage
 
@@ -334,17 +332,24 @@ with Python 3.11+. Git-history features need a git repository. Temporary
 and run directories should live outside cloud-synced folders (OneDrive,
 etc.) for performance.
 
-### Compatibility matrix (honest, as of 2026-10-29)
+### Compatibility matrix (2026-10-31)
 
-| Surface | Tested | Status / claim |
+| Surface | Tested | Status |
 |---|---|---|
-| OpenCode 1.18.32 — capture, plugin injection, MCP, per-request memory block | E2E in disposable environments (80-run controlled comparisons; deterministic suite green) | **Validated** on this version |
-| OpenCode 2.x (2.1.4 is installed locally) | not run | **NOT validated** — no compatibility claim |
-| OpenCode ~1.18.x neighbors (1.18.0–1.18.31, 1.18.33+) | not individually run | untested minor patches; hook DB schema expected stable within 1.18.x, unverified |
-| Any MCP-compatible agent (explicit `trace mcp` tools) | MCP server exercised in tests | tool layer agent-agnostic; automatic capture/injection needs the OpenCode hook path |
-| Python 3.11 (Windows) | full deterministic suite | validated |
-| Linux / macOS | code paths exist (`start_new_session`, POSIX signals); CI-environment testing | **not exercised** by this project's runs |
-| Structural indexing | Python files | Python-only by design |
+| OpenCode 2.2.5, 2.1.4 with `--standalone` | Live two-session probe in isolation: capture, injection, recall, MCP | **Works** |
+| OpenCode 2.x background service (default mode) | Not run, to keep tests away from a real service and database | **Unverified** |
+| OpenCode 1.18.32 | Same probe, plus controlled comparisons | **Works** |
+| Other OpenCode versions | Not run | Unverified |
+| Claude Code | No integration exists; it can use the MCP server as any client would | **Not supported** for automatic memory |
+| Any MCP client | Server tests only | Explicit tools only |
+| Windows, Python 3.11 | Fresh clone, CI | Passing |
+| Linux, Python 3.11 | CI, deterministic tests only | Passing; never run with a real agent |
+| macOS | Not run | Unverified |
+| Structural indexing | Python only | By design |
+
+On 2.x TRACE records user and assistant text; memory-tool activity is not captured yet. Run OpenCode once
+before `trace setup`, so setup can see which version's layout your database uses. OpenCode 1.x installs its
+plugin SDK the first time a user configures a plugin: about 60 MB and two minutes, once per user.
 
 ## Development
 
@@ -360,11 +365,10 @@ sole benchmark orchestrator, `agent/` stays provider-neutral, and the new
 
 ## Testing
 
-Full suite: 469 tests collected.
 The deterministic tests are all local — no network, keys, or models
-required. Latest run, on a fresh clone: 439 passed, 29 skipped, 1 expected
-failure. Eight of the skips need the `corpus` extra (`pyarrow`). The other 21
-are real-OpenCode integration tests that run the actual `opencode` binary
+required, and CI runs them on Windows and Linux. Latest run, on a fresh Windows
+clone: 586 passed, 22 skipped, 1 expected failure. The `corpus` extra (`pyarrow`)
+is needed for eight of them. 21 of the skips are real-OpenCode integration tests that run the actual `opencode` binary
 against the free-tier model (network + model required): timing-sensitive,
 with occasional provider latency/timeout flakes, and on Windows their
 fixtures can hit external file-lock teardown flakes (`WinError 32` from
@@ -377,21 +381,20 @@ are environmental, not assertion failures in TRACE logic.
   to structural memory (episodic/git/transcript memory still work).
 - Same-named methods on different classes can conflate in call edges;
   symbol attribution from diffs is best-effort overlap, not proof.
-- Automatic capture and injection are validated with **OpenCode 1.18.32 only**
-  (local database monitor plus a project-local `messages.transform` plugin).
-  Other agents require manual transcript recording via CLI or MCP unless a
-  corresponding integration exists.
+- Automatic capture and injection cover OpenCode only (see the compatibility
+  matrix). Other agents require manual transcript recording via CLI or MCP.
 - Session resolution fails open: continued/stale sessions, TUI multi-session
   use, and concurrent same-project runs may receive no automatic injection
   rather than a wrong one.
 - Model usefulness has been tested only within bounded conditions (single
   unambiguous prior fact: 9/9 valid recalls; multi-fact selection is weaker).
   No claim is made that memory improves coding performance.
-- Secret redaction is best-effort pattern matching — not guaranteed to catch all secrets.
-- Stored memory is injected as text: hostile content an agent repeated in a session can
-  reach later sessions, and the block's labels do not stop it from imitating them.
-- With TRACE enabled, `opencode run` was measured exiting about 100 seconds after the agent
-  finished (cause not yet found).
+- Secret redaction is best-effort pattern matching — not guaranteed to catch all secrets. A
+  password in plain prose with no nearby keyword cannot be detected, and bare high-entropy
+  strings are left alone to avoid destroying hashes and ids.
+- Stored memory reaches the model as data: each record is one JSON line inside a boundary it
+  cannot forge, under a notice that records are untrusted. That stops stored text from
+  impersonating the block, but a model can still choose to obey what it reads.
 - Benchmark evidence is pilot-scale; no effectiveness claims are made.
 - MCP integration is labeled by what it is (MCP-compatible agents),
   not by an exhaustive tested-client matrix.
