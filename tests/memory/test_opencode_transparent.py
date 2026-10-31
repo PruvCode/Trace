@@ -29,11 +29,13 @@ def test_transparent_adapter_creation():
     assert adapter.agent_version == ">=1.0.0"
 
 
-def test_transparent_adapter_is_available():
+def test_transparent_adapter_is_available(monkeypatch):
     """Test that transparent adapter detects availability."""
     adapter = opencode_transparent_mod.create_opencode_transparent_adapter()
-    # OpenCode is installed in the test environment
+    monkeypatch.setattr("shutil.which", lambda name: f"/bin/{name}")
     assert adapter.is_available() is True
+    monkeypatch.setattr("shutil.which", lambda name: None)
+    assert adapter.is_available() is False
 
 
 def test_transparent_monitor_start_stop(temp_project):
