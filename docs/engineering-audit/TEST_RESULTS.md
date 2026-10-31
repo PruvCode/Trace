@@ -77,3 +77,17 @@ See `CURRENT_STATE_AUDIT.md` section 4. Fresh default Windows clone at `2489795`
 **439 passed, 0 failed, 29 skipped, 1 xfailed** in 601 s; `tests/corpus` with `pyarrow`: 80 passed.
 T6 and T8 above do not reproduce on a default clone (28 failed before the fix). The 21 live tests
 were not run: the provider returned `Free usage limit reached`.
+
+## Completion work, 2026-10-31
+
+| # | Command | Tree | Result |
+|---|---|---|---|
+| C1 | `python -m pytest tests -q -rfE` with `pyarrow`, fresh default Windows clone | `575ace3` | **586 passed, 0 failed, 22 skipped, 1 xfailed**, 520 s |
+| C2 | GitHub Actions: ruff, then the same suite, windows-latest and ubuntu-latest, `constraints.txt` | `575ace3` | **Both passed** (run 41201537161) |
+| C3 | `python research/phase3/compat_probe.py <binary>`, real model, isolated homes | `bda01a1` | 2.2.5, 2.1.4 (`--standalone`), 1.18.32: recall, capture, injection and MCP all passed |
+| C4 | `python research/phase3/retrieval_eval.py dev` | `aa9d485` | Recency 1/12; previous task-aware 9/12 at 3005 chars; current 11/12 at 1482 chars |
+| C5 | `python research/phase3/retrieval_eval.py held`, scored once on frozen code | `aa9d485` | Recency 0/12; previous 10/12 at 3010 chars; current 12/12 at 1490 chars |
+
+The first Linux CI run failed 9 tests; 3 were a real bug (a stopped monitor stayed a zombie and counted as alive),
+the rest assumed Windows or an installed `opencode`. Skips in C1: 21 live tests and 1 symlink test on Windows. The
+strict xfail is the recency limitation. The 21 live tests were not run: their model is at its usage limit.
