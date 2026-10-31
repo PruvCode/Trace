@@ -403,7 +403,7 @@ def test_synthetic_block_labeling():
     text = synthetic_mod.render_user_block(items)
     assert text.startswith(synthetic_mod.SYNTHETIC_TITLE)
     assert text.rstrip().endswith(synthetic_mod.SYNTHETIC_FOOTER)
-    assert "Previous session:" in text
+    assert '{"session":"previous"' in text
     assert "<TRACE MEMORY>" not in text
     assert synthetic_mod.is_synthetic_memory_text(text) is True
     assert synthetic_mod.render_user_block([]) == ""

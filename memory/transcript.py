@@ -11,6 +11,7 @@ import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
+from memory import redact as redact_mod
 from memory import store as store_mod
 
 ROLES = frozenset({"user", "assistant", "system", "tool"})
@@ -53,13 +54,13 @@ def validate_message(
     if source_id is not None and (not isinstance(source_id, str) or not source_id.strip()):
         raise ValueError("source_id must be a non-empty string or None")
     try:
-        metadata_text = json.dumps(metadata, sort_keys=True)
+        metadata_text = json.dumps(redact_mod.redact_value(metadata), sort_keys=True)
     except (TypeError, ValueError) as exc:
         raise ValueError(f"metadata is not JSON-serializable: {exc}") from exc
     return {
         "session_id": session_id.strip(),
         "role": role,
-        "content": content,
+        "content": redact_mod.redact_text(content),
         "timestamp": timestamp or utcnow_iso(),
         "metadata": metadata,
         "metadata_text": metadata_text,

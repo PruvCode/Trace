@@ -18,6 +18,7 @@ import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
+from memory import redact as redact_mod
 from memory import store as store_mod
 
 
@@ -96,6 +97,7 @@ def validate_event(
     if status is not None and status not in STATUSES:
         raise ValueError(f"unknown status {status!r}; expected one of {sorted(STATUSES)}")
     _supersedes_ids(payload)
+    payload = redact_mod.redact_value(payload)
     try:
         payload_text = json.dumps(payload, sort_keys=True)
     except (TypeError, ValueError) as exc:

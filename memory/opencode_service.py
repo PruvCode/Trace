@@ -337,7 +337,7 @@ class OpenCodeCaptureService:
             import datetime
             stamp = datetime.datetime.now().isoformat(timespec="seconds")
             with open(self._service_dir / LOG_FILE, "a", encoding="utf-8") as f:
-                f.write(f"{stamp} {msg}\n")
+                f.write(f"{stamp} {redact_mod.redact_text(msg)}\n")
         except OSError:
             pass
 
