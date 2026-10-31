@@ -43,9 +43,9 @@ without flagged runs. Smoke data is excluded from analysis.
 ## Second amendment before any valid outcome
 
 The first full attempt produced no usable data: `big-pickle` hit `Free usage limit reached` and two capture bugs
-were found and fixed. That run was discarded. The model for the rerun is `opencode/nemotron-3.5-lightning-free`,
-the only free model still answering, so results are not comparable with Phase 2. Primary arms now finish before
-any secondary arm. The code under test is the commit recorded in the run's first line.
+were found and fixed. That run was discarded. `nemotron-3.5-lightning-free` was tried as a replacement and failed
+most calls in a smoke test, so the model stays `big-pickle` and the rerun waits for the limit to clear. Primary arms
+now finish before any secondary arm. The code under test is the commit recorded in the run's first line.
 
 ## Known limitations, stated in advance
 
