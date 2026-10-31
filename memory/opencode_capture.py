@@ -22,6 +22,7 @@ from memory.capture import (
     CapturedMessage,
     SessionInfo,
 )
+from memory import redact as redact_mod
 from memory import transcript as transcript_mod
 from memory import episodic as episodic_mod
 from memory import store as store_mod
@@ -66,18 +67,7 @@ class OpenCodeCaptureAdapter(CaptureAdapter):
         """Redact sensitive information from content if enabled."""
         if not config.redact_secrets:
             return content
-        # Basic redaction patterns for common secrets
-        import re
-        patterns = [
-            (r'(api[_-]?key|secret|password|token|credential)\s*[:=]\s*\S+', r'\1=***REDACTED***'),
-            (r'(sk|pk)_[a-zA-Z0-9]{20,}', '***REDACTED***'),
-            (r'gh[psuo]_[a-zA-Z0-9]{36}', '***REDACTED***'),
-            (r'xox[baprs]-[\w-]{10,}', '***REDACTED***'),
-        ]
-        result = content
-        for pattern, replacement in patterns:
-            result = re.sub(pattern, replacement, result, flags=re.IGNORECASE)
-        return result
+        return redact_mod.redact_text(content)
 
     def _truncate(self, content: str, max_length: int) -> str:
         if len(content) <= max_length:

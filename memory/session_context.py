@@ -103,11 +103,12 @@ def _tail_messages(
             if not content or synthetic_mod.is_synthetic_memory_text(content):
                 continue
             cap = MAX_ASSISTANT_ITEM_CHARS if msg.role == "assistant" else MAX_ITEM_CHARS
-            text, _ = _truncate(content, cap)
+            # Redact first: truncation can cut a secret out of its pattern.
+            text, _ = _truncate(redact_mod.redact_text(content), cap)
             group.append({
                 "kind": "message",
                 "role": msg.role,
-                "text": redact_mod.redact_text(text),
+                "text": text,
                 "session": session_id,
                 "when": when,
             })
@@ -149,7 +150,7 @@ def _relevant_messages(conn: sqlite3.Connection, query: str, exclude_session_id:
                 or transcript_mod.session_parent(conn, msg.session_id)):
             continue
         cap = MAX_ASSISTANT_ITEM_CHARS if msg.role == "assistant" else MAX_ITEM_CHARS
-        out.append({"kind": "message", "role": msg.role, "text": redact_mod.redact_text(_truncate(content, cap)[0]),
+        out.append({"kind": "message", "role": msg.role, "text": _truncate(redact_mod.redact_text(content), cap)[0],
                     "session": msg.session_id, "when": msg.timestamp})
         if len(out) >= limit:
             break
@@ -247,11 +248,11 @@ def _recent_findings(conn: sqlite3.Connection, project_root: Path | None = None)
             stale = _staleness(project_root, row[3], row[4])
             if stale:
                 labels.append(stale)
-            text, _ = _truncate(text, MAX_ITEM_CHARS)
+            text, _ = _truncate(redact_mod.redact_text(text), MAX_ITEM_CHARS)
             items.append({
                 "kind": "finding",
                 "role": f"{event_type} ({'; '.join(labels)})" if labels else str(event_type),
-                "text": redact_mod.redact_text(text),
+                "text": text,
             })
         except (IndexError, TypeError, AttributeError, OSError):
             continue
@@ -292,7 +293,7 @@ def format_block(items: list[dict]) -> str:
     """Render items as a compact human-readable context block."""
     if not items:
         return ""
-    return "\n".join(["<TRACE MEMORY>", *synthetic_mod.render_lines(items), "", "</TRACE MEMORY>"])
+    return "\n".join(["<TRACE MEMORY>", *synthetic_mod.render_records(items), "</TRACE MEMORY>"])
 
 
 def get_session_start_context(
