@@ -220,7 +220,7 @@ local process). Any MCP-compatible agent can use it:
 
 1. Run `trace init` in your project.
 2. Run `trace setup opencode --transparent` (or `trace setup opencode` for manual capture).
-3. The agent can now call the 9 memory tools via MCP; everything it records
+3. The agent can now call the memory tools via MCP; everything it records
    persists in `<project>/.agent-memory/memory.db` for the next session.
 
 With the supported OpenCode integration (validated with OpenCode 1.18.32),
@@ -228,9 +228,11 @@ both directions are automatic: the background monitor captures sessions,
 and the project-local plugin adds bounded prior-session memory to every
 model request as one labeled contextual message — the agent does not need
 to call any retrieval tool for the previous session to be available.
-The 9 MCP tools remain for explicit querying (`search_transcripts`,
-`get_transcript_session`, `search_events`, etc.) whenever the agent (or you,
-via `trace` CLI commands) wants to look something up on demand.
+OpenCode setup enables the four memory tools agents actually used
+(`record_event`, `search_events`, `search_transcripts`,
+`get_transcript_session`), because tool schemas are resent on every request.
+`trace mcp` prints the full 9-tool server for other clients, and `trace`
+commands cover the rest.
 
 Supported: any agent that speaks MCP over stdio and can spawn a local
 command (e.g. OpenCode with MCP configured) can use explicit MCP querying.
