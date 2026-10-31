@@ -1,0 +1,9 @@
+mcp==2.3.0
+mcp-types==2.3.0
+openai==3.41.0
+pyarrow==26.0.0
+pytest==9.2.0
+PyYAML==6.0.3
+ruff==0.17.3
+tree-sitter==0.26.0
+tree-sitter-python==0.25.0

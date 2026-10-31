@@ -11,8 +11,6 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
-import time
-import uuid
 from pathlib import Path
 from typing import Iterator, Optional
 
@@ -21,7 +19,6 @@ from memory.capture import (
     CaptureConfig,
     CapturedEvent,
     CapturedMessage,
-    SessionInfo,
 )
 from memory import store as store_mod
 from memory import synthetic as synthetic_mod
@@ -160,7 +157,7 @@ class OpenCodeDatabaseMonitor:
         if self._thread:
             self._thread.join(timeout=10.0)
             if self._thread.is_alive():
-                print(f"[OpenCode monitor] Warning: Thread did not terminate within timeout")
+                print("[OpenCode monitor] Warning: Thread did not terminate within timeout")
             self._thread = None
 
     def _get_backoff_delay(self) -> float:
@@ -373,7 +370,6 @@ class OpenCodeDatabaseMonitor:
         elif part_type == "tool":
             # Tool call
             tool_name = part_data.get("tool")
-            call_id = part_data.get("callID")
             state = part_data.get("state", {})
             status = state.get("status")
             input_data = state.get("input")
@@ -480,8 +476,6 @@ def _get_monitor(project_path: Path) -> OpenCodeDatabaseMonitor:
     """Get or create a monitor for the given project path (singleton per project)."""
     key = _get_monitor_key(project_path)
     if key not in _MONITORS:
-        opencode_db_path = _default_opencode_db_path()
-        trace_db_path = project_mod.db_path(project_path)
         _MONITORS[key] = OpenCodeDatabaseMonitor(
             opencode_db_path=_default_opencode_db_path(),
             trace_db_path=project_mod.db_path(project_path),

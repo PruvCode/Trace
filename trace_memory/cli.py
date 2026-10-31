@@ -274,7 +274,7 @@ def cmd_status(args) -> int:
     if plugin_path.exists():
         print(f"  plugin:          installed at {plugin_path}")
     else:
-        print(f"  plugin:          not installed (run 'trace setup opencode --transparent')")
+        print("  plugin:          not installed (run 'trace setup opencode --transparent')")
 
     if svc_status.get('status') == 'stopped' and not plugin_path.exists():
         print()
