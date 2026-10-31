@@ -23,7 +23,7 @@ _R = "***REDACTED***"
 # Words that always mark the next value as secret, anywhere in an identifier:
 # password, db_password, dbPassword, jwtSecret.
 _KEY_WORDS = (
-    r"api[_-]?key|secret[_-]?key|access[_-]?key|encryption[_-]?key|signing[_-]?key|private[_-]?key|"
+    r"api[_-]?key|secret[_-]?key|access[_-]?key|encryption[_-]?key|signing[_-]?key|private[_-]?key|ssh[_-]?key|"
     r"account[_-]?key|shared[_-]?access[_-]?key|secret|password|passwd|passphrase|credentials?|"
     r"auth[_-]?token|access[_-]?token|refresh[_-]?token|id[_-]?token|session[_-]?token"
 )
@@ -42,7 +42,7 @@ _CODE_VALUE = re.compile(
 )
 _CALL = re.compile(r"^[a-z_][\w.]*\(")
 _PLACEHOLDER = re.compile(r"^(?:\$\{?[A-Z_][A-Z0-9_]*\}?|%[A-Z_][A-Z0-9_]*%|<[a-z][\w -]*>|\{\{.*\}\}|\*\*\*REDACTED.*)$")
-_TYPE_HINT = re.compile(r"^(?:\w+\[.*|[A-Z][a-z]+[A-Z]\w*)$")
+_TYPE_HINT = re.compile(r"^(?:\w+\[.*|[A-Z][a-z]+[A-Z][A-Za-z]*)$")
 _PROSE_WORDS = frozenset("""required incorrect invalid missing wrong empty set expired not correct valid needed optional
 stored hashed encrypted too the a an in on being protected reset unset unknown""".split())
 
@@ -143,7 +143,7 @@ _PATTERNS: tuple = (
                 r"(\s{1,8}|=)(?!\$)(?:\"[^\"\n]{0,4096}\"|'[^'\n]{0,4096}'|[^\s'\"-][^\s'\"]{0,4096})", re.I), r"\1\2" + _R),
     # Assignments.
     (re.compile(rf"{_IDENT}([A-Za-z0-9_\-]{{0,40}}?(?:{_KEY_WORDS})){_ASSIGN}", re.I), _strong_assign),
-    (re.compile(rf"{_IDENT}(pass|pwd|pw|PASS|PWD|PGPASSWORD){_ASSIGN}"), _strong_assign),
+    (re.compile(rf"{_IDENT}(pass|pwd|pw|PASS|PWD|Pwd|PGPASSWORD|[A-Za-z0-9]{{1,40}}_(?:pass|pwd)){_ASSIGN}"), _strong_assign),
     (re.compile(rf"\b([A-Z][A-Z0-9]{{0,40}}_(?:[A-Z0-9]{{1,40}}_){{0,8}}(?:PASSWORD|SECRET|PASS|PWD|CREDENTIALS?)){_ASSIGN}"), _strong_assign),
     (re.compile(rf"\b([A-Z][A-Z0-9]{{0,40}}_(?:[A-Z0-9]{{1,40}}_){{0,8}}(?:KEY|TOKEN)){_ASSIGN}"), _weak_assign),
     (re.compile(rf"{_IDENT}(token){_ASSIGN}", re.I), _weak_assign),
