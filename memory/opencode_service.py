@@ -990,6 +990,9 @@ class OpenCodeCaptureService:
 
     def _is_pid_alive(self, pid: int) -> bool:
         """Check whether a PID is still alive. Never signals the process."""
+        # A child stays a zombie until reaped, and POSIX reports a zombie as alive.
+        if self._last_proc is not None and self._last_proc.pid == pid and self._last_proc.poll() is not None:
+            return False
         return process_is_alive(pid)
 
     def _wait_for_exit(self, pid: int, attempts: int = 50, interval: float = 0.1) -> bool:

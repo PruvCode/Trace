@@ -109,6 +109,7 @@ def test_resolve_binary_prefers_real_executable(tmp_path, monkeypatch):
 
     fake_exe = tmp_path / "opencode.exe"
     fake_exe.write_text("fake", encoding="utf-8")
+    fake_exe.chmod(0o755)
     monkeypatch.setenv("PATH", str(tmp_path), prepend=os.pathsep)
     agent = OpenCodeAgent(model="opencode/mimo-v2.5-free", opencode_bin="no-such-bin")
     resolved = agent._resolve_binary()

@@ -277,6 +277,7 @@ def test_validate_candidate_flags_unsupported_environment(patched_cache):
     )
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="%TEMP% and %LOCALAPPDATA% routing is Windows-only")
 def test_scratch_worktree_avoids_delete_throttled_appdata(
     patched_cache, monkeypatch, tmp_path
 ):
