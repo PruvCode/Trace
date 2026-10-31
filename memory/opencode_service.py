@@ -363,10 +363,18 @@ class OpenCodeCaptureService:
     def _is_project_dir(self, directory: object) -> bool:
         if not isinstance(directory, str) or not directory:
             return False
-        key = directory.replace("\\", "/")
-        if sys.platform == "win32":
-            key = key.casefold()
-        return key == self._project_dir_key()
+        def normalize(value: str) -> str:
+            key = value.replace("\\", "/")
+            return key.casefold() if sys.platform == "win32" else key
+
+        # OpenCode records the path as launched; ours is resolved. They differ
+        # through symlinks, junctions and OS path redirection.
+        if normalize(directory) == self._project_dir_key():
+            return True
+        try:
+            return normalize(str(Path(directory).resolve())) == self._project_dir_key()
+        except OSError:
+            return False
 
     # -- schema / cursors ----------------------------------------------------
 

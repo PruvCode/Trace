@@ -123,7 +123,7 @@ export const TraceMemoryPlugin = async ({ directory }) => {
           let proc = null;
           try {
             proc = Bun.spawnSync([
-              TRACE_PYTHON, "-m", "memory.message_context",
+              TRACE_PYTHON, "-P", "-m", "memory.message_context",
               "--db", TRACE_DB,
               "--opencode-db", OPENCODE_DB,
               "--project-dir", directory,
@@ -224,7 +224,7 @@ function textOf(message) {
 function helper(sessionID, task) {
   traceAttempts.set(sessionID, (traceAttempts.get(sessionID) || 0) + 1);
   const proc = spawnSync(TRACE_PYTHON, [
-    "-m", "memory.message_context",
+    "-P", "-m", "memory.message_context",
     "--db", TRACE_DB,
     "--opencode-db", OPENCODE_DB,
     "--project-dir", TRACE_PROJECT,

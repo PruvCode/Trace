@@ -520,6 +520,7 @@ def mcp_server_command(project: Path) -> list[str]:
     db = require_db(project)
     return [
         sys.executable,
+        "-P",  # never import from the project: its queue/ or json.py must not shadow the stdlib
         "-m",
         "memory.mcp_server",
         "--db",
