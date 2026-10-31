@@ -10,7 +10,9 @@ rows = [json.loads(x) for f in sys.argv[1:] for x in open(f, encoding="utf-8") i
 hist = [r for r in rows if r.get("phase") == "history"]
 B = [r for r in rows if r.get("phase") == "B"]
 ARMS = ["N0", "N1", "T1", "T2", "N1U", "T2U"]
-void = lambda r: r["rc"] == "timeout" and r["tools"] == 0
+# Post-hoc, after the usage limit ended runs in a way the preregistered rule did not foresee:
+# a row is void when the model never answered or the run was cut off.
+void = lambda r: r["rc"] != 0 or r["tokens"]["input"] + r["tokens"]["cache_read"] == 0
 
 
 def tasks(subset):
@@ -22,7 +24,7 @@ def tasks(subset):
 
 def boot(t, a, b, n=10000, seed=1):
     names = [k for k, v in t.items() if v.get(a) and v.get(b)]
-    if not names:
+    if len(names) < 2:
         return None
     rate = lambda ts, arm: statistics.mean(r["pass"] for x in ts for r in t[x][arm])
     rng = random.Random(seed)

@@ -211,6 +211,8 @@ REVIEW_LEAKS = [
     ("dbPassword=opensesame", "opensesame"), ("jwtSecret: opensesame", "opensesame"),
     ("secret_key=opensesame", "opensesame"), ("encryption_key=opensesame", "opensesame"),
     ("pass=opensesame", "opensesame"), ("PGPASSWORD=opensesame", "opensesame"),
+    ("db_pass=opensesame", "opensesame"), ("Server=x;Uid=y;Pwd=opensesame;", "opensesame"),
+    ("ssh_key=abc123", "abc123"), ("accessKey: AbCdEf123456", "AbCdEf123456"),
     ("password=$ecret123", "$ecret123"), ("password=Summer2024(1)", "Summer2024(1)"),
     ("password=p&opensesame", "opensesame"), ("--password='two words'", "two words"),
     ("mysql -u root -popensesame", "opensesame"), ("sshpass -p opensesame ssh host", "opensesame"),

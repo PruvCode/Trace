@@ -294,8 +294,11 @@ A preregistered two-session comparison (10 synthetic tasks, one free model,
 two runs) found that on tasks needing earlier-session knowledge, memory beat
 no memory (83% vs 38% pooled), but **TRACE did not beat a plain AGENTS.md
 notes file** (83% vs 83%, inconclusive at this sample size) and used about
-twice the input tokens. See
-[`docs/engineering-audit/CURRENT_STATE_AUDIT.md`](docs/engineering-audit/CURRENT_STATE_AUDIT.md).
+twice the input tokens. A later held-out test on longer histories, cut short by
+a usage limit (30 valid runs on four tasks), found notes and current TRACE tied
+(8/8 and 7/7) with TRACE using about 14% fewer input tokens. Whether TRACE helps
+when nobody asks for notes is still untested. See
+[`docs/engineering-audit/FINAL_REPORT.md`](docs/engineering-audit/FINAL_REPORT.md).
 
 Separately, the automatic retrieval path itself has bounded experimental
 evidence: 9/9 valid single-fact recall trials succeeded under the tested
