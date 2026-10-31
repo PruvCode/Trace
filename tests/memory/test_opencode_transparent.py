@@ -29,11 +29,13 @@ def test_transparent_adapter_creation():
     assert adapter.agent_version == ">=1.0.0"
 
 
-def test_transparent_adapter_is_available():
+def test_transparent_adapter_is_available(monkeypatch):
     """Test that transparent adapter detects availability."""
     adapter = opencode_transparent_mod.create_opencode_transparent_adapter()
-    # OpenCode is installed in the test environment
+    monkeypatch.setattr("shutil.which", lambda name: f"/bin/{name}")
     assert adapter.is_available() is True
+    monkeypatch.setattr("shutil.which", lambda name: None)
+    assert adapter.is_available() is False
 
 
 def test_transparent_monitor_start_stop(temp_project):
@@ -211,7 +213,7 @@ def test_setup_installs_memory_plugin(temp_project):
     result = opencode_plugin_mod.install_plugin(temp_project)
     assert result["status"] in ("created", "updated")
 
-    plugin_path = temp_project / ".opencode" / "plugins" / "trace-memory.js"
+    plugin_path = temp_project / ".trace-service" / "opencode-plugin.js"
     assert plugin_path.exists()
     source = plugin_path.read_text(encoding="utf-8")
 
@@ -219,7 +221,8 @@ def test_setup_installs_memory_plugin(temp_project):
     # path replaces system injection; the old hook must be gone.
     assert "experimental.chat.messages.transform" in source
     assert "experimental.chat.system.transform" not in source
-    assert "traceMsgInjectedSessions" in source
+    assert "traceBlocks" in source
+    assert "hasTraceBlock(output.messages)" in source
     assert "output.messages.unshift" in source
     assert "synthetic" in source
     # Thin glue only: no database logic, no npm dependencies in JS.
@@ -242,7 +245,7 @@ def test_setup_integration_reports_plugin(temp_project):
     adapter = opencode_transparent_mod.create_opencode_transparent_adapter()
     result = adapter.setup_integration(temp_project)
     assert result["plugin"]["status"] in ("created", "updated")
-    assert (temp_project / ".opencode" / "plugins" / "trace-memory.js").exists()
+    assert (temp_project / ".trace-service" / "opencode-plugin.js").exists()
 
     import json
     config = json.loads((temp_project / "opencode.json").read_text(encoding="utf-8"))
@@ -395,3 +398,35 @@ def test_create_opencode_config_minimal_no_permission(temp_project):
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+def test_plugin_is_listed_in_config_not_in_the_dot_opencode_directory(temp_project):
+    """A .opencode/plugins directory makes OpenCode npm-install into every project."""
+    import json
+    from memory import opencode_plugin as plugin_mod
+
+    (temp_project / "opencode.json").write_text(json.dumps({"plugin": ["someone-elses-plugin"], "theme": "x"}))
+    adapter = opencode_transparent_mod.create_opencode_transparent_adapter()
+    adapter.setup_integration(temp_project)
+    adapter.setup_integration(temp_project)  # idempotent
+    config = json.loads((temp_project / "opencode.json").read_text(encoding="utf-8"))
+    assert config["plugin"] == ["someone-elses-plugin", plugin_mod.plugin_uri(temp_project)]
+    assert not (temp_project / ".opencode").exists()
+
+    adapter.teardown_integration(temp_project)
+    config = json.loads((temp_project / "opencode.json").read_text(encoding="utf-8"))
+    assert config["plugin"] == ["someone-elses-plugin"] and config["theme"] == "x"
+    assert not plugin_mod.plugin_path(temp_project).exists()
+
+
+def test_setup_replaces_the_legacy_plugin_and_keeps_other_files(temp_project):
+    from memory import opencode_plugin as plugin_mod
+
+    plugins = temp_project / ".opencode" / "plugins"
+    plugins.mkdir(parents=True)
+    (plugins / "trace-memory.js").write_text(plugin_mod.PLUGIN_HEADER + "\nold\n", encoding="utf-8")
+    (plugins / "theirs.js").write_text("// not TRACE\n", encoding="utf-8")
+    adapter = opencode_transparent_mod.create_opencode_transparent_adapter()
+    adapter.setup_integration(temp_project)
+    assert not (plugins / "trace-memory.js").exists()
+    assert (plugins / "theirs.js").exists()
+    adapter.stop_monitoring(temp_project)

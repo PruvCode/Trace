@@ -148,7 +148,7 @@ def test_mcp_prints_local_config(sample_project, capsys):
     captured = capsys.readouterr()
     config = json.loads(captured.out)
     server = config["mcpServers"]["trace-memory"]
-    assert server["command"][1:3] == ["-m", "memory.mcp_server"]
+    assert server["command"][1:4] == ["-P", "-m", "memory.mcp_server"]
     assert "--db" in server["command"] and "--repo" in server["command"]
     assert "local" in captured.err and "nothing leaves" in captured.err
 

@@ -308,6 +308,7 @@ def test_runner_passes_base_commit_to_the_fixture_seeder():
     )
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="%TEMP% and %LOCALAPPDATA% routing is Windows-only")
 def test_runner_default_work_root_avoids_slow_paths(monkeypatch, tmp_path):
     """Per-run workspaces must default to a fast local path.
 
@@ -345,6 +346,7 @@ def test_runner_default_work_root_avoids_slow_paths(monkeypatch, tmp_path):
     assert runner._resolve_work_root(None, repo_root) == (tmp_path / "envroot")
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="%TEMP% and %LOCALAPPDATA% routing is Windows-only")
 def test_runner_default_work_root_avoids_slow_paths(monkeypatch, tmp_path):
     """Per-run workspaces must default to a fast local path.
 

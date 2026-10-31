@@ -28,11 +28,13 @@ def test_opencode_adapter_creation():
     assert adapter.agent_version == ">=1.0.0"
 
 
-def test_opencode_adapter_is_available():
+def test_opencode_adapter_is_available(monkeypatch):
     """Test that OpenCode adapter detects availability."""
     adapter = opencode_capture_mod.create_opencode_adapter()
-    # OpenCode is installed in the test environment
+    monkeypatch.setattr(opencode_capture_mod, "which", lambda name: f"/bin/{name}")
     assert adapter.is_available() is True
+    monkeypatch.setattr(opencode_capture_mod, "which", lambda name: None)
+    assert adapter.is_available() is False
 
 
 def test_opencode_setup_integration(temp_project):

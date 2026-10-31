@@ -50,10 +50,10 @@ Session N records findings → Session N+1 retrieves them. See
 
 ![TRACE architecture](docs/architecture/trace-architecture.png)
 
-- **Agent layer** — OpenCode (automatic path validated with 1.18.32); any MCP-compatible client for explicit queries.
+- **Agent layer** — OpenCode (see the compatibility matrix); any MCP-compatible client for explicit queries.
 - **TRACE memory layer** — structural, episodic, Git, and transcript services over one interface.
 - **Local storage** — one SQLite + FTS5 database per project (`.agent-memory/memory.db`); nothing leaves the machine.
-- **Automatic OpenCode path** — a monitor captures sessions into memory; a plugin injects bounded prior-session context at session start.
+- **Automatic OpenCode path** — a monitor captures sessions into memory; a plugin injects bounded prior-session context into every model request.
 - **MCP explicit-query path** — 9 tools over stdio; not required for automatic retrieval.
 - **Benchmark/research subsystem** — isolated baseline-vs-memory runs with mechanical evaluation ([interactive diagram](docs/architecture/trace-architecture.html), [memory flow](docs/architecture/trace-memory-flow.html), [benchmark flow](docs/architecture/trace-benchmark-flow.html)).
 
@@ -161,47 +161,57 @@ while keeping recorded events and transcripts.
 
 ### How it works
 
-1. **Setup** (`trace setup opencode --transparent`): Creates `opencode.json` with TRACE's MCP
-   memory server configured and installs a project-local retrieval plugin
-   (`.opencode/plugins/trace-memory.js`). One-time per project. Starts a background monitor
-   that watches OpenCode's database (`~/.local/share/opencode/opencode.db`).
+1. **Setup** (`trace setup opencode --transparent`): adds only a `trace-memory` entry to the
+   project's `opencode.json` (refusing, with the exact entry to add by hand, if the file is
+   not plain JSON — e.g. it has comments), writes a project-local plugin
+   (`.trace-service/opencode-plugin.js`) and lists it in the same file, and starts one
+   background capture monitor for the project. OpenCode installs its plugin SDK the first time
+   any plugin is configured for a user (about 60 MB and two minutes on first start, once). OpenCode's database is found via `$XDG_DATA_HOME` (default
+   `~/.local/share/opencode/opencode.db`). `trace teardown opencode` reverses all of this
+   and keeps your memory.
 
-2. **Capture** (Automatic): Run `opencode` normally. The monitor detects new sessions,
-   messages, and tool calls in real-time by watching OpenCode's SQLite database:
-   - User/assistant messages → Transcript memory
-   - Memory tool calls (find_definition, search_events, etc.) → Episodic events
-   - Tool results → Searchable context
+2. **Capture** (Automatic): Run `opencode` normally. The monitor copies rows once OpenCode has
+   finished writing them (streaming replies are captured complete, not half-written):
+   - User/assistant text → Transcript memory (status rows such as step-finish are not stored)
+   - Completed memory-tool calls (prefixed `trace-memory_*` names included) → searchable
+     capture activity (`trace events`), never shown as a "finding"
+   - Every row has a stable source id, so restarts and replays never duplicate it; a row that
+     fails to save is retried, never skipped, and the error is logged in
+     `.trace-service/service.log` (no message content) and shown by `trace service status`.
+   - After a crash or reboot, the next OpenCode session start catches up and restarts capture.
 
-3. **Retrieval** (Automatic): Run `opencode` again. The project-local plugin resolves
-   the current session, assembles a bounded block of prior-session memory from the
-   project's TRACE database, and injects it as one clearly labeled contextual message
-   (`[TRACE PROJECT MEMORY - ...]`) once per session — no manual TRACE command needed.
-   The MCP server remains available for explicit queries (`search_transcripts`,
-   `get_transcript_session`, `search_events`), and you can also use
-   `trace context "query"` to manually retrieve context for debugging.
+3. **Retrieval** (Automatic): Run `opencode` again. At the first model request of a session the
+   plugin builds a bounded block of prior memory (one Python run per session) and adds it,
+   clearly labeled (`[TRACE PROJECT MEMORY - ...]`), to **every** model request of that
+   session. Messages matching the session's first prompt are added to the block
+   (`TRACE_TASK_AWARE=0` turns this off) — OpenCode does not keep plugin-added messages between requests, so injecting
+   once would hide memory from later agent steps. The MCP server remains available for
+   explicit queries, and `trace context "query"` retrieves context manually.
 
 ### What is captured automatically
 
 | Event Type | Stored As | Queryable Via |
 |------------|-----------|---------------|
 | User message | Transcript | `trace transcript search`, `trace context` |
-| Assistant response | Transcript | `trace transcript search`, `trace context` |
-| Memory tool call (find_definition, search_events, etc.) | Episodic event | `trace events`, `trace context` |
-| Memory tool result | Transcript + Event | `trace transcript search`, `trace events` |
+| Assistant response (once complete) | Transcript | `trace transcript search`, `trace context` |
+| Completed memory-tool call | Event (`source=capture`) | `trace events` |
 
 ### What is NOT captured automatically
 
-- Shell commands (bash, git, etc.) — OpenCode permission profile denies these
-- Web searches / fetches — Denied by permission profile
-- File reads/writes outside memory tools — Not exposed in OpenCode's event stream
-- Secrets in messages — Redacted before storage (API keys, tokens, passwords)
+- Other tool calls and their output (shell, file reads/writes, web fetches)
+- Step markers and finish reasons ("tool-calls", "stop")
+- Sessions from other project directories (each project has its own database)
 
 ### Privacy
 
 - All capture happens locally — no network calls by TRACE
-- Secrets are redacted before persistence (basic patterns for API keys, tokens, passwords)
+- Best-effort redaction before storage and again before injection (Anthropic/OpenAI/GitHub/
+  Stripe/AWS/Slack/Google key formats, private keys, JWTs, connection strings, and
+  `password=`/`API_KEY=`-style assignments). Pattern matching cannot catch every secret:
+  do not treat captured transcripts as safe to share.
 - Transcript data stored in same local SQLite DB as other memory layers
-- User controls retention via `trace reset` or `trace monitor stop`
+- `trace service stop` pauses capture (it stays off until `trace service start`);
+  `trace reset . --yes` stops capture and deletes the project's memory
 
 ## Agent Integration
 
@@ -210,25 +220,25 @@ local process). Any MCP-compatible agent can use it:
 
 1. Run `trace init` in your project.
 2. Run `trace setup opencode --transparent` (or `trace setup opencode` for manual capture).
-3. The agent can now call the 9 memory tools via MCP; everything it records
+3. The agent can now call the memory tools via MCP; everything it records
    persists in `<project>/.agent-memory/memory.db` for the next session.
 
-With the supported OpenCode integration (validated with OpenCode 1.18.32),
-both directions are automatic: the background monitor captures sessions,
-and the project-local plugin injects bounded prior-session memory at
-session start as one labeled contextual message — the agent does not need
+With the OpenCode integration, both directions are automatic: the background monitor captures sessions,
+and the project-local plugin adds bounded prior-session memory to every
+model request as one labeled contextual message — the agent does not need
 to call any retrieval tool for the previous session to be available.
-The 9 MCP tools remain for explicit querying (`search_transcripts`,
-`get_transcript_session`, `search_events`, etc.) whenever the agent (or you,
-via `trace` CLI commands) wants to look something up on demand.
+OpenCode setup enables the four memory tools agents actually used
+(`record_event`, `search_events`, `search_transcripts`,
+`get_transcript_session`), because tool schemas are resent on every request.
+`trace mcp` prints the full 9-tool server for other clients, and `trace`
+commands cover the rest.
 
 Supported: any agent that speaks MCP over stdio and can spawn a local
 command (e.g. OpenCode with MCP configured) can use explicit MCP querying.
 The automatic zero-touch workflow (capture + injection with no manual
-commands) is validated with OpenCode 1.18.32 only — other agents do not
-automatically inherit it unless a corresponding integration exists, and
-untested clients should be treated as experimental. Do not assume every
-current or future OpenCode version exposes identical hooks.
+commands) has been run on the OpenCode versions in the compatibility matrix.
+Other agents do not inherit it unless a corresponding integration exists, and
+untested clients should be treated as experimental.
 
 ## Memory Storage
 
@@ -239,11 +249,26 @@ current or future OpenCode version exposes identical hooks.
 - Structural rows are rebuilt deterministically on `trace index`;
   episodic events are append-only until you run `trace reset`.
 - All queries are parameterized and result-bounded (default 10, max 50).
-- Automatic session-start retrieval policy: the most recent prior session's
-  tail (at most 10 user/assistant messages) plus recent episodic findings
-  (at most 5), capped at 20 items / 4000 characters, project-scoped,
-  deterministically ordered, fail-open (ambiguous sessions inject nothing),
-  with best-effort secret redaction.
+- Automatic session-start retrieval policy: the newest 10 user/assistant
+  messages — from the most recent prior session first, older sessions only
+  fill unused budget, subagent sessions skipped — plus up to 5 recent
+  recorded findings, capped at 20 items / 4000 characters (oldest messages
+  yield first; long messages keep head and tail), project-scoped,
+  deterministically ordered, fail-open, with best-effort secret redaction.
+- Recorded findings can carry a lifecycle (stored in the event payload; older
+  events stay valid): `status` is `hypothesis`, `observed` or `verified`, and
+  `supersedes` names earlier event ids a finding replaces
+  (`trace record --status verified --supersedes 12`, or the MCP
+  `record_event` tool's `status`/`supersedes` arguments). New sessions are
+  shown only current findings, with hypotheses and verified findings
+  labeled; superseded ones stay searchable (`superseded_by` in
+  `search_events`). A finding linked to a `file` is flagged
+  "may be stale" when that file changed or disappeared after it was
+  recorded; unrelated changes never flag it. Earlier transcript messages
+  carry no lifecycle: they are shown as history, labeled by session.
+- Search matches each word literally (so `refresh-token` and `v1.2.3` work),
+  ranks best match first with newer entries breaking ties, and reports a
+  query with no searchable words as an error rather than "no results".
 - Injected synthetic memory is labeled `[TRACE PROJECT MEMORY - ...]` and
   is never re-captured as ordinary transcript memory.
 - Inspect with `trace status` / `trace report`, or open the SQLite file
@@ -264,6 +289,16 @@ python -m benchmark.analyze --results runs/workspaces/<exp_id>/results.jsonl --t
 Token counts come from exact provider `usage`, never estimates. TRACE
 makes no claim that memory saves tokens — it gives you the numbers to
 compare baseline vs. memory runs yourself.
+
+A preregistered two-session comparison (10 synthetic tasks, one free model,
+two runs) found that on tasks needing earlier-session knowledge, memory beat
+no memory (83% vs 38% pooled), but **TRACE did not beat a plain AGENTS.md
+notes file** (83% vs 83%, inconclusive at this sample size) and used about
+twice the input tokens. A later held-out test on longer histories, cut short by
+a usage limit (30 valid runs on four tasks), found notes and current TRACE tied
+(8/8 and 7/7) with TRACE using about 14% fewer input tokens. Whether TRACE helps
+when nobody asks for notes is still untested. See
+[`docs/engineering-audit/FINAL_REPORT.md`](docs/engineering-audit/FINAL_REPORT.md).
 
 Separately, the automatic retrieval path itself has bounded experimental
 evidence: 9/9 valid single-fact recall trials succeeded under the tested
@@ -300,6 +335,25 @@ with Python 3.11+. Git-history features need a git repository. Temporary
 and run directories should live outside cloud-synced folders (OneDrive,
 etc.) for performance.
 
+### Compatibility matrix (2026-10-31)
+
+| Surface | Tested | Status |
+|---|---|---|
+| OpenCode 2.2.5, 2.1.4 with `--standalone` | Live two-session probe in isolation: capture, injection, recall, MCP | **Works** |
+| OpenCode 2.x background service (default mode) | Not run, to keep tests away from a real service and database | **Unverified** |
+| OpenCode 1.18.32 | Same probe, plus controlled comparisons | **Works** |
+| Other OpenCode versions | Not run | Unverified |
+| Claude Code | No integration exists; it can use the MCP server as any client would | **Not supported** for automatic memory |
+| Any MCP client | Server tests only | Explicit tools only |
+| Windows, Python 3.11 | Fresh clone, CI | Passing |
+| Linux, Python 3.11 | CI, deterministic tests only | Passing; never run with a real agent |
+| macOS | Not run | Unverified |
+| Structural indexing | Python only | By design |
+
+On 2.x TRACE records user and assistant text; memory-tool activity is not captured yet. Run OpenCode once
+before `trace setup`, so setup can see which version's layout your database uses. OpenCode 1.x installs its
+plugin SDK the first time a user configures a plugin: about 60 MB and two minutes, once per user.
+
 ## Development
 
 ```powershell
@@ -314,10 +368,10 @@ sole benchmark orchestrator, `agent/` stays provider-neutral, and the new
 
 ## Testing
 
-Full suite: 405 tests collected.
-The 388 deterministic tests are all local — no network, keys, or models
-required. Latest run: 388 passed, 1 teardown error. The remaining 17 are
-real-OpenCode integration tests that run the actual `opencode` binary
+The deterministic tests are all local — no network, keys, or models
+required, and CI runs them on Windows and Linux. Latest run, on a fresh Windows
+clone: 586 passed, 22 skipped, 1 expected failure. The `corpus` extra (`pyarrow`)
+is needed for eight of them. 21 of the skips are real-OpenCode integration tests that run the actual `opencode` binary
 against the free-tier model (network + model required): timing-sensitive,
 with occasional provider latency/timeout flakes, and on Windows their
 fixtures can hit external file-lock teardown flakes (`WinError 32` from
@@ -330,17 +384,20 @@ are environmental, not assertion failures in TRACE logic.
   to structural memory (episodic/git/transcript memory still work).
 - Same-named methods on different classes can conflate in call edges;
   symbol attribution from diffs is best-effort overlap, not proof.
-- Automatic capture and injection are validated with **OpenCode 1.18.32 only**
-  (local database monitor plus a project-local `messages.transform` plugin).
-  Other agents require manual transcript recording via CLI or MCP unless a
-  corresponding integration exists.
+- Automatic capture and injection cover OpenCode only (see the compatibility
+  matrix). Other agents require manual transcript recording via CLI or MCP.
 - Session resolution fails open: continued/stale sessions, TUI multi-session
   use, and concurrent same-project runs may receive no automatic injection
   rather than a wrong one.
 - Model usefulness has been tested only within bounded conditions (single
   unambiguous prior fact: 9/9 valid recalls; multi-fact selection is weaker).
   No claim is made that memory improves coding performance.
-- Secret redaction uses basic pattern matching — not guaranteed to catch all secrets.
+- Secret redaction is best-effort pattern matching — not guaranteed to catch all secrets. A
+  password in plain prose with no nearby keyword cannot be detected, and bare high-entropy
+  strings are left alone to avoid destroying hashes and ids.
+- Stored memory reaches the model as data: each record is one JSON line inside a boundary it
+  cannot forge, under a notice that records are untrusted. That stops stored text from
+  impersonating the block, but a model can still choose to obey what it reads.
 - Benchmark evidence is pilot-scale; no effectiveness claims are made.
 - MCP integration is labeled by what it is (MCP-compatible agents),
   not by an exhaustive tested-client matrix.

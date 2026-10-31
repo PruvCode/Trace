@@ -18,9 +18,15 @@ runs/
 .agent-memory/
 .trace-service/
 
-# Generated fixture git repos (seeded by scripts/seed_*.py)
-# Working trees are regenerated locally; only the seed scripts are tracked.
-fixtures/*/
+# Generated fixture git repos (seeded by scripts/seed_*.py).
+# Fixture working trees are tracked so tests reproduce from a clean checkout;
+# only their generated .git directories, capture stores, and the external
+# swebench django clone (a Windows junction into the artifact cache) are
+# excluded.
+fixtures/*/.git/
+fixtures/*/.agent-memory/
+fixtures/swebench_repo/
+fixtures/history_repo/
 fixtures/toy_repo/.git/
 fixtures/history_repo/.git/
 fixtures/deps_repo/.git/

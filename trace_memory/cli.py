@@ -20,6 +20,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from memory import redact as redact_mod
+from memory.store import SearchQueryError
 from trace_memory import __version__
 from trace_memory import project as project_mod
 
@@ -126,6 +128,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--file", default=None)
     p.add_argument("--symbol", default=None)
     p.add_argument("--commit", default=None)
+    p.add_argument("--status", default=None, choices=["hypothesis", "observed", "verified"],
+                   help="how far the finding has been checked")
+    p.add_argument("--supersedes", type=int, action="append", default=None, metavar="EVENT_ID",
+                   help="id of an earlier event this one replaces (repeatable)")
     p.set_defaults(func=cmd_record)
 
     # Transcript subcommands
@@ -146,6 +152,11 @@ def build_parser() -> argparse.ArgumentParser:
     setup_sub.add_argument("--project", default=".", help="project directory (default: current directory)")
     setup_sub.add_argument("--transparent", action="store_true", help="enable automatic capture and memory injection (monitor OpenCode database + install retrieval plugin)")
     setup_sub.set_defaults(func=cmd_setup)
+
+    teardown_sub = sub.add_parser("teardown", help="reverse 'trace setup' (stops capture, removes plugin and MCP entry; keeps memory)")
+    teardown_sub.add_argument("agent", choices=["opencode"], help="agent integration to remove")
+    teardown_sub.add_argument("--project", default=".", help="project directory (default: current directory)")
+    teardown_sub.set_defaults(func=cmd_teardown)
 
     # Capture subcommand for running a session with automatic capture
     capture_sub = sub.add_parser("capture", help="run a coding agent session with automatic capture")
@@ -204,10 +215,21 @@ def cmd_init(args) -> int:
     print(f"  files:      {stats['files']}")
     print(f"  symbols:    {stats['symbols']}")
     print(f"  relations:  {stats['relationships']}")
-    print("  next: connect an agent with 'trace mcp', inspect with 'trace status'")
+    print()
+    print("What was created:")
+    print(f"  Local database: {stats['db']}")
     hint = project_mod.gitignore_hint(project)
     if hint:
-        print(f"  {hint}")
+        print("  (NOT git-ignored yet: add .agent-memory/ to .gitignore before committing)")
+    else:
+        print("  (git-ignored, or not inside a git repository)")
+    print()
+    print("Next steps:")
+    print("  1. Connect an agent:     trace mcp")
+    print("  2. Inspect memory:       trace status")
+    print("  3. Enable auto-capture:  trace setup opencode --transparent")
+    if hint:
+        print(f"  {hint}", file=sys.stderr)
     return EXIT_OK
 
 
@@ -235,6 +257,32 @@ def cmd_status(args) -> int:
     if info["events_by_source"]:
         breakdown = ", ".join(f"{k}={v}" for k, v in sorted(info["events_by_source"].items()))
         print(f"    by source: {breakdown}")
+
+    # Integration status
+    from memory import opencode_service as svc_mod
+    svc = svc_mod.get_service(project)
+    svc_status = svc.status()
+    print()
+    print("Integration (OpenCode):")
+    print(f"  capture service: {svc_status.get('status', 'unknown')}")
+    if svc_status.get('status') == 'running':
+        print(f"  service pid:     {svc_status.get('pid')}")
+        print(f"  cursors:         session={svc_status.get('cursors', {}).get('session')} message={svc_status.get('cursors', {}).get('message')} part={svc_status.get('cursors', {}).get('part')}")
+
+    from memory import opencode_plugin as opencode_plugin_mod
+
+    plugin_path = opencode_plugin_mod.plugin_path(project)
+    if plugin_path.exists():
+        print(f"  plugin:          installed at {plugin_path}")
+    else:
+        print("  plugin:          not installed (run 'trace setup opencode --transparent')")
+
+    if svc_status.get('status') == 'stopped' and not plugin_path.exists():
+        print()
+        print("Diagnostics:")
+        print("  - Run 'trace setup opencode --transparent' to enable automatic capture")
+        print("  - Run 'trace service start' to start the capture service")
+        print("  - If status shows 'stopped' but PID file exists, the service crashed; run 'trace service restart'")
     return EXIT_OK
 
 
@@ -327,7 +375,7 @@ def _print_rows(rows: list[dict], empty: str) -> int:
         print(empty)
         return EXIT_OK
     for row in rows:
-        print(json.dumps(row, sort_keys=True, default=str))
+        print(json.dumps(redact_mod.redact_value(row), sort_keys=True, default=str))
     return EXIT_OK
 
 
@@ -390,6 +438,12 @@ def cmd_record(args) -> int:
                 "the payload must be a JSON object.",
                 "Example: --payload '{\"finding\": \"...\"}'.",
             )
+    if args.status or args.supersedes:
+        payload = dict(payload or {})
+        if args.status:
+            payload["status"] = args.status
+        if args.supersedes:
+            payload["supersedes"] = args.supersedes
     result = project_mod.record_user_event(
         project,
         type=args.type,
@@ -495,18 +549,50 @@ def cmd_setup(args) -> int:
             result = project_mod.setup_opencode_transparent(project)
         else:
             result = project_mod.setup_opencode_integration(project)
+
+        # Print JSON for programmatic use
         print(json.dumps(result, sort_keys=True, default=str))
-        if result.get("status") == "created":
-            if args.transparent:
-                print("Automatic OpenCode memory enabled. Run 'opencode' normally - TRACE captures automatically and injects prior-session memory automatically.", file=sys.stderr)
+
+        # Human-friendly guidance (stderr, so stdout stays machine-readable)
+        if args.transparent:
+            err = sys.stderr
+            print("\nOpenCode automatic memory configured:", file=err)
+            print(f"  MCP entry:       {result['setup']['config_path']} (only 'mcp.trace-memory' was touched)", file=err)
+            print(f"  Plugin:          {result['plugin']['plugin_path']}", file=err)
+            print(f"  Capture service: {result['monitoring'].get('status')}", file=err)
+            print("\nHow it works:", file=err)
+            print("  - Run 'opencode' normally in this project.", file=err)
+            print("  - User and assistant messages are captured once complete; memory-tool calls are", file=err)
+            print("    recorded as searchable activity. Status rows are not stored.", file=err)
+            print("  - Each new session gets a bounded block of prior memory on every model request.", file=err)
+            print("  - After a crash or reboot, capture catches up and restarts at the next session start.", file=err)
+            print("\nInspect / undo:", file=err)
+            print("  - 'trace status' and 'trace service status' show capture health and errors", file=err)
+            print("  - .agent-memory/retrieval.log records each injection (no content)", file=err)
+            print("  - 'trace teardown opencode' reverses this setup (memory is kept)", file=err)
+        else:
+            if result.get("status") == "created":
+                print("\nMCP integration created. Run 'trace capture opencode \"prompt\"' to test.", file=sys.stderr)
             else:
-                print("Run 'trace capture opencode \"your prompt\"' to start a session with automatic capture.", file=sys.stderr)
+                print("\nMCP integration updated.", file=sys.stderr)
         return EXIT_OK
     raise project_mod.TraceUserError(
         f"unknown agent {args.agent!r}",
         "setup only supports 'opencode' currently.",
         "Run 'trace setup opencode --project <path>'.",
     )
+
+
+def cmd_teardown(args) -> int:
+    project = project_mod.resolve_project(args.project)
+    result = project_mod.teardown_opencode(project)
+    print(json.dumps(result, sort_keys=True, default=str))
+    print(
+        "TRACE OpenCode integration removed. Memory in .agent-memory/ was kept;"
+        " 'trace reset . --yes' deletes it.",
+        file=sys.stderr,
+    )
+    return EXIT_OK
 
 
 def cmd_monitor(args) -> int:
@@ -617,6 +703,11 @@ def cmd_reset(args) -> int:
         )
         return EXIT_USAGE
     result = project_mod.reset_project(project)
+    service = result.get("service", {})
+    if service.get("status") == "error":
+        print(f"warning: capture service did not stop: {service.get('message')}", file=sys.stderr)
+    elif service.get("status") == "stopped":
+        print("capture service stopped; it stays off until 'trace service start'", file=sys.stderr)
     if result["removed"]:
         print(f"TRACE memory removed: {result['project']}")
     else:
@@ -631,6 +722,13 @@ def main(argv: list[str] | None = None) -> int:
         return args.func(args)
     except project_mod.TraceUserError as exc:
         print(f"WHAT: {exc.what}\nWHY: {exc.why}\nHOW: {exc.how}", file=sys.stderr)
+        return EXIT_USAGE
+    except SearchQueryError as exc:
+        print(
+            f"WHAT: {exc}\nWHY: the query has no searchable words.\n"
+            "HOW: search for identifiers or words, e.g. 'refresh-token' or 'auth timeout'.",
+            file=sys.stderr,
+        )
         return EXIT_USAGE
     except BrokenPipeError:
         return EXIT_OK

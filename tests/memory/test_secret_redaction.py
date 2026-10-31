@@ -30,11 +30,13 @@ def monitor(tmp_path):
 
 class TestSecretRedaction:
     def test_openai_api_key_redacted(self, monitor):
+        # Prose disclosure ("API key is X") is redacted even when X is short.
         content = "My API key is sk-test"
         result = monitor._sanitize_content(content)
-        # sk-test is only 5 chars after sk-, less than 32 required
-        assert "sk-test" in result
-        assert "***REDACTED***" not in result
+        assert "sk-test" not in result
+        assert "***REDACTED***" in result
+        # A short sk- string in ordinary text is not a key and stays.
+        assert monitor._sanitize_content("the sk-test fixture") == "the sk-test fixture"
 
     def test_stripe_keys_redacted(self, monitor):
         content = "Live key: sk_live, Test key: pk_test"

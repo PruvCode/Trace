@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, "release/**"]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -c constraints.txt -e ".[dev,corpus]" ruff
+      - name: Configure git for fixture seeding
+        run: |
+          git config --global user.name ci
+          git config --global user.email ci@example.invalid
+      - run: python -m ruff check memory trace_memory
+      - name: Run tests
+        shell: bash
+        run: python -m pytest tests -q -p no:cacheprovider -rfE --tb=short 2>&1 | tee pytest.log
+      - name: Publish failed test names as annotations
+        if: failure()
+        shell: bash
+        run: grep -E '^(FAILED|ERROR) ' pytest.log | head -40 | sed 's/^/::error::/' || true

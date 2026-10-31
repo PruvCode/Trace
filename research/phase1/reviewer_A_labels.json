@@ -1,0 +1,7 @@
+{"reviewer":"A","kind":"AI-assisted (Claude subagent), NOT human","pairs":[
+{"pair":"pair1","P1":"yes","P2":"no","P3":"unclear","memory_would_help":"yes","steps_saveable":10,"confidence":"med"},
+{"pair":"pair2","P1":"unclear","P2":"unclear","P3":"unclear","memory_would_help":"unclear","steps_saveable":3,"confidence":"low"},
+{"pair":"pair3","P1":"yes","P2":"unclear","P3":"unclear","memory_would_help":"yes","steps_saveable":8,"confidence":"med"},
+{"pair":"pair4","P1":"unclear","P2":"no","P3":"unclear","memory_would_help":"unclear","steps_saveable":4,"confidence":"low"},
+{"pair":"pair5","P1":"yes","P2":"no","P3":"unclear","memory_would_help":"yes","steps_saveable":6,"confidence":"med"}],
+"caveats":["re-read vs necessary read indistinguishable without content (edit-before-read rule, files changed)","err classes are keyword matches on shell output; may false-positive","token matching is exact; interpreter/venv path changes hide near-duplicates","other_tool steps lack targets","user intent invisible","pair4.earlier and pair5.later structurally identical (likely same session); pairs 2/3 share a project: pairs not independent","P3 not judgeable","timeouts may be tool limits, not wrong approaches"]}

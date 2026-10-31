@@ -104,3 +104,32 @@ def test_mcp_server_missing_db_exits_loudly(tmp_path):
     )
     assert proc.returncode == 2
     assert "database not found" in proc.stderr
+
+
+def test_core_profile_exposes_only_the_core_tools(tmp_path):
+    import subprocess
+    import sys
+
+    db = tmp_path / "memory.db"
+    db.touch()
+    code = ("import asyncio, sys; from memory import mcp_server as m\n"
+            "m.server.run = lambda: print(sorted(t.name for t in asyncio.run(m.server.list_tools())))\n"
+            f"m.main(['--db', {str(db)!r}, '--tools', 'core'])")
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=60, check=True).stdout
+    assert out.strip() == str(sorted(__import__("memory.mcp_server").mcp_server.CORE_TOOLS))
+
+
+def test_project_modules_cannot_shadow_the_standard_library(tmp_path):
+    """A project with a queue/ package or json.py must not break TRACE's own processes."""
+    import subprocess
+
+    from trace_memory import project as project_mod
+
+    project = tmp_path / "project"
+    (project / "queue").mkdir(parents=True)
+    (project / "queue" / "__init__.py").write_text("", encoding="utf-8")
+    (project / "json.py").write_text("raise RuntimeError('shadowed')\n", encoding="utf-8")
+    project_mod.init_project(project)
+    command = project_mod.mcp_server_command(project)
+    run = subprocess.run([*command[:4], "--help"], cwd=project, capture_output=True, text=True, timeout=60)
+    assert run.returncode == 0, run.stderr[-400:]
