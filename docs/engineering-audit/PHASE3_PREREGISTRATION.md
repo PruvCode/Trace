@@ -33,6 +33,13 @@ whether the fact reached the notes and the store. Timed-out rows with zero tool 
 Pass rate per arm and a task-cluster bootstrap (10 000 resamples) of paired differences. With six tasks and n=12 per
 arm, differences under about 40 points are inconclusive and reported as such. No third rep.
 
+## Amendment before any outcome
+
+A smoke run showed an agent walking up the directory tree and reading the earlier session's `AGENTS.md` and OpenCode
+database. Phase 2's layout had the same exposure. Session B now runs in a random folder under a separate root with a
+fresh OpenCode home. A run whose tool calls leave the workspace is flagged `escaped`; results are reported with and
+without flagged runs. Smoke data is excluded from analysis.
+
 ## Known limitations, stated in advance
 
 - Synthetic tasks on tiny fixtures, written by the same author as the product.

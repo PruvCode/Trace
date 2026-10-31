@@ -17,6 +17,7 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -154,11 +155,31 @@ def py(code: str, ws: Path, env: dict) -> str:
     return subprocess.run([PY, "-c", code, str(ws)], cwd=ws, env=env, capture_output=True, text=True, timeout=120).stdout.strip()[-200:]
 
 
+def prime(env: dict) -> None:
+    """Create the isolated OpenCode database without touching a background service."""
+    subprocess.run([str(OPENCODE), "models", "--standalone"], env=env, capture_output=True, timeout=300)
+
+
+def escaped(home: Path, sid: str | None, ws: Path) -> bool:
+    """Did the agent look outside its workspace? Such runs could find history directly."""
+    db = home / "data" / "opencode" / "opencode.db"
+    if not sid or not db.exists():
+        return False
+    c = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+    text = "
+".join(r[0] for r in c.execute("SELECT data FROM session_message WHERE session_id=? AND type='assistant'", (sid,)))
+    c.close()
+    calls = [json.dumps(p.get("input") or p) for m in text.splitlines() for p in json.loads(m).get("content", [])
+             if isinstance(p, dict) and p.get("type") == "tool"]
+    outside = re.compile(r"\.\.[/\]|trace_p3_h|AppData\\Local\\Temp(?!.*" + re.escape(ws.parent.name) + ")")
+    return any(outside.search(c) for c in calls)
+
+
 def history(name: str, spec: dict, base: Path, handoff: bool) -> tuple[Path, Path, str]:
     ws, home = base / "proj", base / "home"
     workspace(spec, ws)
     env = env_for(home, ws)
-    subprocess.run([str(OPENCODE), "models"], env=env, capture_output=True, timeout=300)
+    prime(env)
     setup = py(SETUP, ws, env)
     prompts = [spec["fact"], *(p.format(file=spec["file"]) for p in NOISE)]
     results = [opencode(ws, env, p + (HANDOFF if handoff else "")) for p in prompts]
@@ -174,10 +195,10 @@ def history(name: str, spec: dict, base: Path, handoff: bool) -> tuple[Path, Pat
 
 
 def session_b(name: str, spec: dict, arm: str, rep: int, root: Path, a_ws: Path, a_home: Path, notes: str) -> None:
-    bdir = root / f"B_{arm}_r{rep}"
-    ws, home = bdir / "proj", bdir / "home"
+    # Nothing from history may be reachable: a run in a sibling folder read it directly.
+    ws = Path(tempfile.mkdtemp(prefix="p3b_", dir=root.parent.parent / "trace_p3_b")) / "proj"
+    home = Path(tempfile.mkdtemp(prefix="p3h_", dir=root.parent.parent / "trace_p3_b_h"))
     workspace(spec, ws)
-    shutil.copytree(a_home, home)
     extra = {}
     if arm.startswith("N1") and notes:
         (ws / "AGENTS.md").write_text(notes, encoding="utf-8")
@@ -185,6 +206,7 @@ def session_b(name: str, spec: dict, arm: str, rep: int, root: Path, a_ws: Path,
         shutil.copytree(a_ws / ".agent-memory", ws / ".agent-memory")
         extra["TRACE_TASK_AWARE"] = "0" if arm == "T1" else "1"
     env = env_for(home, ws, extra)
+    prime(env)
     if arm.startswith("T"):
         py(SETUP, ws, env)
         if arm == "T1":  # previous default: every MCP tool
@@ -198,7 +220,7 @@ def session_b(name: str, spec: dict, arm: str, rep: int, root: Path, a_ws: Path,
     rlog = ws / ".agent-memory" / "retrieval.log"
     rows = [json.loads(x) for x in rlog.read_text(encoding="utf-8").splitlines() if x.strip()] if rlog.exists() else []
     rows = [r for r in rows if r.get("sessionID") == b["session"]]
-    log({"phase": "B", "task": name, "arm": arm, "rep": rep, **b, "pass": evaluate(spec, ws), "tokens": tokens(home, b["session"]),
+    log({"phase": "B", "task": name, "arm": arm, "rep": rep, **b, "pass": evaluate(spec, ws), "escaped": escaped(home, b["session"], ws), "tokens": tokens(home, b["session"]),
          "requests": len(rows), "injected_requests": sum(1 for r in rows if r.get("injected")),
          "injected_chars": max([r.get("chars", 0) for r in rows] or [0])})
 
@@ -225,6 +247,8 @@ def main() -> None:
     reps, workers = int(sys.argv[2]), int(sys.argv[3])
     names = sys.argv[4:] or list(TASKS)
     root.mkdir(parents=True, exist_ok=True)
+    for name in ("trace_p3_b", "trace_p3_b_h"):
+        (root.parent / name).mkdir(exist_ok=True)
     log({"phase": "start", "model": MODEL, "opencode": str(OPENCODE.name), "version": subprocess.run(
         [str(OPENCODE), "--version"], capture_output=True, text=True, timeout=60).stdout.strip(), "tasks": names, "reps": reps,
          "head": subprocess.run(["git", "-C", str(WT), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()})
