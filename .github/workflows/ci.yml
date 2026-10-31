@@ -26,4 +26,10 @@ jobs:
           git config --global user.name ci
           git config --global user.email ci@example.invalid
       - run: python -m ruff check memory trace_memory
-      - run: python -m pytest tests -q -p no:cacheprovider
+      - name: Run tests
+        shell: bash
+        run: python -m pytest tests -q -p no:cacheprovider -rfE --tb=short 2>&1 | tee pytest.log
+      - name: Publish failed test names as annotations
+        if: failure()
+        shell: bash
+        run: grep -E '^(FAILED|ERROR) ' pytest.log | head -40 | sed 's/^/::error::/' || true

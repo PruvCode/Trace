@@ -192,3 +192,21 @@ def test_v2_plugin_is_removed_with_the_rest(tmp_path, env):
     assert (plugin_mod.plugin_v2_dir(project) / "index.js").exists()
     plugin_mod.uninstall_plugin(project)
     assert not plugin_mod.plugin_v2_dir(project).exists()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="creating symlinks needs privileges on Windows")
+def test_project_reached_through_a_symlink_is_still_captured(tmp_path, env):
+    project, fake, service, state = env
+    link = tmp_path / "link"
+    link.symlink_to(project)
+    fake.message(fake.session(link), "user", {"text": "via link"})
+    service.capture_pass(state)
+    assert _rows(project) == [("user", "via link")]
+
+
+def test_directory_comparison_uses_the_resolved_path(env, monkeypatch):
+    project, _, service, _ = env
+    real_resolve = Path.resolve
+    monkeypatch.setattr(Path, "resolve", lambda self, *a, **k: project if self.name == "alias" else real_resolve(self, *a, **k))
+    assert service._is_project_dir(str(project.parent / "alias")) is True
+    assert service._is_project_dir(str(project.parent / "another")) is False
