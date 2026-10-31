@@ -619,6 +619,7 @@ class OpenCodeTransparentAdapter(CaptureAdapter):
         import json
 
         from memory import opencode_plugin as opencode_plugin_mod
+        from memory import opencode_service as opencode_service_mod
 
         command = [*project_mod.mcp_server_command(project_path), "--tools", "core"]
         entry = {"type": "local", "enabled": True, "command": command}
@@ -662,17 +663,22 @@ class OpenCodeTransparentAdapter(CaptureAdapter):
                 f"Your file was left unchanged. Add this entry yourself:\n{manual}",
             )
         mcp["trace-memory"] = entry
-        plugins = opencode_config.get("plugin", [])
+        v2 = opencode_service_mod.opencode_uses_v2_schema(opencode_service_mod.default_opencode_db_path())
+        key, ours, stale = ("plugins", opencode_plugin_mod.plugin_v2_entry(), "plugin") if v2 else (
+            "plugin", opencode_plugin_mod.plugin_uri(project_path), "plugins")
+        plugins = opencode_config.get(key, [])
         if not isinstance(plugins, list):
             raise project_mod.TraceUserError(
                 f"refusing to edit {config_path}",
-                "its 'plugin' value is not a list.",
-                f"Your file was left unchanged. Add this entry yourself:\n{opencode_plugin_mod.plugin_uri(project_path)}",
+                f"its '{key}' value is not a list.",
+                f"Your file was left unchanged. Add this entry yourself:\n{json.dumps(ours)}",
             )
-        opencode_config["plugin"] = [
-            *(p for p in plugins if not opencode_plugin_mod.is_trace_plugin_entry(p)),
-            opencode_plugin_mod.plugin_uri(project_path),
-        ]
+        opencode_config[key] = [*(p for p in plugins if not opencode_plugin_mod.is_trace_plugin_entry(p)), ours]
+        leftovers = opencode_config.get(stale)
+        if isinstance(leftovers, list):  # the project moved between OpenCode major versions
+            leftovers[:] = [p for p in leftovers if not opencode_plugin_mod.is_trace_plugin_entry(p)]
+            if not leftovers:
+                del opencode_config[stale]
         _atomic_write_json(config_path, opencode_config)
         return {
             "status": "updated" if existed else "created",
@@ -706,18 +712,18 @@ class OpenCodeTransparentAdapter(CaptureAdapter):
             except ValueError:
                 loaded = None
             mcp = loaded.get("mcp") if isinstance(loaded, dict) else None
-            plugins = loaded.get("plugin") if isinstance(loaded, dict) else None
-            ours = isinstance(plugins, list) and any(map(opencode_plugin_mod.is_trace_plugin_entry, plugins))
+            lists = {k: loaded[k] for k in ("plugin", "plugins") if isinstance(loaded, dict) and isinstance(loaded.get(k), list)}
+            ours = {k: v for k, v in lists.items() if any(map(opencode_plugin_mod.is_trace_plugin_entry, v))}
             has_mcp = isinstance(mcp, dict) and "trace-memory" in mcp
             if has_mcp or ours:
                 if has_mcp:
                     del mcp["trace-memory"]
                     if not mcp:
                         del loaded["mcp"]
-                if ours:
+                for key, plugins in ours.items():
                     plugins[:] = [p for p in plugins if not opencode_plugin_mod.is_trace_plugin_entry(p)]
                     if not plugins:
-                        del loaded["plugin"]
+                        del loaded[key]
                 _atomic_write_json(config_path, loaded)
                 config_result["status"] = "entry-removed"
             elif loaded is None:

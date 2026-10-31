@@ -37,6 +37,10 @@ So the plugin:
 - fails open on any error: OpenCode must keep working without memory
 
 No SQLite in JS. No npm dependencies. No network.
+
+OpenCode 2.x does not run V1 plugins. It gets a V2 plugin directory holding the
+same logic on the documented ``ctx.session.hook("context", ...)``, which also
+adds to ``event.messages``: memory stays out of the trusted system prompt.
 """
 
 from __future__ import annotations
@@ -49,6 +53,7 @@ from trace_memory import project as project_mod
 
 PLUGIN_FILENAME = "opencode-plugin.js"
 LEGACY_PLUGIN_PATH = ".opencode/plugins/trace-memory.js"
+V2_PLUGIN_DIRNAME = "opencode-plugin-v2"
 PLUGIN_HEADER = "// TRACE automatic session-start memory (installed by TRACE setup)."
 
 
@@ -194,6 +199,78 @@ export const TraceMemoryPlugin = async ({ directory }) => {
 """
 
 
+PLUGIN_V2_TEMPLATE = PLUGIN_HEADER + """
+// PATHS BAKED AT INSTALL TIME - regenerated on every setup_integration.
+import { spawnSync } from "node:child_process";
+import { appendFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+
+const TRACE_PYTHON = __TRACE_PYTHON__;
+const TRACE_DB = __TRACE_DB__;
+const OPENCODE_DB = __OPENCODE_DB__;
+const TRACE_PROJECT = __TRACE_PROJECT__;
+const TRACE_LABEL = "[TRACE PROJECT MEMORY";
+const TRACE_HELPER_ATTEMPTS = 2;
+const traceBlocks = new Map();
+const traceAttempts = new Map();
+
+function textOf(message) {
+  const content = message && message.content;
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content.filter((p) => p && typeof p.text === "string").map((p) => p.text).join(" ");
+}
+
+function helper(sessionID, task) {
+  traceAttempts.set(sessionID, (traceAttempts.get(sessionID) || 0) + 1);
+  const proc = spawnSync(TRACE_PYTHON, [
+    "-m", "memory.message_context",
+    "--db", TRACE_DB,
+    "--opencode-db", OPENCODE_DB,
+    "--project-dir", TRACE_PROJECT,
+    "--session-id", sessionID,
+    "--ensure-capture",
+    ...(task ? ["--query", task] : []),
+  ], { cwd: TRACE_PROJECT, encoding: "utf8", windowsHide: true, timeout: 30000 });
+  const out = (proc.stdout || "").trim();
+  if (out.startsWith(TRACE_LABEL)) traceBlocks.set(sessionID, out);
+  else if (proc.status === 0 || traceAttempts.get(sessionID) >= TRACE_HELPER_ATTEMPTS) traceBlocks.set(sessionID, "");
+}
+
+export default {
+  id: "trace-memory",
+  async setup(ctx) {
+    await ctx.session.hook("context", (event) => {
+      const started = Date.now();
+      let spawned = false;
+      let chars = 0;
+      let error = null;
+      try {
+        const first = event.messages.find((m) => m && m.role === "user");
+        if (!traceBlocks.has(event.sessionID)) {
+          spawned = true;
+          helper(event.sessionID, textOf(first).slice(0, 2000));
+        }
+        const block = traceBlocks.get(event.sessionID);
+        if (block && !event.messages.some((m) => textOf(m).startsWith(TRACE_LABEL))) {
+          event.messages.unshift({ role: "user", content: [{ type: "text", text: block }] });
+          chars = block.length;
+        }
+      } catch (e) {
+        error = String((e && e.message) || e);
+      }
+      try {
+        appendFileSync(join(dirname(TRACE_DB), "retrieval.log"), JSON.stringify({
+          ts: new Date().toISOString(), sessionID: event.sessionID, channel: "session.context",
+          spawned, injected: chars > 0, chars, latencyMs: Date.now() - started, error,
+        }) + "\\n");
+      } catch {}
+    });
+  },
+};
+"""
+
+
 def render_plugin(python_exe: str, trace_db: str, opencode_db: str) -> str:
     """Render the plugin source with install-time paths baked in."""
     return (
@@ -208,6 +285,15 @@ def plugin_path(project_path: Path) -> Path:
     return project_path.resolve() / SERVICE_DIR_NAME / PLUGIN_FILENAME
 
 
+def plugin_v2_dir(project_path: Path) -> Path:
+    return project_path.resolve() / SERVICE_DIR_NAME / V2_PLUGIN_DIRNAME
+
+
+def plugin_v2_entry() -> dict:
+    """The ``plugins`` entry for an OpenCode 2.x opencode.json."""
+    return {"package": f"./{SERVICE_DIR_NAME}/{V2_PLUGIN_DIRNAME}"}
+
+
 def plugin_uri(project_path: Path) -> str:
     """The ``plugin`` entry for opencode.json."""
     return plugin_path(project_path).as_uri()
@@ -215,6 +301,8 @@ def plugin_uri(project_path: Path) -> str:
 
 def is_trace_plugin_entry(entry: object) -> bool:
     """True for TRACE's own opencode.json entry, including one from a moved project."""
+    if isinstance(entry, dict):
+        return entry == plugin_v2_entry()
     return isinstance(entry, str) and entry.endswith(f"/{SERVICE_DIR_NAME}/{PLUGIN_FILENAME}")
 
 
@@ -228,6 +316,16 @@ def install_plugin(project_path: Path, opencode_db_path: Path | None = None) -> 
     target.parent.mkdir(parents=True, exist_ok=True)
     existed = target.exists()
     target.write_text(render_plugin(python_exe, trace_db, opencode_db), encoding="utf-8")
+    v2_index = plugin_v2_dir(project_path) / "index.js"
+    v2_index.parent.mkdir(exist_ok=True)
+    v2_index.write_text(
+        PLUGIN_V2_TEMPLATE
+        .replace("__TRACE_PYTHON__", _js_string(python_exe))
+        .replace("__TRACE_DB__", _js_string(trace_db))
+        .replace("__OPENCODE_DB__", _js_string(opencode_db))
+        .replace("__TRACE_PROJECT__", _js_string(str(project_path))),
+        encoding="utf-8",
+    )
     _remove_if_ours(project_path / LEGACY_PLUGIN_PATH)
     return {
         "status": "updated" if existed else "created",
@@ -239,6 +337,7 @@ def install_plugin(project_path: Path, opencode_db_path: Path | None = None) -> 
 def uninstall_plugin(project_path: Path) -> dict:
     """Remove the plugin only if TRACE wrote it (its header line matches)."""
     _remove_if_ours(project_path.resolve() / LEGACY_PLUGIN_PATH)
+    _remove_if_ours(plugin_v2_dir(project_path) / "index.js")
     return _remove_if_ours(plugin_path(project_path))
 
 
