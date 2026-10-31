@@ -163,9 +163,10 @@ while keeping recorded events and transcripts.
 
 1. **Setup** (`trace setup opencode --transparent`): adds only a `trace-memory` entry to the
    project's `opencode.json` (refusing, with the exact entry to add by hand, if the file is
-   not plain JSON — e.g. it has comments), installs a project-local plugin
-   (`.opencode/plugins/trace-memory.js`), and starts one background capture monitor for the
-   project. OpenCode's database is found via `$XDG_DATA_HOME` (default
+   not plain JSON — e.g. it has comments), writes a project-local plugin
+   (`.trace-service/opencode-plugin.js`) and lists it in the same file, and starts one
+   background capture monitor for the project. OpenCode installs its plugin SDK the first time
+   any plugin is configured for a user (about 60 MB and two minutes on first start, once). OpenCode's database is found via `$XDG_DATA_HOME` (default
    `~/.local/share/opencode/opencode.db`). `trace teardown opencode` reverses all of this
    and keeps your memory.
 

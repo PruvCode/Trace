@@ -1,8 +1,15 @@
 """Project-local OpenCode plugin that injects TRACE session-start memory.
 
 TRACE owns retrieval (memory.message_context over memory.session_context);
-this module only owns the thin JavaScript glue installed into
-``.opencode/plugins/trace-memory.js``.
+this module only owns the thin JavaScript glue, written to
+``.trace-service/opencode-plugin.js`` and listed in the project's
+``opencode.json``.
+
+It is deliberately not in ``.opencode/plugins/``: OpenCode 1.18.32 answers that
+directory with an ``npm install`` of ``@opencode-ai/plugin`` into the project,
+measured at 61 MB and 86-130 s of startup delay for every project. Referenced
+from config, the same install happens once per user. The plugin itself never
+imports that package.
 
 Verified against OpenCode 1.18.34 with an isolated data directory:
 
@@ -37,11 +44,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from memory.opencode_service import default_opencode_db_path
+from memory.opencode_service import SERVICE_DIR_NAME, default_opencode_db_path
 from trace_memory import project as project_mod
 
-PLUGIN_FILENAME = "trace-memory.js"
-PLUGIN_DIRNAME = ".opencode/plugins"
+PLUGIN_FILENAME = "opencode-plugin.js"
+LEGACY_PLUGIN_PATH = ".opencode/plugins/trace-memory.js"
 PLUGIN_HEADER = "// TRACE automatic session-start memory (installed by TRACE setup)."
 
 
@@ -198,11 +205,21 @@ def render_plugin(python_exe: str, trace_db: str, opencode_db: str) -> str:
 
 
 def plugin_path(project_path: Path) -> Path:
-    return project_path.resolve() / PLUGIN_DIRNAME / PLUGIN_FILENAME
+    return project_path.resolve() / SERVICE_DIR_NAME / PLUGIN_FILENAME
+
+
+def plugin_uri(project_path: Path) -> str:
+    """The ``plugin`` entry for opencode.json."""
+    return plugin_path(project_path).as_uri()
+
+
+def is_trace_plugin_entry(entry: object) -> bool:
+    """True for TRACE's own opencode.json entry, including one from a moved project."""
+    return isinstance(entry, str) and entry.endswith(f"/{SERVICE_DIR_NAME}/{PLUGIN_FILENAME}")
 
 
 def install_plugin(project_path: Path, opencode_db_path: Path | None = None) -> dict:
-    """Write the project-local TRACE plugin. Returns status info."""
+    """Write the project-local TRACE plugin, replacing an older install. Returns status info."""
     project_path = project_path.resolve()
     trace_db = str(project_mod.db_path(project_path))
     python_exe = project_mod.mcp_server_command(project_path)[0]
@@ -211,6 +228,7 @@ def install_plugin(project_path: Path, opencode_db_path: Path | None = None) -> 
     target.parent.mkdir(parents=True, exist_ok=True)
     existed = target.exists()
     target.write_text(render_plugin(python_exe, trace_db, opencode_db), encoding="utf-8")
+    _remove_if_ours(project_path / LEGACY_PLUGIN_PATH)
     return {
         "status": "updated" if existed else "created",
         "plugin_path": str(target),
@@ -220,7 +238,11 @@ def install_plugin(project_path: Path, opencode_db_path: Path | None = None) -> 
 
 def uninstall_plugin(project_path: Path) -> dict:
     """Remove the plugin only if TRACE wrote it (its header line matches)."""
-    target = plugin_path(project_path)
+    _remove_if_ours(project_path.resolve() / LEGACY_PLUGIN_PATH)
+    return _remove_if_ours(plugin_path(project_path))
+
+
+def _remove_if_ours(target: Path) -> dict:
     if not target.exists():
         return {"status": "absent", "plugin_path": str(target)}
     try:

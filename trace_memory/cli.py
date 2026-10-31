@@ -268,7 +268,9 @@ def cmd_status(args) -> int:
         print(f"  service pid:     {svc_status.get('pid')}")
         print(f"  cursors:         session={svc_status.get('cursors', {}).get('session')} message={svc_status.get('cursors', {}).get('message')} part={svc_status.get('cursors', {}).get('part')}")
 
-    plugin_path = project / ".opencode" / "plugins" / "trace-memory.js"
+    from memory import opencode_plugin as opencode_plugin_mod
+
+    plugin_path = opencode_plugin_mod.plugin_path(project)
     if plugin_path.exists():
         print(f"  plugin:          installed at {plugin_path}")
     else:
