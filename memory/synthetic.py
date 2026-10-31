@@ -18,6 +18,8 @@ import hashlib
 import json
 import re
 
+from memory import redact as redact_mod
+
 SYNTHETIC_LABEL = "[TRACE PROJECT MEMORY"
 SYNTHETIC_TITLE = "[TRACE PROJECT MEMORY - RECOVERED FROM A PREVIOUS SESSION]"
 SYNTHETIC_FOOTER = (
@@ -33,11 +35,16 @@ SYNTHETIC_NOTICE = (
 # read. Every record is one JSON line, so stored text cannot start a line of the
 # block, and the boundary hashes the records, so stored text cannot know it.
 # JSON leaves these characters raw, and each can break a line or hide text.
-_INVISIBLE = re.compile("[\u0080-\u009f\u00ad\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff]")
+_INVISIBLE = re.compile(
+    "[\u0080-\u009f\u00ad\u061c\u180e\u200b-\u200f\u2028-\u202e\u2060-\u206f\ud800-\udfff"
+    "\ufe00-\ufe0f\ufeff\ufff9-\ufffb\U000e0000-\U000e0fff]"
+)
 
 
 def _record(**fields: object) -> str:
-    line = json.dumps({k: v for k, v in fields.items() if v}, ensure_ascii=False, separators=(",", ":"))
+    # Every field, not just the text: roles, labels and timestamps come from storage too.
+    values = {k: redact_mod.redact_text(v) for k, v in fields.items() if v}
+    line = json.dumps(values, ensure_ascii=False, separators=(",", ":"))
     return _INVISIBLE.sub(lambda m: f"\\u{ord(m.group()):04x}", line)
 
 

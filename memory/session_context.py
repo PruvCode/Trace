@@ -167,6 +167,8 @@ def _relevant_messages(conn: sqlite3.Connection, query: str, exclude_session_id:
         content = (msg.content or "").strip()
         if (msg.session_id == exclude_session_id or not content
                 or msg.role not in ("user", "assistant")
+                or msg.metadata.get("incomplete")
+                or msg.metadata.get("part_type") in transcript_mod.NON_CONVERSATIONAL_PART_TYPES
                 or synthetic_mod.is_synthetic_memory_text(content)
                 or transcript_mod.session_parent(conn, msg.session_id)):
             continue
@@ -364,21 +366,25 @@ def get_session_start_context(
     except Exception:
         return {"items": [], "text": "", "truncated": False, "stats": stats}
 
-    items, truncated = _select(messages, findings, max_items, max_chars)
-    # Oldest first, so the newest session is the one labeled "previous".
-    items.sort(key=lambda i: (i["kind"] != "message", str(i.get("when") or "")))
-    # The limit applies to what the model sees, labels and headers included.
-    while items and len("\n".join(synthetic_mod.render_lines(items))) > max_chars:
-        oldest_message = next((i for i in items if i["kind"] == "message"), None)
-        items.remove(oldest_message if oldest_message is not None else items[-1])
-        truncated = True
+    try:
+        items, truncated = _select(messages, findings, max_items, max_chars)
+        # Oldest first, so the newest session is the one labeled "previous".
+        items.sort(key=lambda i: (i["kind"] != "message", str(i.get("when") or "")))
+        # The limit applies to what the model sees, labels and headers included.
+        while items and len("\n".join(synthetic_mod.render_lines(items))) > max_chars:
+            oldest_message = next((i for i in items if i["kind"] == "message"), None)
+            items.remove(oldest_message if oldest_message is not None else items[-1])
+            truncated = True
+        text = format_block(items)
+    except Exception:  # noqa: BLE001 - one bad row must not break the agent's session
+        return {"items": [], "text": "", "truncated": False, "stats": stats}
     stats["prior_sessions"] = prior_sessions
     stats["message_items"] = sum(1 for i in items if i["kind"] == "message")
     stats["finding_items"] = sum(1 for i in items if i["kind"] == "finding")
     stats["latency_ms"] = round((time.perf_counter() - started) * 1000, 1)
     return {
         "items": items,
-        "text": format_block(items),
+        "text": text,
         "truncated": truncated,
         "stats": stats,
     }

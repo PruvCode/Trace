@@ -184,7 +184,7 @@ def get_git_history(
     limit: int = 10,
 ) -> list[dict]:
     """Deterministic Git facts: sha, subject, message, files, changed symbols."""
-    return git_events_mod.get_git_history(_repo(), path, symbol, limit)
+    return redact_mod.redact_value(git_events_mod.get_git_history(_repo(), path, symbol, limit))
 
 
 @server.tool()

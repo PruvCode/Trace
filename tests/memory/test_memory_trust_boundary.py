@@ -203,3 +203,127 @@ def test_service_log_redacts_exception_text(tmp_path):
     service._log("sync failed for postgres://admin:opensesame@db/x")
     log = next(service._service_dir.glob("*.log")).read_text()
     assert "opensesame" not in log
+
+
+# Regressions from the independent adversarial review ------------------------------
+
+REVIEW_LEAKS = [
+    ("dbPassword=opensesame", "opensesame"), ("jwtSecret: opensesame", "opensesame"),
+    ("secret_key=opensesame", "opensesame"), ("encryption_key=opensesame", "opensesame"),
+    ("pass=opensesame", "opensesame"), ("PGPASSWORD=opensesame", "opensesame"),
+    ("password=$ecret123", "$ecret123"), ("password=Summer2024(1)", "Summer2024(1)"),
+    ("password=p&opensesame", "opensesame"), ("--password='two words'", "two words"),
+    ("mysql -u root -popensesame", "opensesame"), ("sshpass -p opensesame ssh host", "opensesame"),
+    ("PRIVATE-TOKEN: abc123def", "abc123def"),
+    ("https://hooks.slack.com/services/T000/B000/abcdefgh", "abcdefgh"),
+    ("https://x.blob.core.windows.net/c?sv=1&sig=abc123def", "abc123def"),
+    ("whsec_" + "Ab1" * 12, "whsec_"), ("dckr_pat_" + "Ab1" * 12, "dckr_pat_"),
+]
+
+
+@pytest.mark.parametrize("text,secret", REVIEW_LEAKS, ids=[x[0][:18] for x in REVIEW_LEAKS])
+def test_review_secret_shapes_are_redacted(text, secret):
+    assert secret not in redact.redact_text(text)
+
+
+@pytest.mark.parametrize("text", [
+    "def __init__(self, password: str):",
+    "Client(api_key=api_key)",
+    "login(password=password)",
+    "password: string;",
+    "apiKey: string,",
+    "password: list[str]",
+    "password: SecretStr = Field(...)",
+    "if password == confirm:",
+    "const secret = process.env.SECRET;",
+    "password: req.body.password,",
+    "the password is required",
+    "the api key is invalid",
+    "docker run -u 1000:1000 alpine",
+    "git push -u origin:main",
+    "DATA_KEY=value",
+    "SORT_KEY='name'",
+    "PRIMARY_KEY: id",
+    "MAX_TOKEN=4096",
+    "--token $TOKEN",
+    'MARKER = "-----BEGIN PRIVATE KEY-----"\nkeep this line',
+])
+def test_review_code_and_prose_survive(text):
+    assert redact.redact_text(text) == text
+
+
+@pytest.mark.parametrize("unit", ["a-", "a.", "de-ad-be-ef-", "eyJ-", "redis://a:", "cookie:", "-u=", "SG." + "a" * 16 + "-",
+                                  "password=", "token: ", "curl ", "a://", "1 "])
+def test_redaction_stays_fast_on_crafted_input(unit):
+    import time
+    text = unit * (64_000 // len(unit))
+    started = time.perf_counter()
+    redact.redact_text(text)
+    assert time.perf_counter() - started < 5
+
+
+def test_lone_surrogates_cannot_wedge_writes_or_retrieval(tmp_path):
+    db = tmp_path / "memory.db"
+    conn = store.connect(db)
+    store.init_schema(conn)
+    transcript.record_message(conn, session_id="s", role="assistant", content="cut emoji \ud83d here")
+    episodic.record_event(conn, type="decision", source="agent", repo="r", payload={"finding": "half \ud83d"})
+    conn.commit()
+    conn.close()
+    result = sc.get_session_start_context(db)
+    assert "cut emoji" in result["text"] and "half" in result["text"]
+    result["text"].encode("utf-8")
+
+
+def test_legacy_surrogate_row_still_renders(tmp_path):
+    db = tmp_path / "memory.db"
+    conn = store.connect(db)
+    store.init_schema(conn)
+    conn.execute("INSERT INTO events (type, timestamp, source, repo, payload) VALUES ('decision', 't', 'agent', 'r', ?)",
+                 (json.dumps({"finding": "old \ud83d row"}),))
+    conn.commit()
+    conn.close()
+    sc.get_session_start_context(db)["text"].encode("utf-8")
+
+
+def test_event_location_fields_and_block_metadata_are_redacted(tmp_path):
+    db = tmp_path / "memory.db"
+    conn = store.connect(db)
+    store.init_schema(conn)
+    secret = "opensesame-123"
+    episodic.record_event(conn, type="decision", source="agent", repo=f"password={secret}", file=f"password={secret}.py",
+                          symbol=f"password={secret}", payload={"finding": "x"})
+    conn.commit()
+    assert secret not in "\n".join(conn.iterdump())
+    conn.close()
+    line = synthetic.render_lines([{"kind": "message", "role": "user", "text": "t", "session": "s", "when": f"password={secret}"}])
+    assert secret not in "\n".join(line)
+
+
+def test_redact_value_handles_lists_numbers_and_more_keys():
+    data = {"password": ["x"], "pin_token": 123456, "pass": "x", "Authorization": "abc", "cookie": "a=b", "status": "ok"}
+    out = redact.redact_value(data)
+    assert out["status"] == "ok"
+    assert all(v == redact._R for k, v in out.items() if k != "status")
+
+
+def test_incomplete_text_is_never_offered_by_task_search(tmp_path):
+    db = tmp_path / "memory.db"
+    conn = store.connect(db)
+    store.init_schema(conn)
+    transcript.record_message(conn, session_id="s", role="assistant", content="half written cursor decoder plan",
+                              metadata={"incomplete": True})
+    conn.commit()
+    conn.close()
+    assert "half written" not in sc.get_session_start_context(db, query="cursor decoder plan")["text"]
+
+
+def test_capture_failure_status_is_redacted(tmp_path):
+    from memory import opencode_service
+
+    project = tmp_path / "p"
+    project.mkdir()
+    service = opencode_service.get_service(project, opencode_db_path=tmp_path / "none.db")
+    state = service._prepare_state.__self__ and opencode_service._CaptureState(cursors={})
+    service._fail(state, "row", RuntimeError("x" * 150 + " postgres://admin:opensesame@db/x"))
+    assert "opensesame" not in state.last_error

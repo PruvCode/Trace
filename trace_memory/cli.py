@@ -20,6 +20,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from memory import redact as redact_mod
 from memory.store import SearchQueryError
 from trace_memory import __version__
 from trace_memory import project as project_mod
@@ -374,7 +375,7 @@ def _print_rows(rows: list[dict], empty: str) -> int:
         print(empty)
         return EXIT_OK
     for row in rows:
-        print(json.dumps(row, sort_keys=True, default=str))
+        print(json.dumps(redact_mod.redact_value(row), sort_keys=True, default=str))
     return EXIT_OK
 
 

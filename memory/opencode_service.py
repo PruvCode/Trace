@@ -70,13 +70,13 @@ MEMORY_TOOL_PREFIXES = ("trace-memory_", "trace_memory_")
 _SELF_PERSISTING_TOOLS = frozenset({"record_event", "record_transcript_message"})
 
 
-def opencode_uses_v2_schema(db_path: Path) -> bool:
-    """True when this OpenCode database has the 2.x layout. Reads table names only."""
+def opencode_uses_v2_schema(db_path: Path) -> bool | None:
+    """Whether this OpenCode database has the 2.x layout; None when it cannot be read."""
     try:
         with closing(sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5)) as conn:
             return conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'session_v2'").fetchone() is not None
     except sqlite3.Error:
-        return False
+        return None
 
 
 class OpenCodeSchemaError(Exception):
@@ -102,6 +102,7 @@ PART_ABANDON_MS = 10 * 60_000
 
 POLL_SECONDS = 1.0
 LOCK_STARTUP_WAIT_SECONDS = 2.0
+V2_REPLY_ABANDON_MS = 24 * 60 * 60 * 1000
 START_TIMEOUT_SECONDS = 20.0
 STOP_TIMEOUT_SECONDS = 6.0
 
@@ -158,6 +159,12 @@ def process_is_alive(pid: int) -> bool:
         except Exception:
             return False
     try:
+        # Our own exited child stays a zombie until reaped, and signal 0 reports a zombie as alive.
+        if os.waitpid(pid, os.WNOHANG)[0] == pid:
+            return False
+    except OSError:
+        pass  # not our child
+    try:
         os.kill(pid, 0)
         return True
     except ProcessLookupError:
@@ -166,6 +173,11 @@ def process_is_alive(pid: int) -> bool:
         return True
     except OSError:
         return False
+
+
+def _text_or_none(value: object) -> str | None:
+    """Tool arguments are model output: anything but non-blank text is not a symbol or file."""
+    return value if isinstance(value, str) and value.strip() else None
 
 
 def _as_dict(raw: object) -> dict:
@@ -279,6 +291,7 @@ class OpenCodeCaptureService:
         self._running = False
         self._last_proc: subprocess.Popen | None = None
         self._v2: bool | None = None
+        self._resolved_dirs: dict[str, str] = {}
         self._role_cache: dict = {}
         self._batch_conn: sqlite3.Connection | None = None
 
@@ -371,10 +384,12 @@ class OpenCodeCaptureService:
         # through symlinks, junctions and OS path redirection.
         if normalize(directory) == self._project_dir_key():
             return True
-        try:
-            return normalize(str(Path(directory).resolve())) == self._project_dir_key()
-        except OSError:
-            return False
+        if directory not in self._resolved_dirs:
+            try:
+                self._resolved_dirs[directory] = normalize(str(Path(directory).resolve()))
+            except (OSError, ValueError, RuntimeError):
+                self._resolved_dirs[directory] = ""
+        return self._resolved_dirs[directory] == self._project_dir_key()
 
     # -- schema / cursors ----------------------------------------------------
 
@@ -382,7 +397,7 @@ class OpenCodeCaptureService:
         """OpenCode 2.x keeps sessions in session_v2 and whole messages in session_message."""
         if self._v2 is None:
             self._v2 = opencode_uses_v2_schema(self.opencode_db_path)
-        return self._v2
+        return bool(self._v2)
 
     @property
     def _session_table(self) -> str:
@@ -484,12 +499,19 @@ class OpenCodeCaptureService:
         # cover them commit together (one fsync instead of one per row). If
         # the commit fails, nothing from this pass is durable, so the
         # in-memory progress is rolled back too and the rows are re-read.
+        if self._v2 is not None and opencode_uses_v2_schema(self.opencode_db_path) not in (None, self._v2):
+            # OpenCode was upgraded under a running monitor: start over on the new layout.
+            self._v2 = None
+            self._log("OpenCode database layout changed; reloading capture state")
+            vars(state).update(vars(self._prepare_state()))
         durable = (dict(state.cursors), set(state.processed), state.captured)
         trace = store_mod.connect(self.trace_db_path)
         self._batch_conn = trace
         failure: CaptureError | None = None
         try:
             with closing(self._opencode_conn()) as conn:
+                conn.execute("BEGIN")  # one snapshot, so a message cannot predate its session
+                self._rewind_cursors(conn, state)
                 self._capture_sessions(conn, state)
                 if self._is_v2():
                     self._capture_messages_v2(conn, state)
@@ -512,8 +534,16 @@ class OpenCodeCaptureService:
             raise failure
         return durable[0] != state.cursors or durable[2] != state.captured
 
+    def _rewind_cursors(self, conn: sqlite3.Connection, state: _CaptureState) -> None:
+        """Rowids are reused after the newest rows are deleted; source ids make a re-read safe."""
+        tables = {"session": "session_v2", "message": "session_message"} if self._is_v2() else {
+            "session": "session", "message": "message", "part": "part"}
+        for key, table in tables.items():
+            newest = conn.execute(f"SELECT COALESCE(MAX(rowid), 0) FROM {table}").fetchone()[0]
+            state.cursors[key] = min(state.cursors[key], newest)
+
     def _fail(self, state: _CaptureState, what: str, exc: Exception) -> CaptureError:
-        detail = f"{type(exc).__name__}: {str(exc)[:200]}"
+        detail = f"{type(exc).__name__}: {redact_mod.redact_text(str(exc))[:200]}"
         state.errors += 1
         state.last_error = f"{what}: {detail}"
         self._log(f"capture error on {what}; will retry: {detail}")
@@ -569,7 +599,11 @@ class OpenCodeCaptureService:
             when = data.get("time") if isinstance(data.get("time"), dict) else {}
             abandoned = False
             if row["type"] == "assistant" and not when.get("completed"):
-                if now_ms - int(row["time_created"] or 0) <= PART_ABANDON_MS:
+                # A long reply is not a dead one: give up only once the session moved on.
+                moved_on = conn.execute(
+                    "SELECT 1 FROM session_message WHERE session_id = ? AND rowid > ? AND type = 'idle' LIMIT 1",
+                    (row["session_id"], row["rid"])).fetchone()
+                if not moved_on and now_ms - int(row["time_created"] or 0) <= V2_REPLY_ABANDON_MS:
                     holding = True  # re-read this row next pass; later rows still flow
                     continue
                 abandoned = True
@@ -739,8 +773,7 @@ class OpenCodeCaptureService:
         source_id: str | None = None,
     ) -> None:
         """Persist one transcript row idempotently. Raises on failure."""
-        if self.config.redact_secrets:
-            content = redact_mod.redact_text(content)
+        # record_message redacts; cutting first also bounds that work on a huge paste.
         content = content[: self.config.max_message_length]
         self._write(lambda conn, autocommit: transcript_mod.record_message(
             conn,
@@ -777,8 +810,8 @@ class OpenCodeCaptureService:
             type="observation",
             source="capture",
             repo=self.project_name,
-            symbol=inputs.get("symbol") or inputs.get("name") or None,
-            file=inputs.get("file") or None,
+            symbol=_text_or_none(inputs.get("symbol")) or _text_or_none(inputs.get("name")),
+            file=_text_or_none(inputs.get("file")),
             payload=payload,
             source_id=source_id,
         ))
@@ -990,9 +1023,6 @@ class OpenCodeCaptureService:
 
     def _is_pid_alive(self, pid: int) -> bool:
         """Check whether a PID is still alive. Never signals the process."""
-        # A child stays a zombie until reaped, and POSIX reports a zombie as alive.
-        if self._last_proc is not None and self._last_proc.pid == pid and self._last_proc.poll() is not None:
-            return False
         return process_is_alive(pid)
 
     def _wait_for_exit(self, pid: int, attempts: int = 50, interval: float = 0.1) -> bool:
