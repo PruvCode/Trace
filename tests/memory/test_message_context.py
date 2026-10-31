@@ -274,7 +274,7 @@ def test_plugin_registers_guarded_user_channel(tmp_path):
     (proj / "main.py").write_text("x = 1\n", encoding="utf-8")
     project_mod.init_project(proj)
     plugin_mod.install_plugin(proj)
-    source = (proj / ".opencode" / "plugins" / "trace-memory.js").read_text(encoding="utf-8")
+    source = plugin_mod.plugin_path(proj).read_text(encoding="utf-8")
     assert "experimental.chat.messages.transform" in source
     assert "experimental.chat.system.transform" not in source
     # One Python spawn per session (cached block), injected on every request

@@ -618,6 +618,8 @@ class OpenCodeTransparentAdapter(CaptureAdapter):
         """
         import json
 
+        from memory import opencode_plugin as opencode_plugin_mod
+
         entry = {"type": "local", "enabled": True, "command": project_mod.mcp_server_command(project_path)}
         manual = json.dumps({"mcp": {"trace-memory": entry}}, indent=2)
         jsonc_path = project_path / "opencode.jsonc"
@@ -659,6 +661,17 @@ class OpenCodeTransparentAdapter(CaptureAdapter):
                 f"Your file was left unchanged. Add this entry yourself:\n{manual}",
             )
         mcp["trace-memory"] = entry
+        plugins = opencode_config.get("plugin", [])
+        if not isinstance(plugins, list):
+            raise project_mod.TraceUserError(
+                f"refusing to edit {config_path}",
+                "its 'plugin' value is not a list.",
+                f"Your file was left unchanged. Add this entry yourself:\n{opencode_plugin_mod.plugin_uri(project_path)}",
+            )
+        opencode_config["plugin"] = [
+            *(p for p in plugins if not opencode_plugin_mod.is_trace_plugin_entry(p)),
+            opencode_plugin_mod.plugin_uri(project_path),
+        ]
         _atomic_write_json(config_path, opencode_config)
         return {
             "status": "updated" if existed else "created",
@@ -692,10 +705,18 @@ class OpenCodeTransparentAdapter(CaptureAdapter):
             except ValueError:
                 loaded = None
             mcp = loaded.get("mcp") if isinstance(loaded, dict) else None
-            if isinstance(mcp, dict) and "trace-memory" in mcp:
-                del mcp["trace-memory"]
-                if not mcp:
-                    del loaded["mcp"]
+            plugins = loaded.get("plugin") if isinstance(loaded, dict) else None
+            ours = isinstance(plugins, list) and any(map(opencode_plugin_mod.is_trace_plugin_entry, plugins))
+            has_mcp = isinstance(mcp, dict) and "trace-memory" in mcp
+            if has_mcp or ours:
+                if has_mcp:
+                    del mcp["trace-memory"]
+                    if not mcp:
+                        del loaded["mcp"]
+                if ours:
+                    plugins[:] = [p for p in plugins if not opencode_plugin_mod.is_trace_plugin_entry(p)]
+                    if not plugins:
+                        del loaded["plugin"]
                 _atomic_write_json(config_path, loaded)
                 config_result["status"] = "entry-removed"
             elif loaded is None:
