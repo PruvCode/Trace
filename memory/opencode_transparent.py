@@ -620,7 +620,8 @@ class OpenCodeTransparentAdapter(CaptureAdapter):
 
         from memory import opencode_plugin as opencode_plugin_mod
 
-        entry = {"type": "local", "enabled": True, "command": project_mod.mcp_server_command(project_path)}
+        command = [*project_mod.mcp_server_command(project_path), "--tools", "core"]
+        entry = {"type": "local", "enabled": True, "command": command}
         manual = json.dumps({"mcp": {"trace-memory": entry}}, indent=2)
         jsonc_path = project_path / "opencode.jsonc"
         if jsonc_path.exists():

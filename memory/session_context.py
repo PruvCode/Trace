@@ -1,11 +1,14 @@
 """Bounded session-start context assembly for automatic retrieval.
 
-At session start there is no user query yet, so retrieval is recency-based:
-the newest conversation of prior sessions plus recent recorded findings,
-read from the current project's TRACE database only (isolation by
-construction — no other project's database is ever opened).
+Retrieval reads the current project's TRACE database only (isolation by
+construction — no other project's database is ever opened). When the new
+session's first prompt matches earlier messages, those matches lead the
+block and only a short tail of the last session stays, within a smaller
+budget, because the block repeats on every model request. Otherwise
+retrieval falls back to recency: the newest conversation of prior sessions
+plus recent recorded findings.
 
-Policy:
+Recency policy:
 - the newest 10 user/assistant messages, taken from the most recent prior
   session first and from older sessions only while that budget is unused;
   status rows (step-finish "tool-calls"/"stop", step markers) never count
@@ -49,6 +52,10 @@ MAX_ITEM_CHARS = 500
 # 500-char cap cut a real 1.1k-char summary mid-fact in live testing.
 MAX_ASSISTANT_ITEM_CHARS = 1500
 FINDINGS_RESERVE = 1200
+# With task matches: the block is resent on every request, so stay small.
+MAX_RELEVANT = 6
+MAX_TASK_TAIL = 2
+MAX_TASK_CHARS = 2000
 
 # Payload keys that carry the human-readable part of a recorded event.
 _FINDING_KEYS = ("finding", "decision", "message", "content", "action")
@@ -124,25 +131,39 @@ must need only other over same should some such than that their them then there 
 until very want were what when where which while will with without would your code file files change changes""".split())
 
 
-def _query_terms(text: str, limit: int = 12) -> str | None:
-    """Longest distinctive words of the task prompt, OR-joined for FTS."""
+# Stated constraints and specifics are what a later session cannot rediscover.
+_SPECIFIC = re.compile(
+    r"\b(?:must|never|always|do not|don't|because|decision|decided|requires?|only|until|breaks?|caused|capped)\b|\d", re.I)
+
+
+def _query_terms(text: str, limit: int = 16) -> list[str]:
+    """Distinctive words of the task prompt, with word endings dropped for matching."""
     words = dict.fromkeys(w.lower() for w in re.findall(r"[A-Za-z_][A-Za-z0-9_]{3,}", text or ""))
-    terms = [w for w in words if w not in _STOP][:limit]
-    return " OR ".join(terms) if terms else None
+    return [w[:-2] if len(w) >= 6 else w for w in words if w not in _STOP][:limit]
 
 
 def _relevant_messages(conn: sqlite3.Connection, query: str, exclude_session_id: str | None,
-                       limit: int = MAX_TAIL_MESSAGES) -> list[dict]:
-    """Prior-session messages ranked by match with the current task (best first)."""
+                       limit: int = MAX_RELEVANT) -> list[dict]:
+    """Prior-session messages ranked by match with the current task (best first).
+
+    Messages sharing more of the task's terms come first, a stated constraint
+    or specific value counts as one more, and BM25 breaks ties.
+    """
     terms = _query_terms(query)
     if not terms:
         return []
     try:
-        hits = transcript_mod.search_messages(conn, query=terms, limit=limit * 3)
+        hits = transcript_mod.search_messages(conn, query=" OR ".join(f"{t}*" for t in terms),
+                                              limit=store_mod.MAX_LIMIT)
     except (sqlite3.Error, ValueError, store_mod.SearchQueryError):
         return []
+
+    def score(msg: transcript_mod.TranscriptMessage) -> int:
+        words = re.findall(r"[a-z0-9_]+", (msg.content or "").lower())
+        return sum(any(w.startswith(t) for w in words) for t in terms) + bool(_SPECIFIC.search(msg.content or ""))
+
     out: list[dict] = []
-    for msg in hits:
+    for msg in sorted(hits, key=score, reverse=True):
         content = (msg.content or "").strip()
         if (msg.session_id == exclude_session_id or not content
                 or msg.role not in ("user", "assistant")
@@ -325,11 +346,13 @@ def get_session_start_context(
             return {"items": [], "text": "", "truncated": False, "stats": stats}
         conn = store_mod.connect(db_path)
         try:
-            messages, prior_sessions = _tail_messages(conn, exclude_session_id)
-            if query:
+            relevant = _relevant_messages(conn, query, exclude_session_id) if query else []
+            tail_limit = MAX_TASK_TAIL if relevant else MAX_TAIL_MESSAGES
+            messages, prior_sessions = _tail_messages(conn, exclude_session_id, tail_limit)
+            if relevant:
+                max_chars = min(max_chars, MAX_TASK_CHARS)
                 seen = {m["text"] for m in messages}
-                relevant = [m for m in _relevant_messages(conn, query, exclude_session_id)
-                            if m["text"] not in seen]
+                relevant = [m for m in relevant if m["text"] not in seen]
                 # _select keeps the END of the list first, so relevant hits win.
                 messages = messages + list(reversed(relevant))
                 stats["relevant_items"] = len(relevant)
@@ -342,6 +365,8 @@ def get_session_start_context(
         return {"items": [], "text": "", "truncated": False, "stats": stats}
 
     items, truncated = _select(messages, findings, max_items, max_chars)
+    # Oldest first, so the newest session is the one labeled "previous".
+    items.sort(key=lambda i: (i["kind"] != "message", str(i.get("when") or "")))
     # The limit applies to what the model sees, labels and headers included.
     while items and len("\n".join(synthetic_mod.render_lines(items))) > max_chars:
         oldest_message = next((i for i in items if i["kind"] == "message"), None)

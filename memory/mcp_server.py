@@ -13,6 +13,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import asyncio
 import sqlite3
 import sys
 from dataclasses import asdict
@@ -27,6 +28,11 @@ from memory import store as store_mod
 from memory import transcript as transcript_mod
 
 server = MCPServer("trace-reference-memory")
+
+# Tool schemas are resent on every model request. In 80 measured OpenCode runs
+# agents called only these four often enough to justify that cost; the rest stay
+# available through `trace` commands and the default "all" set.
+CORE_TOOLS = frozenset({"record_event", "search_events", "search_transcripts", "get_transcript_session"})
 
 _DB_PATH: Path | None = None
 _REPO_PATH: Path | None = None
@@ -104,15 +110,10 @@ def record_event(
     status: str | None = None,
     supersedes: list[int] | None = None,
 ) -> dict:
-    """Record one episodic event (investigation/attempt/decision/observation).
+    """Record a finding later sessions should know (type: investigation/attempt/decision/observation).
 
-    Agent-reported events are claims, not ground truth; use source="git"
-    only for deterministic derivations. ``status`` is "hypothesis" (not yet
-    checked), "observed" or "verified" (checked, e.g. by a passing test).
-    ``supersedes`` lists ids of earlier events this one replaces; they stay
-    searchable but are no longer offered as current findings. Link a finding
-    to the ``file`` it depends on so later sessions are warned when that file
-    changes. Invalid input raises to the client.
+    status: hypothesis, observed or verified. supersedes: ids this replaces.
+    Link the file it depends on so later sessions are warned when it changes.
     """
     payload = dict(payload or {})
     if status is not None:
@@ -267,6 +268,7 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="git repo for get_git_history (defaults to --root)",
     )
+    parser.add_argument("--tools", choices=("all", "core"), default="all")
     args = parser.parse_args(argv)
     _DB_PATH = args.db
     _ROOT_PATH = args.root
@@ -274,6 +276,10 @@ def main(argv: list[str] | None = None) -> int:
     if not _DB_PATH.exists():
         print(f"error: database not found: {_DB_PATH}", file=sys.stderr)
         return 2
+    if args.tools == "core":
+        for tool in asyncio.run(server.list_tools()):
+            if tool.name not in CORE_TOOLS:
+                server.remove_tool(tool.name)
     server.run()
     return 0
 

@@ -104,3 +104,16 @@ def test_mcp_server_missing_db_exits_loudly(tmp_path):
     )
     assert proc.returncode == 2
     assert "database not found" in proc.stderr
+
+
+def test_core_profile_exposes_only_the_core_tools(tmp_path):
+    import subprocess
+    import sys
+
+    db = tmp_path / "memory.db"
+    db.touch()
+    code = ("import asyncio, sys; from memory import mcp_server as m\n"
+            "m.server.run = lambda: print(sorted(t.name for t in asyncio.run(m.server.list_tools())))\n"
+            f"m.main(['--db', {str(db)!r}, '--tools', 'core'])")
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=60, check=True).stdout
+    assert out.strip() == str(sorted(__import__("memory.mcp_server").mcp_server.CORE_TOOLS))
