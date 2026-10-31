@@ -9,8 +9,6 @@ from __future__ import annotations
 
 import json
 import subprocess
-import sys
-import time
 import uuid
 from pathlib import Path
 from shutil import which
@@ -20,7 +18,6 @@ from memory.capture import (
     CaptureConfig,
     CapturedEvent,
     CapturedMessage,
-    SessionInfo,
 )
 from memory import redact as redact_mod
 from memory import transcript as transcript_mod
