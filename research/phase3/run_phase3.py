@@ -27,7 +27,7 @@ WT = Path(__file__).resolve().parents[2]
 PY = sys.executable
 OPENCODE = Path(os.environ.get("TRACE_OPENCODE_BIN") or Path(os.environ["TEMP"]) / "trace_tools" / "oc2x" / "node_modules"
                 / "@opencode" / "cli" / "bin" / "opencode.exe")
-MODEL = "opencode/big-pickle"
+MODEL = os.environ.get("TRACE_MODEL", "opencode/big-pickle")
 ARMS = ["N0", "N1", "T1", "T2"]
 HANDOFF = ("\n\nBefore you finish, append a short handoff for future sessions to AGENTS.md in the project root: "
            "what you learned, any decisions or constraints you were told, and anything that failed.")
@@ -224,7 +224,7 @@ def session_b(name: str, spec: dict, arm: str, rep: int, root: Path, a_ws: Path,
          "injected_chars": max([r.get("chars", 0) for r in rows] or [0])})
 
 
-def run_task(name: str, root: Path, reps: int) -> None:
+def primary(name: str, root: Path, reps: int) -> None:
     spec = TASKS[name]
     tdir = root / name
     a_ws, a_home, notes = history(name, spec, tdir / "H", True)
@@ -234,7 +234,12 @@ def run_task(name: str, root: Path, reps: int) -> None:
         rng.shuffle(order)
         for arm in order:
             session_b(name, spec, arm, rep, tdir, a_ws, a_home, notes)
-    # Secondary: nobody asked for notes.
+
+
+def secondary(name: str, root: Path, reps: int) -> None:
+    """Nobody asked for notes."""
+    spec = TASKS[name]
+    tdir = root / name
     u_ws, u_home, u_notes = history(name, spec, tdir / "U", False)
     for rep in range(reps):
         session_b(name, spec, "T2U", rep, tdir, u_ws, u_home, u_notes)
@@ -252,11 +257,12 @@ def main() -> None:
         [str(OPENCODE), "--version"], capture_output=True, text=True, timeout=60).stdout.strip(), "tasks": names, "reps": reps,
          "head": subprocess.run(["git", "-C", str(WT), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()})
     with ThreadPoolExecutor(workers) as pool:
-        for f in [pool.submit(run_task, n, root, reps) for n in names]:
-            try:
-                f.result()
-            except Exception as e:  # one broken task must not stop the others
-                log({"phase": "task_error", "error": f"{type(e).__name__}: {e}"[:300]})
+        for stage in (primary, secondary):  # the usage limit may end the run: primary arms go first
+            for f in [pool.submit(stage, n, root, reps) for n in names]:
+                try:
+                    f.result()
+                except Exception as e:  # one broken task must not stop the others
+                    log({"phase": "task_error", "error": f"{type(e).__name__}: {e}"[:300]})
 
 
 if __name__ == "__main__":
