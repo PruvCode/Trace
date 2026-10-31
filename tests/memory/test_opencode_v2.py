@@ -87,7 +87,7 @@ def _rows(project):
 def test_schema_is_detected_from_table_names(tmp_path, env):
     _, fake, service, _ = env
     assert service_mod.opencode_uses_v2_schema(fake.path) is True
-    assert service_mod.opencode_uses_v2_schema(tmp_path / "missing.db") is False
+    assert service_mod.opencode_uses_v2_schema(tmp_path / "missing.db") is None
     service._validate_schema()
 
 
@@ -210,3 +210,95 @@ def test_directory_comparison_uses_the_resolved_path(env, monkeypatch):
     monkeypatch.setattr(Path, "resolve", lambda self, *a, **k: project if self.name == "alias" else real_resolve(self, *a, **k))
     assert service._is_project_dir(str(project.parent / "alias")) is True
     assert service._is_project_dir(str(project.parent / "another")) is False
+
+
+def test_lone_surrogate_row_does_not_wedge_capture(env):
+    project, fake, service, state = env
+    sid = fake.session(project)
+    fake.conn.execute("INSERT INTO session_message VALUES ('m1', ?, 'user', 1, 1, 1, ?)", (sid, '{"text":"cut \\ud83d"}'))
+    fake.conn.commit()
+    fake.message(sid, "user", {"text": "after"})
+    service.capture_pass(state)
+    assert [r[1] for r in _rows(project)] == ["cut \ufffd", "after"]
+
+
+def test_long_reply_is_held_until_the_session_moves_on(env):
+    project, fake, service, state = env
+    sid = fake.session(project)
+    old = int(time.time() * 1000) - 60 * 60 * 1000  # an hour-long reply is still alive
+    mid = fake.message(sid, "assistant", assistant("partial", done=False), created=old)
+    service.capture_pass(state)
+    assert _rows(project) == []
+    fake.update(mid, assistant("the final reply"))
+    service.capture_pass(state)
+    assert _rows(project) == [("assistant", "the final reply")]
+
+
+def test_abandoned_reply_is_stored_as_incomplete_once_the_session_moved_on(env):
+    project, fake, service, state = env
+    sid = fake.session(project)
+    fake.message(sid, "assistant", assistant("cut off", done=False))
+    fake.message(sid, "idle", {"outcome": "failed"})
+    service.capture_pass(state)
+    assert _rows(project) == [("assistant", "cut off")]
+
+
+def test_rows_reusing_deleted_rowids_are_not_lost(env):
+    project, fake, service, state = env
+    sid = fake.session(project)
+    for text in ("one", "two", "three"):
+        fake.message(sid, "user", {"text": text})
+    service.capture_pass(state)
+    fake.conn.execute("DELETE FROM session_message WHERE rowid > 1")
+    fake.conn.commit()
+    service.capture_pass(state)  # the monitor polls: it sees the table shrink
+    fake.message(sid, "user", {"text": "four"})
+    service.capture_pass(state)
+    assert ("user", "four") in _rows(project)
+
+
+def test_running_monitor_follows_an_upgrade_of_the_database(tmp_path):
+    project = tmp_path / "project"
+    project.mkdir()
+    project_mod.init_project(project)
+    db = tmp_path / "opencode.db"
+    conn = sqlite3.connect(db)
+    conn.executescript("""
+        CREATE TABLE session (id TEXT PRIMARY KEY, directory TEXT, time_created INTEGER);
+        CREATE TABLE message (id TEXT PRIMARY KEY, session_id TEXT, data TEXT);
+        CREATE TABLE part (id TEXT PRIMARY KEY, message_id TEXT, session_id TEXT, time_created INTEGER, data TEXT);
+    """)
+    conn.commit()
+    conn.close()
+    service = service_mod.OpenCodeCaptureService(
+        project_path=project, project_name="project", trace_db_path=project_mod.db_path(project),
+        opencode_db_path=db, config=service_mod.CaptureConfig())
+    state = service._prepare_state()
+    service.capture_pass(state)
+    assert service._is_v2() is False
+    fake = Fake.__new__(Fake)
+    fake.path, fake.conn, fake.n = db, sqlite3.connect(db), 0
+    fake.conn.executescript(V2_SCHEMA)
+    fake.conn.commit()
+    service.capture_pass(state)
+    assert service._is_v2() is True
+    fake.message(fake.session(project), "user", {"text": "after upgrade"})
+    service.capture_pass(state)
+    assert _rows(project) == [("user", "after upgrade")]
+
+
+def test_unusable_session_directory_does_not_stop_capture(env):
+    project, fake, service, state = env
+    fake.session(Path("bad\x00dir"))
+    fake.message(fake.session(project), "user", {"text": "fine"})
+    service.capture_pass(state)
+    assert _rows(project) == [("user", "fine")]
+
+
+def test_unreadable_database_keeps_the_existing_plugin_key(tmp_path, env, monkeypatch):
+    project, _, _, _ = env
+    monkeypatch.setattr(service_mod, "default_opencode_db_path", lambda: tmp_path / "missing" / "x.db")
+    entry = plugin_mod.plugin_v2_entry()
+    (project / "opencode.json").write_text(json.dumps({"plugins": [entry]}))
+    transparent_mod.create_opencode_transparent_adapter()._create_opencode_config(project)
+    assert json.loads((project / "opencode.json").read_text(encoding="utf-8"))["plugins"] == [entry]

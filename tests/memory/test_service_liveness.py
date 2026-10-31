@@ -193,3 +193,21 @@ def test_wait_for_exit_does_not_kill_live_process(tmp_path, live_process):
     assert live_process.poll() is None
     # A subprocess-based probe (tasklist) costs ~0.4s per call.
     assert elapsed < 2.0, f"liveness probe too slow: {elapsed:.3f}s"
+
+
+def test_bad_tool_arguments_do_not_wedge_capture(tmp_path):
+    from memory import opencode_service as service_mod
+    from memory import store as store_mod
+    from trace_memory import project as project_mod
+
+    project = tmp_path / "project"
+    project.mkdir()
+    project_mod.init_project(project)
+    service = service_mod.OpenCodeCaptureService(
+        project_path=project, project_name="project", trace_db_path=project_mod.db_path(project),
+        opencode_db_path=tmp_path / "o.db", config=service_mod.CaptureConfig())
+    for bad in ({"symbol": 123}, {"name": ["a"]}, {"symbol": "   "}, {"file": 5}):
+        service._persist_memory_tool_event("s", "find_definition", bad, "out", "error", source_id=str(bad))
+    conn = store_mod.connect(project_mod.db_path(project))
+    assert conn.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 4
+    conn.close()

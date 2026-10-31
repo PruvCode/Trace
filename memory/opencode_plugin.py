@@ -129,8 +129,8 @@ export const TraceMemoryPlugin = async ({ directory }) => {
               "--project-dir", directory,
               "--session-id", sessionID,
               "--ensure-capture",
-              ...(taskText ? ["--query", taskText] : []),
-            ], { cwd: directory, stderr: "pipe", stdout: "pipe" });
+              ...(taskText ? [`--query=${taskText.replace(/\\0/g, " ")}`] : []),
+            ], { cwd: directory, stderr: "pipe", stdout: "pipe", timeout: 30000 });
           } catch (spawnError) {
             reason = "spawn-failed";
           }
@@ -172,7 +172,7 @@ export const TraceMemoryPlugin = async ({ directory }) => {
         injected = true;
         chars = block.length;
       } catch (e) {
-        error = String((e && e.message) || e);
+        error = (e && e.name) || "Error";  // never the message: it can quote the task
       } finally {
         try {
           const fs2 = await import("node:fs/promises");
@@ -230,7 +230,7 @@ function helper(sessionID, task) {
     "--project-dir", TRACE_PROJECT,
     "--session-id", sessionID,
     "--ensure-capture",
-    ...(task ? ["--query", task] : []),
+    ...(task ? [`--query=${task.replace(/\\0/g, " ")}`] : []),
   ], { cwd: TRACE_PROJECT, encoding: "utf8", windowsHide: true, timeout: 30000 });
   const out = (proc.stdout || "").trim();
   if (out.startsWith(TRACE_LABEL)) traceBlocks.set(sessionID, out);
@@ -240,7 +240,9 @@ function helper(sessionID, task) {
 export default {
   id: "trace-memory",
   async setup(ctx) {
+    if (!ctx || !ctx.session || typeof ctx.session.hook !== "function") return;
     await ctx.session.hook("context", (event) => {
+      if (!event || !event.sessionID || !Array.isArray(event.messages)) return;
       const started = Date.now();
       let spawned = false;
       let chars = 0;
@@ -257,7 +259,8 @@ export default {
           chars = block.length;
         }
       } catch (e) {
-        error = String((e && e.message) || e);
+        traceBlocks.set(event.sessionID, "");
+        error = (e && e.name) || "Error";  // never the message: it can quote the task
       }
       try {
         appendFileSync(join(dirname(TRACE_DB), "retrieval.log"), JSON.stringify({

@@ -658,6 +658,8 @@ class OpenCodeTransparentAdapter(CaptureAdapter):
             )
         mcp["trace-memory"] = entry
         v2 = opencode_service_mod.opencode_uses_v2_schema(opencode_service_mod.default_opencode_db_path())
+        if v2 is None:  # no readable database: keep what the project already uses
+            v2 = opencode_plugin_mod.plugin_v2_entry() in (opencode_config.get("plugins") or [])
         key, ours, stale = ("plugins", opencode_plugin_mod.plugin_v2_entry(), "plugin") if v2 else (
             "plugin", opencode_plugin_mod.plugin_uri(project_path), "plugins")
         plugins = opencode_config.get(key, [])
