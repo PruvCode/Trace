@@ -70,6 +70,15 @@ MEMORY_TOOL_PREFIXES = ("trace-memory_", "trace_memory_")
 _SELF_PERSISTING_TOOLS = frozenset({"record_event", "record_transcript_message"})
 
 
+def opencode_uses_v2_schema(db_path: Path) -> bool:
+    """True when this OpenCode database has the 2.x layout. Reads table names only."""
+    try:
+        with closing(sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5)) as conn:
+            return conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'session_v2'").fetchone() is not None
+    except sqlite3.Error:
+        return False
+
+
 class OpenCodeSchemaError(Exception):
     """Raised when OpenCode database schema is not compatible."""
     pass
@@ -269,6 +278,7 @@ class OpenCodeCaptureService:
 
         self._running = False
         self._last_proc: subprocess.Popen | None = None
+        self._v2: bool | None = None
         self._role_cache: dict = {}
         self._batch_conn: sqlite3.Connection | None = None
 
@@ -360,11 +370,29 @@ class OpenCodeCaptureService:
 
     # -- schema / cursors ----------------------------------------------------
 
+    def _is_v2(self) -> bool:
+        """OpenCode 2.x keeps sessions in session_v2 and whole messages in session_message."""
+        if self._v2 is None:
+            self._v2 = opencode_uses_v2_schema(self.opencode_db_path)
+        return self._v2
+
+    @property
+    def _session_table(self) -> str:
+        return "session_v2" if self._is_v2() else "session"
+
+    @property
+    def _cursor_scope(self) -> str:
+        # Rowids of the two layouts are unrelated, so an upgrade must not reuse cursors.
+        return f"{self.project_name}#v2" if self._is_v2() else self.project_name
+
     def _validate_schema(self) -> None:
         """Check the OpenCode tables and columns capture depends on."""
         try:
             with closing(self._opencode_conn()) as conn:
                 required = {
+                    "session_v2": {"id", "directory", "parent_id"},
+                    "session_message": {"id", "session_id", "type", "time_created", "data"},
+                } if self._is_v2() else {
                     "session": {"id", "directory", "time_created"},
                     "message": {"id", "session_id", "data"},
                     "part": {"id", "message_id", "session_id", "time_created", "data"},
@@ -392,7 +420,7 @@ class OpenCodeCaptureService:
         """Persisted cursors, or None when capture has never run for this project."""
         conn = store_mod.connect(self.trace_db_path)
         try:
-            cursors = store_mod.get_all_monitor_cursors(conn, self.project_name)
+            cursors = store_mod.get_all_monitor_cursors(conn, self._cursor_scope)
         finally:
             conn.close()
         if not cursors:
@@ -401,16 +429,18 @@ class OpenCodeCaptureService:
 
     def _initial_cursors(self) -> dict:
         """First run starts at the current end of OpenCode's history."""
+        tables = {"session": "session_v2", "message": "session_message", "part": None} if self._is_v2() else {
+            "session": "session", "message": "message", "part": "part"}
         with closing(self._opencode_conn()) as conn:
             return {
-                table: conn.execute(f"SELECT COALESCE(MAX(rowid), 0) FROM {table}").fetchone()[0]
-                for table in ("session", "message", "part")
+                key: conn.execute(f"SELECT COALESCE(MAX(rowid), 0) FROM {table}").fetchone()[0] if table else 0
+                for key, table in tables.items()
             }
 
     def _save_cursors(self, cursors: dict) -> None:
         conn = store_mod.connect(self.trace_db_path)
         try:
-            store_mod.set_monitor_cursors(conn, self.project_name, cursors)
+            store_mod.set_monitor_cursors(conn, self._cursor_scope, cursors)
         finally:
             conn.close()
 
@@ -429,7 +459,7 @@ class OpenCodeCaptureService:
         """Session ids OpenCode has recorded for this project directory."""
         sessions: set[str] = set()
         with closing(self._opencode_conn()) as conn:
-            for row in conn.execute("SELECT id, directory FROM session"):
+            for row in conn.execute(f"SELECT id, directory FROM {self._session_table}"):
                 if self._is_project_dir(row["directory"]):
                     sessions.add(row["id"])
         return sessions
@@ -453,14 +483,17 @@ class OpenCodeCaptureService:
         try:
             with closing(self._opencode_conn()) as conn:
                 self._capture_sessions(conn, state)
-                self._capture_messages(conn, state)
-                self._capture_parts(conn, state)
+                if self._is_v2():
+                    self._capture_messages_v2(conn, state)
+                else:
+                    self._capture_messages(conn, state)
+                    self._capture_parts(conn, state)
         except CaptureError as exc:
             failure = exc  # progress before the failed row is still committed below
         finally:
             self._batch_conn = None
             try:
-                store_mod.set_monitor_cursors(trace, self.project_name, state.cursors)
+                store_mod.set_monitor_cursors(trace, self._cursor_scope, state.cursors)
             except Exception as exc:
                 trace.rollback()
                 state.cursors, state.processed, state.captured = durable
@@ -480,7 +513,7 @@ class OpenCodeCaptureService:
 
     def _capture_sessions(self, conn: sqlite3.Connection, state: _CaptureState) -> None:
         rows = conn.execute(
-            "SELECT rowid AS rid, * FROM session WHERE rowid > ? ORDER BY rowid",
+            f"SELECT rowid AS rid, * FROM {self._session_table} WHERE rowid > ? ORDER BY rowid",
             (state.cursors["session"],),
         ).fetchall()
         for row in rows:
@@ -509,6 +542,54 @@ class OpenCodeCaptureService:
                 except Exception as exc:
                     raise self._fail(state, f"message row {row['rid']}", exc) from exc
             state.cursors["message"] = row["rid"]
+
+    def _capture_messages_v2(self, conn: sqlite3.Connection, state: _CaptureState) -> None:
+        """OpenCode 2.x: one row per message, assistant rows fill in until time.completed."""
+        rows = conn.execute(
+            "SELECT rowid AS rid, id, session_id, type, time_created, data FROM session_message"
+            " WHERE rowid > ? AND type IN ('user', 'assistant') ORDER BY rowid",
+            (state.cursors["message"],),
+        ).fetchall()
+        now_ms = int(time.time() * 1000)
+        holding = False
+        for row in rows:
+            if row["session_id"] not in state.project_sessions:
+                if not holding:
+                    state.cursors["message"] = row["rid"]
+                continue
+            data = _as_dict(row["data"])
+            when = data.get("time") if isinstance(data.get("time"), dict) else {}
+            abandoned = False
+            if row["type"] == "assistant" and not when.get("completed"):
+                if now_ms - int(row["time_created"] or 0) <= PART_ABANDON_MS:
+                    holding = True  # re-read this row next pass; later rows still flow
+                    continue
+                abandoned = True
+            if row["id"] not in state.processed:
+                try:
+                    wrote = self._process_message_v2(dict(row), data, abandoned)
+                except Exception as exc:
+                    raise self._fail(state, f"message row {row['rid']}", exc) from exc
+                state.processed.add(row["id"])
+                state.captured += int(wrote)
+            if not holding:
+                state.cursors["message"] = row["rid"]
+
+    def _process_message_v2(self, row: dict, data: dict, abandoned: bool) -> bool:
+        if row["type"] == "user":
+            text = data.get("text") if isinstance(data.get("text"), str) else ""
+        else:
+            content = data.get("content") if isinstance(data.get("content"), list) else []
+            text = "\n".join(p["text"] for p in content if isinstance(p, dict) and p.get("type") == "text"
+                             and isinstance(p.get("text"), str))
+        if not text.strip() or synthetic_mod.is_synthetic_memory_text(text):
+            return False
+        metadata = {"part_type": "text", "message_id": row["id"]}
+        if abandoned:
+            metadata["incomplete"] = True
+        self._persist_transcript_message(session_id=row["session_id"], role=row["type"], content=text,
+                                         metadata=metadata, source_id=f"message:{row['id']}")
+        return True
 
     def _message_completed(self, conn: sqlite3.Connection, message_id: str) -> bool:
         row = conn.execute("SELECT data FROM message WHERE id = ?", (message_id,)).fetchone()
