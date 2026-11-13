@@ -46,11 +46,13 @@ let spawns = 0;
 // failTimes: how many of the first helper spawns fail (exit 1, no stats).
 globalThis.Bun = { spawnSync: (cmd, opts) => {
   spawns += 1;
+  if (!cmd.includes("--query-stdin") || cmd.some((value) => value.includes("continue the timeout work"))
+      || opts.stdin.toString("utf8") !== "continue the timeout work") throw new Error("prompt transport");
   if (spawns <= FAIL_TIMES) {
     return { exitCode: 1, stdout: Buffer.from(""), stderr: Buffer.from("") };
   }
   const r = spawnSync(cmd[0], cmd.slice(1),
-    { cwd: opts.cwd, env: { ...process.env, PYTHONPATH: process.argv[4] } });
+    { cwd: opts.cwd, input: opts.stdin, env: { ...process.env, PYTHONPATH: process.argv[4] } });
   return { exitCode: r.status, stdout: r.stdout || Buffer.from(""),
            stderr: r.stderr || Buffer.from("") };
 } };
@@ -164,7 +166,7 @@ let spawns = 0;
 globalThis.Bun = { spawnSync: (cmd, opts) => {
   spawns += 1;
   const r = spawnSync(cmd[0], cmd.slice(1),
-    { cwd: opts.cwd, env: { ...process.env, PYTHONPATH: process.argv[4] } });
+    { cwd: opts.cwd, input: opts.stdin, env: { ...process.env, PYTHONPATH: process.argv[4] } });
   return { exitCode: r.status, stdout: r.stdout || Buffer.from(""),
            stderr: r.stderr || Buffer.from("") };
 } };

@@ -15,7 +15,7 @@ conversation into the project's TRACE database:
    message content) and counted in the status file, and the row is retried.
 4. Cursors live in the TRACE database, so a restart (or reboot followed by
    ``ensure_running``) resumes exactly where capture stopped.
-5. Graceful stop via a stop-request file; forced kill only as a fallback.
+5. Graceful stop via a stop-request file, confirmed by acquiring the capture lock.
 """
 
 from __future__ import annotations
@@ -31,6 +31,8 @@ from contextlib import closing
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from memory import captured_outcomes
+from memory.opencode_files import require_local_paths
 from memory import episodic as episodic_mod
 from memory import redact as redact_mod
 from memory import store as store_mod
@@ -104,7 +106,7 @@ POLL_SECONDS = 1.0
 LOCK_STARTUP_WAIT_SECONDS = 2.0
 V2_REPLY_ABANDON_MS = 24 * 60 * 60 * 1000
 START_TIMEOUT_SECONDS = 20.0
-STOP_TIMEOUT_SECONDS = 6.0
+STOP_TIMEOUT_SECONDS = 12.0
 
 
 def default_opencode_db_path() -> Path:
@@ -303,6 +305,13 @@ class OpenCodeCaptureService:
         self._disabled_file = self._service_dir / DISABLED_FILE
 
     # -- small file helpers ------------------------------------------------
+
+    def check_storage_paths(self) -> None:
+        require_local_paths(
+            self.project_path, self._service_dir, self._pid_file, self._status_file,
+            self._lock_file, self._stop_file, self._disabled_file, self._service_dir / LOG_FILE,
+            self._status_file.with_suffix(".tmp"), self.trace_db_path,
+        )
 
     def _get_service_dir(self) -> Path:
         return self._service_dir
@@ -598,15 +607,18 @@ class OpenCodeCaptureService:
             data = _as_dict(row["data"])
             when = data.get("time") if isinstance(data.get("time"), dict) else {}
             abandoned = False
-            if row["type"] == "assistant" and not when.get("completed"):
+            if row["type"] == "assistant" and (
+                not when.get("completed") or self._waiting_for_test(row, data, v2=True)
+            ):
                 # A long reply is not a dead one: give up only once the session moved on.
                 moved_on = conn.execute(
                     "SELECT 1 FROM session_message WHERE session_id = ? AND rowid > ? AND type = 'idle' LIMIT 1",
                     (row["session_id"], row["rid"])).fetchone()
-                if not moved_on and now_ms - int(row["time_created"] or 0) <= V2_REPLY_ABANDON_MS:
+                age_limit = PART_ABANDON_MS if when.get("completed") else V2_REPLY_ABANDON_MS
+                if not moved_on and now_ms - int(row["time_created"] or 0) <= age_limit:
                     holding = True  # re-read this row next pass; later rows still flow
                     continue
-                abandoned = True
+                abandoned = not when.get("completed")
             if row["id"] not in state.processed:
                 try:
                     wrote = self._process_message_v2(dict(row), data, abandoned)
@@ -618,14 +630,22 @@ class OpenCodeCaptureService:
                 state.cursors["message"] = row["rid"]
 
     def _process_message_v2(self, row: dict, data: dict, abandoned: bool) -> bool:
+        captured_tool = False
         if row["type"] == "user":
             text = data.get("text") if isinstance(data.get("text"), str) else ""
         else:
             content = data.get("content") if isinstance(data.get("content"), list) else []
             text = "\n".join(p["text"] for p in content if isinstance(p, dict) and p.get("type") == "text"
                              and isinstance(p.get("text"), str))
+            if not abandoned:
+                for part in content:
+                    if isinstance(part, dict) and part.get("type") == "tool" and part.get("name") == "shell":
+                        wrote = self._capture_test_outcome(
+                            row, row["id"], part.get("id") or part.get("callID"), part, v2=True,
+                        )
+                        captured_tool = captured_tool or wrote
         if not text.strip() or synthetic_mod.is_synthetic_memory_text(text):
-            return False
+            return captured_tool
         metadata = {"part_type": "text", "message_id": row["id"]}
         if abandoned:
             metadata["incomplete"] = True
@@ -656,7 +676,9 @@ class OpenCodeCaptureService:
             abandoned = False
             if not final:
                 age = now_ms - int(row["time_created"] or 0)
-                if age > PART_ABANDON_MS or self._message_completed(conn, row["message_id"]):
+                if age > PART_ABANDON_MS or (
+                    self._message_completed(conn, row["message_id"]) and not self._waiting_for_test(row, data, v2=False)
+                ):
                     abandoned = True
                 else:
                     holding = True  # re-read this row next pass; later rows still flow
@@ -743,6 +765,8 @@ class OpenCodeCaptureService:
             return True
 
         if part_type == "tool" and not abandoned and self.config.capture_tool_calls:
+            if part_data.get("tool") == "bash":
+                return self._capture_test_outcome(part, part["message_id"], part["id"], part_data, v2=False)
             tool = canonical_memory_tool(part_data.get("tool"))
             state = part_data.get("state") if isinstance(part_data.get("state"), dict) else {}
             if tool and tool not in _SELF_PERSISTING_TOOLS and state.get("status") in ("completed", "error"):
@@ -757,6 +781,26 @@ class OpenCodeCaptureService:
                 return True
         # step-start / step-finish / reasoning / file / other tools: status, not memory.
         return False
+
+    def _capture_test_outcome(self, row, message_id, tool_id, part, *, v2: bool) -> bool:
+        if not self.config.capture_tool_calls or not self.config.capture_events:
+            return False
+        return self._write(lambda conn, autocommit: captured_outcomes.record(
+            conn, autocommit, project=self.project_path, repo=self.project_name,
+            session_id=row["session_id"], message_id=message_id, tool_id=tool_id,
+            created_ms=row["time_created"], part=part, v2=v2,
+        ))
+
+    def _waiting_for_test(self, row, data: dict, *, v2: bool) -> bool:
+        if not self.config.capture_tool_calls or not self.config.capture_events:
+            return False
+        parts = data.get("content") if v2 else [data]
+        return isinstance(parts, list) and any(
+            isinstance(part, dict) and captured_outcomes.should_wait(
+                self._batch_conn, row["time_created"], part, v2, self.project_path,
+            )
+            for part in parts
+        )
 
     def _role_for(self, message_id: str) -> str:
         roles = self._role_cache
@@ -883,7 +927,13 @@ class OpenCodeCaptureService:
                     except Exception as exc:  # noqa: BLE001 - retried next pass
                         self._fail(state, "cursor save", exc)
                     self._write_status(self._status_payload(state))
-                time.sleep(min(POLL_SECONDS * (2 ** min(failures, 5)), 30.0) if failures else POLL_SECONDS)
+                delay = min(POLL_SECONDS * (2 ** min(failures, 5)), 30.0)
+                deadline = time.monotonic() + delay
+                while self._running and not self._stop_file.exists():
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        break
+                    time.sleep(min(0.25, remaining))
         finally:
             try:
                 self._save_cursors(state.cursors)
@@ -895,6 +945,7 @@ class OpenCodeCaptureService:
 
     def run_foreground(self) -> int:
         """Body of the detached child: take the lock, then monitor until stopped."""
+        self.check_storage_paths()
         lock = LockHandle(self._lock_file)
         # Brief retry: a liveness probe may hold the lock for a moment; a real
         # second monitor holds it for its lifetime.
@@ -902,7 +953,8 @@ class OpenCodeCaptureService:
             self._log(f"another monitor already holds the lock; pid {os.getpid()} exiting")
             return 3
         try:
-            self._stop_file.unlink(missing_ok=True)
+            if self._disabled_file.exists() or self._stop_file.exists():
+                return 3
             self._write_pid(os.getpid())
             try:
                 state = self._prepare_state()
@@ -915,12 +967,18 @@ class OpenCodeCaptureService:
         finally:
             lock.release()
 
-    def capture_once(self) -> dict:
-        """One synchronous catch-up pass (no monitor running). Never raises."""
+    def capture_once(self, *, respect_disabled: bool = False) -> dict:
+        """One synchronous catch-up pass when no monitor holds the lock."""
+        try:
+            self.check_storage_paths()
+        except RuntimeError as exc:
+            return {"status": "error", "message": str(exc)}
         lock = LockHandle(self._lock_file)
         if not lock.acquire(wait=LOCK_STARTUP_WAIT_SECONDS):
             return {"status": "busy", "message": "a monitor is already capturing"}
         try:
+            if respect_disabled and self._disabled_file.exists():
+                return {"status": "disabled"}
             state = self._prepare_state()
             try:
                 self.capture_pass(state)
@@ -965,20 +1023,31 @@ class OpenCodeCaptureService:
             # Job objects may forbid breakaway; detach without it.
             return subprocess.Popen(cmd, creationflags=no_window | new_group, **kwargs)
 
-    def start(self) -> dict:
+    def start(self, *, enable: bool = True) -> dict:
         """Start the monitor and wait until it reports ready (single instance)."""
+        self.check_storage_paths()
+        if not enable and self._disabled_file.exists():
+            return {"status": "disabled"}
         if self.is_running():
             return {"status": "already_running", "pid": self._get_pid(), "message": "Service already running"}
         try:
             self._validate_schema()
         except OpenCodeSchemaError as e:
             return {"status": "error", "message": f"Schema validation failed: {e}"}
-        try:
-            self._prepare_state()  # schema + first-run cursors before the child starts
-        except Exception as e:  # noqa: BLE001
-            return {"status": "error", "message": f"TRACE database not ready: {e}"}
-        self._disabled_file.unlink(missing_ok=True)
-        self._stop_file.unlink(missing_ok=True)
+        if enable:
+            lock = LockHandle(self._lock_file)
+            if not lock.acquire(wait=LOCK_STARTUP_WAIT_SECONDS):
+                return {"status": "busy", "message": "Capture already holds the project lock"}
+            try:
+                self._prepare_state()
+                self._disabled_file.unlink(missing_ok=True)
+                self._stop_file.unlink(missing_ok=True)
+            except Exception as exc:  # noqa: BLE001 - report preflight failures
+                return {"status": "error", "message": f"TRACE database not ready: {exc}"}
+            finally:
+                lock.release()
+        elif self._disabled_file.exists() or self._stop_file.exists():
+            return {"status": "disabled"}
         stale_pid = self._get_pid()  # is_running() said no monitor: any PID here is stale
         proc = self._spawn()
         self._last_proc = proc
@@ -1013,8 +1082,10 @@ class OpenCodeCaptureService:
                 return {"status": "running", "pid": self._get_pid()}
             if not Path(self.opencode_db_path).exists():
                 return {"status": "error", "message": "OpenCode database not found"}
-            caught_up = self.capture_once()
-            started = self.start()
+            caught_up = self.capture_once(respect_disabled=True)
+            if caught_up["status"] in ("disabled", "error"):
+                return caught_up
+            started = self.start(enable=False)
             started["catch_up"] = caught_up
             return started
         except Exception as exc:  # noqa: BLE001 - fail open for the plugin
@@ -1034,33 +1105,33 @@ class OpenCodeCaptureService:
         return not self._is_pid_alive(pid)
 
     def stop(self, disable: bool = True) -> dict:
-        """Stop the monitor (graceful first). ``disable`` keeps it off until start()."""
-        if disable and self._service_dir.exists():
+        """Request cooperative shutdown and wait for the capture lock."""
+        self.check_storage_paths()
+        if not self._service_dir.exists() and not self.trace_db_path.exists():
+            return {"status": "not_running", "message": "Service not running"}
+        self._service_dir.mkdir(parents=True, exist_ok=True)
+        if disable:
             self._disabled_file.write_text("stopped by user\n")
         pid = self._monitor_pid()
-        if not pid:
-            # Never signal a PID that is not provably our monitor.
-            self._remove_pid()
-            return {"status": "not_running", "message": "Service not running"}
         self._stop_file.write_text("stop\n")
-        attempts = int(STOP_TIMEOUT_SECONDS / 0.1)
-        if not self._wait_for_exit(pid, attempts=attempts):
-            try:
-                if sys.platform == "win32":
-                    subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)],
-                                   capture_output=True, check=False)
-                else:
-                    os.kill(pid, signal.SIGKILL)
-            except OSError:
-                pass
-            if not self._wait_for_exit(pid):
-                return {"status": "error", "message": f"Service process {pid} did not terminate"}
-        self._stop_file.unlink(missing_ok=True)
-        self._remove_pid()
-        status = self._read_status() or {}
-        status.update({"status": "stopped", "project": self.project_name})
-        self._write_status(status)
-        return {"status": "stopped", "message": "OpenCode capture service stopped"}
+        lock = LockHandle(self._lock_file)
+        if not lock.acquire(wait=STOP_TIMEOUT_SECONDS):
+            return {"status": "error", "message": "Capture still holds the project lock; retry after it stops"}
+        try:
+            if disable:
+                self._disabled_file.write_text("stopped by user\n")
+            self._stop_file.unlink(missing_ok=True)
+            self._remove_pid()
+            if pid:
+                status = self._read_status() or {}
+                status.update({"status": "stopped", "project": self.project_name})
+                self._write_status(status)
+        finally:
+            lock.release()
+        if pid:
+            self._wait_for_exit(pid, attempts=10)
+            return {"status": "stopped", "message": "OpenCode capture service stopped"}
+        return {"status": "not_running", "message": "Service not running"}
 
     def _monitor_pid(self) -> int | None:
         """PID of the live monitor, or None. Never signals any process.
@@ -1079,19 +1150,21 @@ class OpenCodeCaptureService:
             return None  # nobody holds the monitor lock: the PID file is stale
         return pid
 
-    def is_running(self) -> bool:
+    def is_running(self, *, cleanup_stale: bool = True) -> bool:
         """Check if service is running. Read-only: never signals the service."""
+        self.check_storage_paths()
         if self._monitor_pid():
             return True
-        if self._get_pid():
+        if cleanup_stale and self._get_pid():
             self._remove_pid()  # stale: dead or reused PID
         return False
 
-    def status(self) -> dict:
+    def status(self, *, cleanup_stale: bool = True) -> dict:
         """Service status; the PID file is authoritative, the status file adds health."""
+        self.check_storage_paths()
         status = self._read_status() or {}
         health = {k: status.get(k) for k in ("captured", "errors", "last_error", "cursors", "updated_at") if k in status}
-        if not self.is_running():
+        if not self.is_running(cleanup_stale=cleanup_stale):
             return {"status": "stopped", "project": self.project_name, **health}
         status.pop("pid", None)
         return {
@@ -1103,8 +1176,8 @@ class OpenCodeCaptureService:
         }
 
     def restart(self) -> dict:
-        self.stop(disable=False)
-        return self.start()
+        stopped = self.stop()
+        return stopped if stopped["status"] == "error" else self.start()
 
 
 def get_service(

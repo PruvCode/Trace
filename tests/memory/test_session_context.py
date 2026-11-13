@@ -4,7 +4,6 @@ Fast, deterministic, no network: builds TRACE databases directly and
 exercises memory.session_context assembly policy.
 """
 
-import sqlite3
 import tempfile
 import time
 from pathlib import Path
@@ -15,6 +14,12 @@ from memory import session_context as sc_mod
 from memory import store as store_mod
 from memory import transcript as transcript_mod
 from memory import episodic as episodic_mod
+
+
+@pytest.mark.parametrize("limit, expected", [(-1, ""), (0, ""), (1, "a"), (3, "abc"), (4, "abcd"), (5, "abcde"), (6, "ab … j")])
+def test_truncate_obeys_small_character_budgets(limit, expected):
+    assert sc_mod._truncate("abcdefghij", limit) == (expected, True)
+    assert sc_mod._truncate("", limit) == ("", False)
 
 
 @pytest.fixture()

@@ -20,6 +20,7 @@ from memory.capture import (
     CapturedEvent,
     CapturedMessage,
 )
+from memory.opencode_files import atomic_write_text, integration_marker, require_local_paths
 from memory import store as store_mod
 from memory import synthetic as synthetic_mod
 from memory import transcript as transcript_mod
@@ -577,16 +578,23 @@ class OpenCodeTransparentAdapter(CaptureAdapter):
         """Set up OpenCode integration for automatic capture (one-time setup)."""
         project_path = project_path.resolve()
 
-        # Ensure TRACE is initialized
+        from memory import opencode_plugin as opencode_plugin_mod
+
+        require_local_paths(project_path, project_mod.db_path(project_path))
+        _check_service_paths(project_path)
+        opencode_plugin_mod.check_install_targets(project_path)
         if not project_mod.is_initialized(project_path):
             project_mod.init_project(project_path)
 
-        # Create OpenCode config with TRACE MCP server
-        result = self._create_opencode_config(project_path)
-
-        # Install project-local plugin for automatic session-start retrieval
-        from memory import opencode_plugin as opencode_plugin_mod
-        plugin_result = opencode_plugin_mod.install_plugin(project_path)
+        result = self._create_opencode_config(project_path, install_plugin=True)
+        plugin_result = result.pop("plugin")
+        if not project_mod.invalidate_context_cache(project_path):
+            raise project_mod.TraceUserError(
+                "could not refresh the installed TRACE plugin cache",
+                "the project memory directory could not be updated.",
+                "Check directory permissions, then run setup again.",
+            )
+        integration_marker(project_path).unlink(missing_ok=True)
 
         # Also start persistent service
         monitor_result = self.start_monitoring(project_path)
@@ -597,11 +605,10 @@ class OpenCodeTransparentAdapter(CaptureAdapter):
             "monitoring": monitor_result,
         }
 
-    def _create_opencode_config(self, project_path: Path) -> dict:
+    def _create_opencode_config(self, project_path: Path, *, install_plugin: bool = False) -> dict:
         """Add TRACE's ``trace-memory`` MCP entry to the project's opencode.json.
 
-        Safe merge: only ``mcp.trace-memory`` is added or replaced; every other
-        key is preserved. TRACE never rewrites a file it cannot parse as plain
+        Safe merge: updates only TRACE’s MCP entry and plugin registration. TRACE never rewrites a file it cannot parse as plain
         JSON (including JSONC with comments, which OpenCode accepts) -- it
         refuses with the exact entry to add by hand, leaving the file
         byte-for-byte unchanged. The write is atomic.
@@ -615,28 +622,31 @@ class OpenCodeTransparentAdapter(CaptureAdapter):
         from memory import opencode_plugin as opencode_plugin_mod
         from memory import opencode_service as opencode_service_mod
 
-        command = [*project_mod.mcp_server_command(project_path), "--tools", "core"]
+        command = [*project_mod.mcp_server_command(project_path, opencode=True), "--tools", "core"]
         entry = {"type": "local", "enabled": True, "command": command}
-        manual = json.dumps({"mcp": {"trace-memory": entry}}, indent=2)
+        manual = (
+            "Use mcp.trace-memory on 1.x, or mcp.servers.trace-memory on 2.x without the enabled field.\n"
+            + json.dumps(entry, indent=2)
+        )
         jsonc_path = project_path / "opencode.jsonc"
+        config_path = project_path / "opencode.json"
+        require_local_paths(project_path, config_path, jsonc_path)
         if jsonc_path.exists():
             raise project_mod.TraceUserError(
                 f"refusing to edit {jsonc_path}",
                 "TRACE only merges plain-JSON opencode.json files; editing JSONC could drop your comments.",
-                f"Add this entry yourself, then re-run setup:\n{manual}",
+                f"Convert the configuration to plain opencode.json for automatic setup, or add the MCP entry manually:\n{manual}",
             )
-        config_path = project_path / "opencode.json"
         existed = config_path.exists()
         opencode_config: dict = {}
         if existed:
-            raw = config_path.read_text(encoding="utf-8")
             try:
-                loaded = json.loads(raw) if raw.strip() else {}
+                loaded = _read_config(config_path)
             except ValueError as exc:
                 raise project_mod.TraceUserError(
                     f"refusing to edit {config_path}",
-                    f"it is not plain JSON ({exc.msg} at line {exc.lineno}); it may contain comments.",
-                    f"Your file was left unchanged. Add this entry yourself, then re-run setup:\n{manual}",
+                    "its JSON is invalid, contains duplicate keys, or is not UTF-8.",
+                    f"Fix the file before rerunning setup, or add this MCP entry yourself:\n{manual}",
                 ) from exc
             if not isinstance(loaded, dict):
                 raise project_mod.TraceUserError(
@@ -647,19 +657,13 @@ class OpenCodeTransparentAdapter(CaptureAdapter):
             opencode_config = loaded
 
         opencode_config.setdefault("$schema", "https://opencode.ai/config.json")
-        mcp = opencode_config.get("mcp")
-        if mcp is None:
-            mcp = opencode_config["mcp"] = {}
-        if not isinstance(mcp, dict):
-            raise project_mod.TraceUserError(
-                f"refusing to edit {config_path}",
-                "its 'mcp' value is not an object.",
-                f"Your file was left unchanged. Add this entry yourself:\n{manual}",
-            )
-        mcp["trace-memory"] = entry
         v2 = opencode_service_mod.opencode_uses_v2_schema(opencode_service_mod.default_opencode_db_path())
-        if v2 is None:  # no readable database: keep what the project already uses
-            v2 = opencode_plugin_mod.plugin_v2_entry() in (opencode_config.get("plugins") or [])
+        if v2 is None:
+            mcp = opencode_config.get("mcp")
+            v2 = isinstance(opencode_config.get("plugins"), list) or (
+                isinstance(mcp, dict) and isinstance(mcp.get("servers"), dict)
+            )
+        _merge_trace_mcp(opencode_config, entry, v2, config_path)
         key, ours, stale = ("plugins", opencode_plugin_mod.plugin_v2_entry(), "plugin") if v2 else (
             "plugin", opencode_plugin_mod.plugin_uri(project_path), "plugins")
         plugins = opencode_config.get(key, [])
@@ -675,12 +679,15 @@ class OpenCodeTransparentAdapter(CaptureAdapter):
             leftovers[:] = [p for p in leftovers if not opencode_plugin_mod.is_trace_plugin_entry(p)]
             if not leftovers:
                 del opencode_config[stale]
-        _atomic_write_json(config_path, opencode_config)
-        return {
+        result = {
             "status": "updated" if existed else "created",
             "config_path": str(config_path),
             "message": "OpenCode config created/updated with TRACE MCP server",
         }
+        if install_plugin:
+            result["plugin"] = opencode_plugin_mod.install_plugin(project_path)
+        _atomic_write_json(config_path, opencode_config)
+        return result
 
     def teardown_integration(self, project_path: Path) -> dict:
         """Reverse setup: stop capture, remove the plugin and TRACE's MCP entry.
@@ -689,50 +696,53 @@ class OpenCodeTransparentAdapter(CaptureAdapter):
         Files TRACE cannot parse or did not write are left untouched and
         reported.
         """
-        import json
-        import shutil
-
         project_path = project_path.resolve()
         from memory import opencode_plugin as opencode_plugin_mod
         from memory import opencode_service as opencode_service_mod
 
-        service = opencode_service_mod.get_service(project_path)
-        result: dict = {"service": service.stop()}
-        result["plugin"] = opencode_plugin_mod.uninstall_plugin(project_path)
-
         config_path = project_path / "opencode.json"
+        jsonc_path = project_path / "opencode.jsonc"
+        require_local_paths(project_path, config_path, jsonc_path)
+        _check_service_paths(project_path)
+        service = opencode_service_mod.get_service(project_path)
+        marker = integration_marker(project_path)
+        if marker.parent.exists() or project_mod.is_initialized(project_path):
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            atomic_write_text(marker, "disabled by TRACE teardown\n")
+        result: dict = {"service": service.stop()}
         config_result: dict = {"config_path": str(config_path), "status": "absent"}
-        if config_path.exists():
-            try:
-                loaded = json.loads(config_path.read_text(encoding="utf-8"))
-            except ValueError:
-                loaded = None
-            mcp = loaded.get("mcp") if isinstance(loaded, dict) else None
-            lists = {k: loaded[k] for k in ("plugin", "plugins") if isinstance(loaded, dict) and isinstance(loaded.get(k), list)}
-            ours = {k: v for k, v in lists.items() if any(map(opencode_plugin_mod.is_trace_plugin_entry, v))}
-            has_mcp = isinstance(mcp, dict) and "trace-memory" in mcp
-            if has_mcp or ours:
-                if has_mcp:
-                    del mcp["trace-memory"]
-                    if not mcp:
-                        del loaded["mcp"]
-                for key, plugins in ours.items():
-                    plugins[:] = [p for p in plugins if not opencode_plugin_mod.is_trace_plugin_entry(p)]
-                    if not plugins:
-                        del loaded[key]
-                _atomic_write_json(config_path, loaded)
-                config_result["status"] = "entry-removed"
-            elif loaded is None:
-                config_result["status"] = "kept"
-                config_result["message"] = "not plain JSON; remove the trace-memory entry by hand if present"
-            else:
-                config_result["status"] = "no-entry"
+        if jsonc_path.exists():
+            config_result["manual_config_path"] = str(jsonc_path)
         result["config"] = config_result
-
-        service_dir = project_path / opencode_service_mod.SERVICE_DIR_NAME
-        if result["service"].get("status") in ("stopped", "not_running") and service_dir.exists():
-            shutil.rmtree(service_dir, ignore_errors=True)
-        result["service_dir_removed"] = not service_dir.exists()
+        if result["service"].get("status") not in ("stopped", "not_running"):
+            result["plugin"] = {"status": "not-attempted"}
+            config_result["status"] = "not-attempted"
+        else:
+            result["plugin"] = opencode_plugin_mod.uninstall_plugin(project_path)
+            if config_path.exists():
+                try:
+                    loaded = _read_config(config_path)
+                except (OSError, ValueError):
+                    loaded = None
+                if not isinstance(loaded, dict):
+                    config_result["status"] = "kept"
+                    config_result["message"] = "config could not be safely parsed; review TRACE entries by hand"
+                else:
+                    changed = _remove_trace_mcp(loaded)
+                    for key in ("plugin", "plugins"):
+                        entries = loaded.get(key)
+                        if isinstance(entries, list) and any(map(opencode_plugin_mod.is_trace_plugin_entry, entries)):
+                            kept = [p for p in entries if not opencode_plugin_mod.is_trace_plugin_entry(p)]
+                            if kept:
+                                loaded[key] = kept
+                            else:
+                                del loaded[key]
+                            changed = True
+                    if changed:
+                        _atomic_write_json(config_path, loaded)
+                    config_result["status"] = "entry-removed" if changed else "no-entry"
+        # Keep the disable marker for plugins already loaded in an OpenCode process.
+        result["service_dir_removed"] = not (project_path / opencode_service_mod.SERVICE_DIR_NAME).exists()
         return result
 
     def get_recent_context(
@@ -776,17 +786,101 @@ class OpenCodeTransparentAdapter(CaptureAdapter):
     # (search_transcripts / get_transcript_session / search_events).
 
 
+def _check_service_paths(project: Path) -> None:
+    from memory import opencode_service as service
+
+    service.get_service(project).check_storage_paths()
+    require_local_paths(project, integration_marker(project))
+
+
+def _read_config(path: Path) -> object:
+    def unique_keys(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("duplicate config key")
+            result[key] = value
+        return result
+
+    raw = path.read_text(encoding="utf-8")
+    return json.loads(raw, object_pairs_hook=unique_keys) if raw.strip() else {}
+
+
+def _is_trace_mcp(entry: object) -> bool:
+    if not isinstance(entry, dict) or entry.get("type") != "local":
+        return False
+    command = entry.get("command")
+    if not isinstance(command, list) or not all(isinstance(arg, str) for arg in command):
+        return False
+    try:
+        module = command.index("-m", 1) + 1
+        database = Path(command[command.index("--db", module + 1) + 1])
+        root = Path(command[command.index("--repo", module + 1) + 1])
+        return command[module] == "memory.mcp_server" and database == root / ".agent-memory" / "memory.db"
+    except (IndexError, ValueError):
+        return False
+
+
+def _merge_trace_mcp(config: dict, entry: dict, v2: bool, config_path: Path) -> None:
+    if config.get("mcp") is None:
+        config["mcp"] = {}
+    mcp = config["mcp"]
+    if not isinstance(mcp, dict) or (v2 and "servers" in mcp and not isinstance(mcp["servers"], dict)):
+        raise project_mod.TraceUserError(
+            f"refusing to edit {config_path}",
+            "the OpenCode MCP settings are not objects.",
+            "Fix the MCP settings or use 'trace mcp' to configure the server manually.",
+        )
+    nested = mcp.get("servers")
+    if v2 and nested is None:
+        nested = mcp["servers"] = {}
+    active, stale = (nested, mcp) if v2 else (mcp, nested)
+    for entries in (active, stale):
+        if isinstance(entries, dict) and "trace-memory" in entries and not _is_trace_mcp(entries["trace-memory"]):
+            raise project_mod.TraceUserError(
+                f"refusing to replace the trace-memory MCP entry in {config_path}",
+                "the entry does not point to a TRACE memory server.",
+                "Keep the existing entry or give it a different name before running setup.",
+            )
+    previous = active.get("trace-memory") or (stale.get("trace-memory") if isinstance(stale, dict) else {}) or {}
+    merged = {**previous, **entry}
+    if v2:
+        if previous.get("disabled") is True or previous.get("enabled") is False:
+            merged["disabled"] = True
+        merged.pop("enabled", None)
+        merged.setdefault("codemode", False)
+    else:
+        merged["enabled"] = previous.get("enabled", previous.get("disabled") is not True)
+        merged.pop("disabled", None)
+        merged.pop("codemode", None)
+    active["trace-memory"] = merged
+    if isinstance(stale, dict) and "trace-memory" in stale:
+        del stale["trace-memory"]
+        if stale is nested and not nested:
+            del mcp["servers"]
+
+
+def _remove_trace_mcp(config: dict) -> bool:
+    mcp = config.get("mcp")
+    if not isinstance(mcp, dict):
+        return False
+    changed = False
+    nested = mcp.get("servers")
+    if isinstance(nested, dict) and _is_trace_mcp(nested.get("trace-memory")):
+        del nested["trace-memory"]
+        if not nested:
+            del mcp["servers"]
+        changed = True
+    if _is_trace_mcp(mcp.get("trace-memory")):
+        del mcp["trace-memory"]
+        changed = True
+    if changed and not mcp:
+        del config["mcp"]
+    return changed
+
+
 def _atomic_write_json(path: Path, data: dict) -> None:
-    import json
-    import os
-
-    import shutil
-
-    tmp = path.with_name(path.name + ".trace-tmp")
-    tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    if path.exists():
-        shutil.copymode(path, tmp)  # keep the user's file permissions
-    os.replace(tmp, path)
+    atomic_write_text(path, json.dumps(data, indent=2, ensure_ascii=False) + "\n")
 
 
 def create_opencode_transparent_adapter(config: Optional[CaptureConfig] = None) -> OpenCodeTransparentAdapter:

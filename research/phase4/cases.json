@@ -1,0 +1,232 @@
+{
+  "development": {
+    "worker": [
+      [
+        "paraphrase",
+        "Why did the background job run twice when the machine came back?",
+        "After host recovery, the consumer executed the same task again because the visibility timeout expired before acknowledgment."
+      ],
+      [
+        "exact",
+        "What did WorkerLeaseV2 change?",
+        "WorkerLeaseV2 renews the reservation before each long-running batch."
+      ]
+    ],
+    "catalog": [
+      [
+        "paraphrase",
+        "Why did typing one letter freeze the picker?",
+        "Autocomplete blocked the UI thread while scanning every indexed product on each keystroke."
+      ],
+      [
+        "exact",
+        "What did CatalogCursor fix?",
+        "CatalogCursor preserves a stable tie-breaker when products share a display name."
+      ]
+    ]
+  },
+  "heldout": {
+    "identity": [
+      [
+        "paraphrase",
+        "Why did people have to sign in again after leaving a tab idle?",
+        "Inactive browser sessions lost their authentication because refresh cookies expired before the next interaction."
+      ],
+      [
+        "paraphrase",
+        "Can someone with an email invite accept it after the owner cancels it?",
+        "Revoked invitations were still redeemable because the acceptance handler checked the signature but omitted the revocation lookup."
+      ],
+      [
+        "paraphrase",
+        "How did we stop lots of failed password guesses from locking everyone out?",
+        "Rate limiting switched from a tenant-wide login counter to per-account and per-IP buckets so one brute-force attempt cannot deny other users access."
+      ],
+      [
+        "paraphrase",
+        "Why were phone users briefly getting the previous account after switching profiles?",
+        "The mobile client reused the former principal because the switch callback read a stale credential snapshot."
+      ],
+      [
+        "exact",
+        "What was the workaround for RefreshNonceMismatch?",
+        "RefreshNonceMismatch disappeared when concurrent token rotation shared a single nonce update."
+      ],
+      [
+        "exact",
+        "Why did auth.session_clock move?",
+        "The auth.session_clock offset moved into the injected clock to stabilize expiry tests."
+      ]
+    ],
+    "dispatch": [
+      [
+        "paraphrase",
+        "How did a dying worker cause the same job to be handled twice?",
+        "A consumer crash after the external side effect but before acknowledgment triggered redelivery. The idempotency key belongs on the effect."
+      ],
+      [
+        "paraphrase",
+        "What kept urgent work from starving behind the big nightly batch?",
+        "Priority scheduling now reserves a consumer slot for interactive requests while bulk jobs occupy the rest of the pool."
+      ],
+      [
+        "paraphrase",
+        "Why was the backlog growing although machines were sitting idle?",
+        "Queue partitions were pinned unevenly. One busy shard held most messages while other executors had spare capacity."
+      ],
+      [
+        "paraphrase",
+        "What did we do with messages that can never be processed?",
+        "Poison payloads move to a dead-letter stream after the retry ceiling, with the original envelope kept for diagnosis."
+      ],
+      [
+        "exact",
+        "Why was DrainBarrier introduced?",
+        "DrainBarrier waits for acknowledgments before the process finishes graceful shutdown."
+      ],
+      [
+        "exact",
+        "What should DISPATCH_LEASE_MS cover?",
+        "DISPATCH_LEASE_MS must exceed the longest acknowledgment round-trip under normal load."
+      ]
+    ],
+    "migrations": [
+      [
+        "paraphrase",
+        "Why did the upgrade look complete when old rows were still missing values?",
+        "The schema migration marked its checkpoint before the data backfill transaction committed. Restart could skip unfilled records."
+      ],
+      [
+        "paraphrase",
+        "How did we make the column rename safe during rolling deploys?",
+        "Writers temporarily emitted both field names while older application instances continued reading the original field."
+      ],
+      [
+        "paraphrase",
+        "What happened if the process died half way through copying the table?",
+        "The copy resumes from the last committed primary key. Intermediate staging rows are replaced by idempotent upserts."
+      ],
+      [
+        "paraphrase",
+        "What made the database refuse writes while we added the index?",
+        "The migration used a blocking DDL operation that held an exclusive lock during index construction."
+      ],
+      [
+        "exact",
+        "What step fixed SQLITE_BUSY_SNAPSHOT?",
+        "SQLITE_BUSY_SNAPSHOT was resolved by restarting the entire read-to-write transaction after another writer committed."
+      ],
+      [
+        "exact",
+        "What guarantees does SchemaEpochFence provide?",
+        "SchemaEpochFence stops older binaries from writing once the new schema becomes mandatory."
+      ]
+    ],
+    "cache": [
+      [
+        "paraphrase",
+        "Why did customers still see the old price right after a save?",
+        "A cache invalidation race let a reader repopulate the previous catalog value between the eviction and database commit."
+      ],
+      [
+        "paraphrase",
+        "How did we stop many requests from rebuilding the same expired entry at once?",
+        "Single-flight refresh coalesces concurrent misses for one key, preventing a stampede when the TTL expires."
+      ],
+      [
+        "paraphrase",
+        "Why did the service run out of memory although the number of cached items barely changed?",
+        "The eviction policy counted entries instead of bytes, so larger response bodies consumed the process heap."
+      ],
+      [
+        "paraphrase",
+        "How could one region show the update long before another did?",
+        "Cross-region replicas rely on asynchronous invalidation delivery. A delayed subscriber continued serving stale values."
+      ],
+      [
+        "exact",
+        "Why was VersionedCacheKey used on reads?",
+        "VersionedCacheKey includes the schema version so incompatible serialized payloads cannot share an entry."
+      ],
+      [
+        "exact",
+        "Why was cache.ttl_jitter enabled?",
+        "The cache.ttl_jitter setting spreads expiration times across otherwise synchronized entries."
+      ]
+    ],
+    "billing": [
+      [
+        "paraphrase",
+        "What protected buyers when they clicked pay twice after the screen hung?",
+        "Payment retries now use one idempotency key per checkout so a repeated submission cannot create a second charge."
+      ],
+      [
+        "paraphrase",
+        "Why was the total off by a penny for some baskets?",
+        "The invoice rounded each line before adding taxes. Summing unrounded amounts first avoids cumulative cent drift."
+      ],
+      [
+        "paraphrase",
+        "Why could the dashboard say unpaid after the bank already sent the money back?",
+        "A late provider webhook overwrote the newer refund state because updates applied in arrival order instead of event order."
+      ],
+      [
+        "paraphrase",
+        "Why did only customers overseas get charged on the wrong date?",
+        "The renewal calculation used UTC midnight instead of the subscription's billing timezone, shifting the local calendar day."
+      ],
+      [
+        "exact",
+        "What does LedgerReconcileV2 do with unmatched entries?",
+        "LedgerReconcileV2 places unmatched settlement rows in a review queue with the original reference."
+      ],
+      [
+        "exact",
+        "Where should billing.refund_pending be cleared?",
+        "billing.refund_pending clears after the provider confirmation is persisted, inside the same transaction."
+      ]
+    ],
+    "storage": [
+      [
+        "paraphrase",
+        "Why did documents downloaded after a retry sometimes have a chunk missing?",
+        "The multipart upload reused a part number after a transient failure, replacing an already uploaded segment."
+      ],
+      [
+        "paraphrase",
+        "How can we remove old files without deleting ones that are still in use?",
+        "Garbage collection traverses live manifest references and waits through the retention grace period before purging unreferenced objects."
+      ],
+      [
+        "paraphrase",
+        "What let us tell that copied data was damaged even though the copy finished?",
+        "The replication task compares the source and destination checksums after transfer to detect silent corruption."
+      ],
+      [
+        "paraphrase",
+        "Why did a file appear in listings before it could actually be opened?",
+        "The catalog published object metadata before the blob write was durable, exposing an unreadable entry."
+      ],
+      [
+        "exact",
+        "How did BlobCommitFence fix publication?",
+        "BlobCommitFence requires durable write confirmation before committing the manifest pointer."
+      ],
+      [
+        "exact",
+        "When does storage.copy_resume restart the transfer?",
+        "storage.copy_resume discards the saved offset if the source generation changed."
+      ]
+    ]
+  },
+  "noise": [
+    "Updated component logging to include elapsed time and the request identifier.",
+    "The dashboard now surfaces retry counts and error rates under increased traffic.",
+    "Reviewed the release checklist and reran the standard integration smoke test.",
+    "Adjusted the default batch size to keep the development environment responsive.",
+    "Documented the configuration used by the test harness and shared it with maintainers.",
+    "Removed a deprecated configuration alias after checking the upgrade notes.",
+    "Recorded a follow-up for intermittent timeouts during scheduled maintenance.",
+    "The team checked compatibility with the previous service release on a staging node."
+  ]
+}

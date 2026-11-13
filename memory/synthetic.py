@@ -43,9 +43,9 @@ _INVISIBLE = re.compile(
 
 def _record(**fields: object) -> str:
     # Every field, not just the text: roles, labels and timestamps come from storage too.
-    values = {k: redact_mod.redact_text(v) for k, v in fields.items() if v}
+    values = {k: redact_mod.redact_value(v) for k, v in fields.items() if v is not None and v != ""}
     line = json.dumps(values, ensure_ascii=False, separators=(",", ":"))
-    return _INVISIBLE.sub(lambda m: f"\\u{ord(m.group()):04x}", line)
+    return _INVISIBLE.sub(lambda m: json.dumps(m.group(), ensure_ascii=True)[1:-1], line)
 
 
 def is_synthetic_memory_text(content: object) -> bool:
@@ -79,13 +79,36 @@ def render_lines(items: list[dict]) -> list[str]:
         for item in group:
             lines.append(_record(role=item.get("role"), text=item.get("text")))
     for item in findings:
-        lines.append(_record(finding=item.get("role"), text=item.get("text")))
+        if ((item.get("code") or item.get("acceptance") or item.get("code_targets")) and item.get("evidence")
+                and item["role"].startswith("decision (verified)") and not item.get("uncertain")):
+            lines.append(_record(
+                text=item.get("text"), acceptance=item.get("acceptance"),
+                finding=item.get("role"), evidence=item.get("evidence"),
+                event_id=item.get("event_id"), code=item.get("code"), freshness=item.get("freshness"),
+                code_targets=item.get("code_targets"),
+            ))
+            continue
+        lines.append(_record(
+            finding=item.get("role"), text=item.get("text"), event_id=item.get("event_id"),
+            task_id=item.get("task_id"), freshness=item.get("freshness"), evidence=item.get("evidence"),
+            code=item.get("code"), needs_revalidation=True if item.get("uncertain") else None,
+            source_evidence=item.get("source_evidence"),
+            previously_failed_checks=item.get("previously_failed_checks"),
+        ))
     return lines
 
 
 def render_records(items: list[dict]) -> list[str]:
     """The notice and records, framed so the block's end cannot be forged."""
-    lines = render_lines(items)
+    records = _frame(render_lines(items))
+    if any(item.get("acceptance") for item in items):
+        records.insert(1, "For a code change, confirm which recorded acceptance checks still apply. Verify each applicable check against the patch before reporting success.")
+    if any(item.get("code_targets") for item in items):
+        records.insert(1, "Inspect the listed definitions before editing. Fix each applicable rule in the function responsible for it, then verify that function and its callers.")
+    return records
+
+
+def _frame(lines: list[str]) -> list[str]:
     boundary = hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()[:12]
     return [
         SYNTHETIC_NOTICE,
@@ -93,6 +116,10 @@ def render_records(items: list[dict]) -> list[str]:
         *lines,
         f'</memory-records boundary="{boundary}">',
     ]
+
+
+def render_evidence(record: dict) -> str:
+    return "\n".join(_frame([_record(**record)]))
 
 
 def render_user_block(items: list[dict]) -> str:

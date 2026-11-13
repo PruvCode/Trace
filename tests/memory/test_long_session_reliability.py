@@ -487,6 +487,110 @@ def test_migration_and_capture_share_source_id_format(tmp_path):
 
 # 8. Prefixed tool names ---------------------------------------------------------------
 
+
+def test_opt_in_pytest_outcome_is_scoped_atomic_and_replay_safe(env, monkeypatch, capsys):
+    from contextlib import closing
+    from memory import episodic, evidence, session_context, synthetic, task_library
+    from trace_memory.cli import main
+
+    project, oc, trace_db, service, state = env
+    sid = oc.session(project)
+    mid = oc.message(sid, "assistant", completed=False)
+    secret = "ghp_" + "Z9ba" * 9
+    (project / "test_contract.py").touch()
+    tool = {"type": "tool", "tool": "bash", "state": {
+        "status": "completed", "input": {"command": "python -m pytest -q tests", "description": secret},
+        "metadata": {"exit": 1, "other": secret}, "output": (
+            f"fixture secret {secret}\nFAILED test_contract.py::test_outside_summary\n"
+            f"=== short test summary info ===\nFAILED test_contract.py::test_limit[{secret}] - AssertionError: {secret}\n"
+            "FAILED ../test_contract.py::test_escape\nFAILED test_missing.py::test_fake\n1 failed, 2 passed in 0.05s"
+        ),
+    }}
+    oc.part(mid, sid, tool)
+    service.capture_pass(state)
+    assert _rows(trace_db, "SELECT id FROM events") == []
+    oc.part(mid, sid, tool, created_ms=1)
+    with closing(store_mod.connect(trace_db)) as conn:
+        task_id = task_library.create_task(conn, "Fix test")["id"]
+    assert main(["task", "bind-session", task_id, sid, "--project", str(project)]) == 0
+    capsys.readouterr()
+    assert main(["test-capture", "on", "--project", str(project)]) == 0
+    cutoff = json.loads(capsys.readouterr().out)["enabled_since_ms"]
+    assert main(["test-capture", "on", "--project", str(project)]) == 0
+    assert json.loads(capsys.readouterr().out)["enabled_since_ms"] == cutoff
+    running = {**tool, "state": {**tool["state"], "status": "running"}}
+    pid = oc.part(mid, sid, running, created_ms=cutoff + 1)
+    oc.complete_message(mid)
+    service.capture_pass(state)
+    assert _rows(trace_db, "SELECT id FROM events") == []
+    oc.update_part(pid, tool)
+    original = episodic.record_event
+
+    def fail_event(*args, **kwargs):
+        raise sqlite3.OperationalError("synthetic write failure")
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(episodic, "record_event", fail_event)
+        with pytest.raises(CaptureError, match="synthetic write failure"):
+            service.capture_pass(state)
+    assert episodic.record_event is original
+    assert _rows(trace_db, "SELECT id FROM transcript_messages WHERE role = 'tool'") == []
+    assert _rows(trace_db, "SELECT id FROM events") == []
+    original_db = oc.path.read_bytes()
+    service.capture_pass(state)
+    replay = service._prepare_state()
+    replay.cursors["part"] = 0
+    service.capture_pass(replay)
+    assert oc.path.read_bytes() == original_db
+    with closing(store_mod.connect(trace_db)) as conn:
+        (event,) = episodic.search_events(conn, task_id=task_id)
+        assert event.payload["outcome"] == "failed"
+        assert event.payload["counts"] == {"failed": 1, "passed": 2}
+        assert event.payload["failed_checks"] == ["test_contract.py::test_limit"]
+        msg = conn.execute("SELECT * FROM transcript_messages WHERE id = ?",
+                           (event.evidence[0]["message_id"],)).fetchone()
+        assert msg["role"] == "tool" and json.loads(msg["metadata"])["upstream_tool_id"] == pid
+        opened = evidence.expand(conn, project, event.evidence_refs[0], task_id=task_id)
+        assert "test_contract.py::test_limit" in opened and secret not in opened
+        for i in range(26):
+            episodic.record_event(conn, repo="fixture", type="observation", task_id=task_id,
+                                  payload={"message": f"Routine update {i}"})
+    assert secret.encode() not in trace_db.read_bytes()
+    assert b"python -m pytest" not in trace_db.read_bytes()
+    assert "pytest outcome" not in _inject(trace_db)
+    recovered = session_context.get_session_start_context(trace_db, task_id=task_id, query="Fix test")
+    block = synthetic.render_user_block(recovered["items"])
+    assert '"previously_failed_checks":["test_contract.py::test_limit"]' in block
+    assert "test_outside_summary" not in block and secret not in block
+    with closing(store_mod.connect(trace_db)) as conn:
+        other = task_library.create_task(conn, "Other task")["id"]
+    assert "test_contract.py::test_limit" not in session_context.get_session_start_context(trace_db, task_id=other)["text"]
+    assert main(["test-capture", "off", "--project", str(project)]) == 0
+    assert json.loads(capsys.readouterr().out)["enabled"] is False
+    oc.part(mid, sid, tool, created_ms=cutoff + 2)
+    service.capture_pass(replay)
+    assert _rows(trace_db, "SELECT COUNT(*) FROM events WHERE source='capture'") == [(1,)]
+
+
+def test_pytest_failed_identifiers_match_real_summary(tmp_path):
+    from memory import captured_outcomes
+
+    fixture = tmp_path / "policy_test.py"
+    fixture.write_text("\n\n".join(f"def test_rule_{i}():\n    assert False" for i in range(6)), encoding="utf-8")
+    result = subprocess.run([sys.executable, "-m", "pytest", "-q", fixture.name], cwd=tmp_path,
+                            capture_output=True, text=True, timeout=30)
+    assert result.returncode == 1
+    state = {"status": "completed", "input": {"command": "pytest -q"},
+             "content": [{"type": "text", "text": result.stdout}], "metadata": {"exit": result.returncode}}
+    part = {"type": "tool", "name": "shell", "state": state}
+    summary = captured_outcomes.summarize(part, True, tmp_path.resolve())
+    assert summary["counts"] == {"failed": 6}
+    assert summary["failed_checks"] == [f"policy_test.py::test_rule_{i}" for i in range(4)]
+    (tmp_path / "nested").mkdir()
+    state["input"]["cwd"] = "nested"
+    assert "failed_checks" not in captured_outcomes.summarize(part, True, tmp_path.resolve())
+
+
 def test_prefixed_memory_tool_calls_captured_when_complete(env):
     project, oc, trace_db, service, state = env
     sid = oc.session(project)
@@ -542,7 +646,7 @@ import { pathToFileURL } from "node:url";
 let spawns = 0;
 globalThis.Bun = { spawnSync: (cmd, opts) => {
   spawns += 1;
-  const r = spawnSync(cmd[0], cmd.slice(1), { cwd: opts.cwd, env: { ...process.env, PYTHONPATH: process.argv[4] } });
+  const r = spawnSync(cmd[0], cmd.slice(1), { cwd: opts.cwd, input: opts.stdin, env: { ...process.env, PYTHONPATH: process.argv[4] } });
   return { exitCode: r.status, stdout: r.stdout, stderr: r.stderr };
 } };
 const { TraceMemoryPlugin } = await import(pathToFileURL(process.argv[2]).href);
@@ -704,6 +808,7 @@ def initialized_project(tmp_path):
 @pytest.mark.parametrize("content", [
     '{\n  // my model choice\n  "model": "anthropic/claude-opus"\n}\n',
     '{"model": "x",}',
+    '{"model": "x", "model": "y"}',
     "not json at all",
 ])
 def test_setup_refuses_unparseable_config_and_leaves_it_unchanged(initialized_project, content):
@@ -751,6 +856,55 @@ def test_setup_merges_and_teardown_reverses(initialized_project):
     assert result["plugin"]["status"] == "removed"
     assert not plugin_mod.plugin_path(initialized_project).exists()
     assert (initialized_project / ".agent-memory" / "memory.db").exists(), "teardown keeps memory"
+
+
+def test_setup_refuses_foreign_plugin_before_changing_config(initialized_project):
+    from memory import opencode_plugin as plugin_mod
+    from memory.opencode_transparent import OpenCodeTransparentAdapter
+    from trace_memory.project import TraceUserError
+
+    target = plugin_mod.plugin_v2_dir(initialized_project) / "index.js"
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"custom code")
+    config = initialized_project / "opencode.json"
+    config.write_bytes(b'{"model":"fixture"}')
+    with pytest.raises(TraceUserError, match="refusing to replace"):
+        OpenCodeTransparentAdapter().setup_integration(initialized_project)
+    assert target.read_bytes() == b"custom code"
+    assert config.read_bytes() == b'{"model":"fixture"}'
+
+
+def test_setup_and_teardown_preserve_foreign_mcp_and_service_files(initialized_project):
+    from memory.opencode_transparent import OpenCodeTransparentAdapter
+    from trace_memory.project import TraceUserError
+
+    adapter = OpenCodeTransparentAdapter()
+    config = initialized_project / "opencode.json"
+    body = b'{"mcp":{"trace-memory":{"type":"local","command":["other-server"]}}}'
+    config.write_bytes(body)
+    directory = initialized_project / ".trace-service"
+    directory.mkdir()
+    sentinel = directory / "user-file"
+    sentinel.write_bytes(b"preserve this file")
+    with pytest.raises(TraceUserError, match="refusing to replace"):
+        adapter.setup_integration(initialized_project)
+    result = adapter.teardown_integration(initialized_project)
+    assert result["config"]["status"] == "no-entry"
+    assert not result["service_dir_removed"]
+    assert config.read_bytes() == body and sentinel.read_bytes() == b"preserve this file"
+
+
+def test_setup_upgrades_owned_mcp_without_reenabling_it(initialized_project):
+    from memory.opencode_transparent import OpenCodeTransparentAdapter
+    from trace_memory import project
+
+    command = project.mcp_server_command(initialized_project)
+    old = {"type": "local", "command": ["old-python", *command[1:]], "enabled": False, "timeout": 8000}
+    config = initialized_project / "opencode.json"
+    config.write_text(json.dumps({"mcp": {"trace-memory": old}}), encoding="utf-8")
+    OpenCodeTransparentAdapter()._create_opencode_config(initialized_project)
+    new = json.loads(config.read_text(encoding="utf-8"))["mcp"]["trace-memory"]
+    assert new == {**old, "command": [*project.mcp_server_command(initialized_project, opencode=True), "--tools", "core"]}
 
 
 def test_setup_preserves_non_ascii_text(initialized_project):
@@ -838,7 +992,9 @@ def test_teardown_leaves_no_monitor_running(live_service):
     result = OpenCodeTransparentAdapter().teardown_integration(project)
     assert result["service"]["status"] == "stopped"
     assert not svc_mod.process_is_alive(pid)
-    assert result["service_dir_removed"] is True
+    assert result["service_dir_removed"] is False
+    assert (project / svc_mod.SERVICE_DIR_NAME / svc_mod.DISABLED_FILE).is_file()
+    assert service.ensure_running()["status"] == "disabled"
     lock = svc_mod.LockHandle(project / svc_mod.SERVICE_DIR_NAME / svc_mod.LOCK_FILE)
     assert lock.acquire(), "a monitor still holds the lock"
     lock.release()

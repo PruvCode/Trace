@@ -7,9 +7,8 @@ First run::
     trace status         # inspect what TRACE stored
     trace report         # terminal summary of memory + git + measurement
 
-All memory stays in ``<project>/.agent-memory/memory.db`` on this machine.
-TRACE itself makes no network calls; only the agent you choose may contact
-a model provider, and only when you run one.
+TRACE stores memory in ``<project>/.agent-memory/memory.db``. Retrieved memory
+can be sent to the model provider by your agent.
 """
 
 from __future__ import annotations
@@ -21,6 +20,7 @@ import sys
 from pathlib import Path
 
 from memory import redact as redact_mod
+from memory import task_library
 from memory.store import SearchQueryError
 from trace_memory import __version__
 from trace_memory import project as project_mod
@@ -70,9 +70,35 @@ def build_parser() -> argparse.ArgumentParser:
     _project_arg(p)
     p.set_defaults(func=cmd_index)
 
+    p = sub.add_parser("backup", help="save a consistent local memory snapshot to a new file")
+    p.add_argument("destination", type=Path, help="new SQLite backup filename")
+    p.add_argument("--project", default=".", help="project directory (default: current directory)")
+    p.set_defaults(func=cmd_backup)
+
     p = sub.add_parser("status", help="show what TRACE stored for a project")
     _project_arg(p)
     p.set_defaults(func=cmd_status)
+
+    p = sub.add_parser("privacy", help="show capture, recall, and test recording settings")
+    p.add_argument("--project", default=".", help="project directory (default: current directory)")
+    p.set_defaults(func=cmd_privacy)
+
+    p = sub.add_parser("preview", help="show the memory block TRACE would include in a new request")
+    p.add_argument("--project", default=".", help="project directory (default: current directory)")
+    p.add_argument("--session", help="current session ID, for task binding and exclusion")
+    p.add_argument("--query-stdin", action="store_true", help="read a query from standard input")
+    p.set_defaults(func=cmd_preview)
+
+    p = sub.add_parser("obsidian", help="export a human-readable project memory snapshot to an Obsidian vault")
+    p.add_argument("--vault", required=True, help="existing Obsidian vault folder")
+    p.add_argument("--project", default=".", help="project directory (default: current directory)")
+    obsidian_mode = p.add_mutually_exclusive_group()
+    obsidian_mode.add_argument("--map", action="store_true", help="export the folder tree and native TRACE relationship map")
+    obsidian_mode.add_argument("--graph", action="store_true", help="export the expandable TRACE Code Graph")
+    p.add_argument("--install-view", action="store_true", help="copy the TRACE Code Graph plugin files to this vault")
+    p.add_argument("--include-history", action="store_true", help="include engineering event and evidence references in the graph")
+    p.add_argument("--focus", metavar="PATH", help="project-relative code file for the relationship Canvas")
+    p.set_defaults(func=cmd_obsidian)
 
     p = sub.add_parser("report", help="terminal summary: memory, git, measurement")
     _project_arg(p)
@@ -103,6 +129,16 @@ def build_parser() -> argparse.ArgumentParser:
     _limit_arg(p)
     p.set_defaults(func=cmd_callers)
 
+    p = sub.add_parser("graph", help="browse the canonical code graph")
+    _project_arg(p)
+    _limit_arg(p)
+    selector = p.add_mutually_exclusive_group()
+    selector.add_argument("--node", help="focus an entity by its graph ID")
+    selector.add_argument("--find", help="match an exact name, qualified name, or relative path")
+    selector.add_argument("--event", type=int, help="inspect one graph history event by ID")
+    p.add_argument("--offset", type=int, default=0, help="start each result page at this offset")
+    p.set_defaults(func=cmd_graph)
+
     p = sub.add_parser("search", help="lexical symbol search")
     p.add_argument("query", help="search text, e.g. timeout")
     _project_arg(p)
@@ -116,6 +152,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--symbol", default=None)
     p.add_argument("--file", default=None)
     p.add_argument("--commit", default=None)
+    p.add_argument("--task", metavar="TASK_ID", help="only events assigned to this task")
     _limit_arg(p)
     p.set_defaults(func=cmd_events)
 
@@ -132,7 +169,35 @@ def build_parser() -> argparse.ArgumentParser:
                    help="how far the finding has been checked")
     p.add_argument("--supersedes", type=int, action="append", default=None, metavar="EVENT_ID",
                    help="id of an earlier event this one replaces (repeatable)")
+    p.add_argument("--task", metavar="TASK_ID", help="assign the event to this task")
+    p.add_argument("--acceptance", action="append", default=[], metavar="CHECK",
+                   help="record one observable acceptance check on a decision (repeatable)")
+    p.add_argument("--transcript-evidence", type=int, action="append", default=[], metavar="MESSAGE_ID",
+                   help="link a local transcript message by ID (repeatable)")
+    p.add_argument("--git-evidence", action="append", default=[], metavar="COMMIT:PATH",
+                   help="link a file at a full local commit hash (repeatable)")
     p.set_defaults(func=cmd_record)
+
+    task = sub.add_parser("task", help="browse and organize project investigations")
+    actions = task.add_subparsers(dest="task_action", required=True)
+    create = actions.add_parser("create", help="create a task with a stable local ID")
+    create.add_argument("--title", required=True)
+    create.add_argument("--subsystem")
+    listing = actions.add_parser("list", help="list tasks, optionally by subsystem")
+    listing.add_argument("--subsystem")
+    _limit_arg(listing)
+    show = actions.add_parser("show", help="show a task and its recorded events")
+    show.add_argument("task_id")
+    _limit_arg(show)
+    link = actions.add_parser("link", help="assign an existing unassigned event to a task")
+    link.add_argument("task_id")
+    link.add_argument("event_id", type=int)
+    bind = actions.add_parser("bind-session", help="assign future test outcomes from a captured session")
+    bind.add_argument("task_id")
+    bind.add_argument("session_id")
+    for action in (create, listing, show, link, bind):
+        action.add_argument("--project", default=".", help="project directory (default: current directory)")
+        action.set_defaults(func=cmd_task)
 
     # Transcript subcommands
     transcript_sub = sub.add_parser("transcript", help="transcript memory (what was discussed)")
@@ -179,12 +244,26 @@ def build_parser() -> argparse.ArgumentParser:
     service_sub.add_argument("--project", default=".", help="project directory (default: current directory)")
     service_sub.set_defaults(func=cmd_service)
 
+    test_capture = sub.add_parser("test-capture", help="opt in to local OpenCode pytest outcome capture")
+    test_capture.add_argument("action", choices=["on", "off", "status"])
+    test_capture.add_argument("--project", default=".", help="project directory (default: current directory)")
+    test_capture.set_defaults(func=cmd_test_capture)
+
     # Context subcommand for retrieving relevant history
     context_sub = sub.add_parser("context", help="retrieve relevant historical context for a new session")
     context_sub.add_argument("query", help="search query for relevant context")
     context_sub.add_argument("--project", default=".", help="project directory (default: current directory)")
     context_sub.add_argument("--limit", type=int, default=10, help="max results (default: 10)")
+    context_sub.add_argument("--task", metavar="TASK_ID", help="build context for this project task")
+    context_sub.add_argument("--file", help="show decisions and evidence recorded for this repository-relative file")
     context_sub.set_defaults(func=cmd_context)
+
+    evidence = sub.add_parser("evidence", help="open a redacted page of linked evidence")
+    evidence.add_argument("reference")
+    evidence.add_argument("--task", metavar="TASK_ID", help="require the reference to belong to this task")
+    evidence.add_argument("--offset", type=int, default=0)
+    evidence.add_argument("--project", default=".", help="project directory (default: current directory)")
+    evidence.set_defaults(func=cmd_evidence)
 
     p = sub.add_parser("history", help="show deterministic git facts for a path/symbol")
     _project_arg(p)
@@ -220,7 +299,7 @@ def cmd_init(args) -> int:
     print(f"  Local database: {stats['db']}")
     hint = project_mod.gitignore_hint(project)
     if hint:
-        print("  (NOT git-ignored yet: add .agent-memory/ to .gitignore before committing)")
+        print("  (Add the TRACE directories listed below to .gitignore before committing)")
     else:
         print("  (git-ignored, or not inside a git repository)")
     print()
@@ -238,6 +317,13 @@ def cmd_index(args) -> int:
     stats = project_mod.index_project(project)
     print(f"TRACE index rebuilt: {stats['project']}")
     print(f"  files: {stats['files']}  symbols: {stats['symbols']}  relations: {stats['relationships']}")
+    return EXIT_OK
+
+
+def cmd_backup(args) -> int:
+    project = project_mod.resolve_project(args.project)
+    target = project_mod.backup_project(project, args.destination)
+    print(f"TRACE memory backup written to {target}")
     return EXIT_OK
 
 
@@ -286,6 +372,84 @@ def cmd_status(args) -> int:
     return EXIT_OK
 
 
+def cmd_privacy(args) -> int:
+    project = project_mod.resolve_project(args.project)
+    info = project_mod.privacy_info(project)
+    memory_status = "initialized" if info["initialized"] else "not initialized"
+    print(f"Project memory ({memory_status}): {info['database']}")
+    print(f"OpenCode capture: {info['capture']}")
+    print(f"Automatic recall: {info['automatic_recall']}")
+    print("Selected test recording: " + ("opted in" if info["selected_test_capture_opt_in"] else "off"))
+    print("Use 'trace preview' to inspect the memory TRACE can include in a new request.")
+    print("Use 'trace service stop' to pause capture or 'trace teardown opencode' to stop capture and recall.")
+    return EXIT_OK
+
+
+def cmd_preview(args) -> int:
+    from memory.message_context import read_query
+
+    project = project_mod.resolve_project(args.project)
+    query = read_query(sys.stdin) if args.query_stdin else None
+    text = project_mod.preview_context(project, args.session, query)
+    if text:
+        print(text)
+    else:
+        print("No automatic memory block would be included.")
+    return EXIT_OK
+
+
+def cmd_obsidian(args) -> int:
+    from trace_memory import obsidian
+
+    project = project_mod.resolve_project(args.project)
+    vault = Path(args.vault).expanduser().resolve()
+    if not vault.is_dir():
+        raise project_mod.TraceUserError(
+            "Obsidian vault folder was not found",
+            "the export needs an existing folder.",
+            "Pass the vault's folder with --vault, or create a new local vault first.",
+        )
+    try:
+        if args.focus is not None and not args.map:
+            raise ValueError("--focus requires --map")
+        if args.install_view and not args.graph:
+            raise ValueError("--install-view requires --graph")
+        if args.include_history and not args.graph:
+            raise ValueError("--include-history requires --graph")
+        if args.graph:
+            from trace_memory import obsidian_graph
+
+            entry = obsidian_graph.export(project, vault, include_history=args.include_history)
+            print(f"TRACE code graph written to {entry}")
+            if args.install_view:
+                obsidian_graph.install(vault)
+                print("Enable TRACE Code Graph under Obsidian Community plugins, then run Open TRACE Code Graph.")
+            return EXIT_OK
+        if args.map:
+            from trace_memory import code_map
+
+            note, tree, relationships = code_map.export(project, vault, args.focus)
+            print(f"TRACE code map written to {note}")
+            print(f"Folder tree: {tree}")
+            print(f"Code relationships: {relationships}")
+            return EXIT_OK
+        note = obsidian.export(project, vault)
+    except FileExistsError as exc:
+        if args.graph:
+            raise project_mod.TraceUserError("Existing vault files were kept", str(exc),
+                                             "Use a separate review vault or inspect the existing files.") from exc
+        remedy = ("Use another vault or move the edited snapshot or map entry before refreshing." if args.map else
+                  "Use another vault or rename the existing note before refreshing.")
+        raise project_mod.TraceUserError(
+            "Obsidian note was kept", str(exc), remedy,
+        ) from exc
+    except ValueError as exc:
+        raise project_mod.TraceUserError("Obsidian export could not run", str(exc),
+                                         "Check the export options and project folder.") from exc
+    print(f"Obsidian snapshot written to {note}")
+    return EXIT_OK
+
+
 def cmd_report(args) -> int:
     project = _resolve(args)
     info = project_mod.status_info(project)
@@ -319,6 +483,7 @@ def cmd_report(args) -> int:
     if events:
         lines.append(f"Recent events (last {len(events)})")
         for event in events:
+            event = redact_mod.redact_value(event)
             payload = event.get("payload") or {}
             note = ""
             if isinstance(payload, dict):
@@ -337,6 +502,7 @@ def cmd_report(args) -> int:
     if transcript_sessions:
         lines.append("Transcript sessions (local, this machine only)")
         for sess in transcript_sessions:
+            sess = redact_mod.redact_value(sess)
             lines.append(f"  {sess['session_id']} ({sess['count']} msgs, last: {sess['last_activity']})")
     elif transcripts:
         lines.append("Agent transcripts (local files, agent-specific)")
@@ -395,6 +561,29 @@ def cmd_callers(args) -> int:
     )
 
 
+def cmd_graph(args) -> int:
+    if not 0 <= args.offset <= 1_000_000:
+        raise project_mod.TraceUserError("invalid graph offset", "the offset is outside the supported range",
+                                         "Use an offset from 0 through 1000000.")
+    try:
+        project = _resolve(args)
+        if args.event is not None:
+            from contextlib import closing
+            from memory import entity_history, store
+
+            with closing(store.connect(project_mod.require_db(project))) as conn:
+                store.ensure_evidence_schema(conn)
+                conn.execute("BEGIN")
+                result = entity_history.get(conn, project, args.event)
+        else:
+            result = project_mod.code_graph(project, args.node, args.find, args.limit, args.offset)
+    except ValueError as exc:
+        raise project_mod.TraceUserError("could not read the code graph", str(exc),
+                                         "Run trace graph to browse the root or search with --find.") from exc
+    print(json.dumps(redact_mod.redact_value(result), sort_keys=True))
+    return EXIT_OK
+
+
 def cmd_search(args) -> int:
     project = _resolve(args)
     return _print_rows(
@@ -414,6 +603,7 @@ def cmd_events(args) -> int:
             file=args.file,
             commit=args.commit,
             limit=args.limit,
+            task_id=args.task,
         ),
         "no events found",
     )
@@ -438,12 +628,23 @@ def cmd_record(args) -> int:
                 "the payload must be a JSON object.",
                 "Example: --payload '{\"finding\": \"...\"}'.",
             )
-    if args.status or args.supersedes:
+    if args.status or args.supersedes or args.acceptance:
         payload = dict(payload or {})
         if args.status:
             payload["status"] = args.status
         if args.supersedes:
             payload["supersedes"] = args.supersedes
+        if args.acceptance:
+            payload["acceptance"] = args.acceptance
+    evidence = [{"type": "transcript", "message_id": item} for item in args.transcript_evidence]
+    for item in args.git_evidence:
+        commit, separator, path = item.partition(":")
+        if not separator:
+            raise project_mod.TraceUserError(
+                "invalid --git-evidence", "the file path is missing.",
+                "Use --git-evidence FULL_COMMIT:repo/relative/path.",
+            )
+        evidence.append({"type": "git", "commit": commit, "path": path})
     result = project_mod.record_user_event(
         project,
         type=args.type,
@@ -453,9 +654,27 @@ def cmd_record(args) -> int:
         file=args.file,
         symbol=args.symbol,
         commit=args.commit,
+        task_id=args.task,
+        evidence=evidence,
     )
     print(json.dumps(result, sort_keys=True))
     return EXIT_OK
+
+
+def cmd_task(args) -> int:
+    project = project_mod.resolve_project(args.project)
+    with project_mod.task_database(project) as conn:
+        if args.task_action == "list":
+            return _print_rows(task_library.list_tasks(conn, args.subsystem, args.limit), "no tasks found")
+        if args.task_action == "create":
+            result = task_library.create_task(conn, args.title, args.subsystem)
+        elif args.task_action == "show":
+            result = project_mod.task_details(conn, args.task_id, args.limit)
+        elif args.task_action == "bind-session":
+            result = project_mod.bind_task_session(project, conn, args.task_id, args.session_id)
+        else:
+            result = task_library.link_event(conn, args.task_id, args.event_id)
+    return _print_rows([result], "no task found")
 
 
 def _resolve_transcript_project(args) -> Path:
@@ -557,9 +776,11 @@ def cmd_setup(args) -> int:
         if args.transparent:
             err = sys.stderr
             print("\nOpenCode automatic memory configured:", file=err)
-            print(f"  MCP entry:       {result['setup']['config_path']} (only 'mcp.trace-memory' was touched)", file=err)
+            print(f"  Configuration:  {result['setup']['config_path']} (TRACE MCP and plugin entries)", file=err)
             print(f"  Plugin:          {result['plugin']['plugin_path']}", file=err)
             print(f"  Capture service: {result['monitoring'].get('status')}", file=err)
+            if result["monitoring"].get("status") == "error":
+                print(f"  {result['monitoring'].get('message', 'Capture could not start.')}", file=err)
             print("\nHow it works:", file=err)
             print("  - Run 'opencode' normally in this project.", file=err)
             print("  - User and assistant messages are captured once complete; memory-tool calls are", file=err)
@@ -574,7 +795,7 @@ def cmd_setup(args) -> int:
             if result.get("status") == "created":
                 print("\nMCP integration created. Run 'trace capture opencode \"prompt\"' to test.", file=sys.stderr)
             else:
-                print("\nMCP integration updated.", file=sys.stderr)
+                print(result["message"], file=sys.stderr)
         return EXIT_OK
     raise project_mod.TraceUserError(
         f"unknown agent {args.agent!r}",
@@ -587,11 +808,14 @@ def cmd_teardown(args) -> int:
     project = project_mod.resolve_project(args.project)
     result = project_mod.teardown_opencode(project)
     print(json.dumps(result, sort_keys=True, default=str))
-    print(
-        "TRACE OpenCode integration removed. Memory in .agent-memory/ was kept;"
-        " 'trace reset . --yes' deletes it.",
-        file=sys.stderr,
-    )
+    if result["service"]["status"] not in ("stopped", "not_running"):
+        print("Capture did not stop. Integration files were kept.", file=sys.stderr)
+        return EXIT_ERROR
+    config = result["config"]
+    if config["status"] == "kept" or config.get("manual_config_path"):
+        print("Review TRACE entries in the OpenCode config kept by teardown.", file=sys.stderr)
+    print("TRACE capture disabled. Project memory was kept. Restart OpenCode to unload its plugin.",
+          file=sys.stderr)
     return EXIT_OK
 
 
@@ -631,6 +855,11 @@ def cmd_service(args) -> int:
         )
     print(json.dumps(result, sort_keys=True, default=str))
     return EXIT_OK
+
+
+def cmd_test_capture(args) -> int:
+    project = project_mod.resolve_project(args.project)
+    return _print_rows([project_mod.test_capture_policy(project, args.action)], "")
 
 
 def cmd_capture(args) -> int:
@@ -673,12 +902,17 @@ def cmd_capture(args) -> int:
 
 def cmd_context(args) -> int:
     project = project_mod.resolve_project(args.project)
-    results = project_mod.get_recent_context(project, args.query, args.limit)
-    if not results:
-        print("no relevant context found")
+    if args.task is not None:
+        print(project_mod.task_context(project, args.task, args.query, args.limit, file=args.file) or "no relevant task context found")
         return EXIT_OK
-    for item in results:
-        print(json.dumps(item, sort_keys=True, default=str))
+    if args.file is not None:
+        raise ValueError("Use --task when requesting context for a file")
+    return _print_rows(project_mod.get_recent_context(project, args.query, args.limit), "no relevant context found")
+
+
+def cmd_evidence(args) -> int:
+    project = project_mod.resolve_project(args.project)
+    print(project_mod.expand_evidence(project, args.reference, args.task, args.offset))
     return EXIT_OK
 
 

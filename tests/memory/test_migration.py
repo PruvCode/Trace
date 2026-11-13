@@ -2,12 +2,18 @@
 
 import sqlite3
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 from pathlib import Path
+from threading import Barrier
+
+import pytest
 
 from memory import store as store_mod
 from memory import episodic as episodic_mod
 from memory import transcript as transcript_mod
 from memory import structural as structural_mod
+from memory import task_library
 
 
 FIXED_TS = "2026-03-01T10:00:00+00:00"
@@ -220,3 +226,57 @@ def test_clear_events_does_not_affect_transcripts(tmp_path):
     assert len(msgs) == 1
     assert msgs[0].content == "transcript msg"
     conn.close()
+
+
+@pytest.mark.parametrize("version", [0, 1, 2])
+def test_task_upgrade_is_atomic_concurrent_and_preserves_legacy_fts(tmp_path, version):
+    db = tmp_path / "legacy.db"
+    with closing(_create_old_schema_db(db)) as conn:
+        _seed_old_data(conn)
+        if version > 0:
+            conn.executescript("""
+                ALTER TABLE events ADD COLUMN source_id TEXT;
+                CREATE TABLE transcript_messages (
+                    id INTEGER PRIMARY KEY, session_id TEXT, role TEXT, content TEXT,
+                    timestamp TEXT, metadata TEXT, source_id TEXT
+                );
+                CREATE VIRTUAL TABLE transcript_messages_fts USING fts5(session_id, role, content);
+            """)
+            transcript_mod.record_message(conn, session_id="s1", role="user", content="legacy transcript")
+        conn.execute(f"PRAGMA user_version = {version}")
+        legacy_ids = [event.id for event in episodic_mod.search_events(conn, query="timeout")]
+        assert set(legacy_ids) == {1, 2}
+
+        def deny_task_index(action, name, *_):
+            if action == sqlite3.SQLITE_CREATE_INDEX and name == "idx_events_task_id":
+                return sqlite3.SQLITE_DENY
+            return sqlite3.SQLITE_OK
+
+        conn.set_authorizer(deny_task_index)
+        with pytest.raises(sqlite3.DatabaseError, match="not authorized"):
+            store_mod.init_schema(conn)
+        conn.set_authorizer(None)
+        assert not conn.in_transaction
+        assert not store_mod.has_task_schema(conn)
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == version
+        assert conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'tasks'").fetchone() is None
+        assert [event.id for event in episodic_mod.search_events(conn, query="timeout")] == legacy_ids
+
+    barrier = Barrier(2, timeout=10)
+
+    def upgrade():
+        with closing(store_mod.connect(db)) as conn:
+            barrier.wait()
+            store_mod.init_schema(conn)
+
+    with ThreadPoolExecutor(2) as pool:
+        list(pool.map(lambda _: upgrade(), range(2)))
+
+    with closing(store_mod.connect(db)) as conn:
+        task_id = task_library.create_task(conn, "Migrated task")["id"]
+        task_library.link_event(conn, task_id, 1)
+        store_mod.init_schema(conn)
+        assert [event.id for event in episodic_mod.search_events(conn, query="timeout", task_id=task_id)] == [1]
+        assert [event.id for event in episodic_mod.search_events(conn, query="timeout")] == legacy_ids
+        assert len(transcript_mod.search_messages(conn, query="legacy")) == int(version > 0)
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []

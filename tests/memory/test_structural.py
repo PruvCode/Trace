@@ -72,6 +72,8 @@ def test_search_bounded(indexed_db):
     assert len(store_mod.search_symbols(conn, "a", limit=1)) <= 1
     assert store_mod.clamp_limit(9999) == store_mod.MAX_LIMIT
     assert store_mod.clamp_limit("junk") == store_mod.DEFAULT_LIMIT
+    assert store_mod.clamp_limit(True) == store_mod.DEFAULT_LIMIT
+    assert store_mod.clamp_limit(float("inf")) == store_mod.DEFAULT_LIMIT
 
 
 def test_unknown_and_malformed_queries(indexed_db):

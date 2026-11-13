@@ -1,6 +1,7 @@
 name: CI
 
 on:
+  workflow_dispatch:
   pull_request:
   push:
     branches: [main, "release/**"]
@@ -14,12 +15,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
       - run: python -m pip install -c constraints.txt -e ".[dev,corpus]" ruff
       - name: Configure git for fixture seeding
         run: |
@@ -33,3 +37,55 @@ jobs:
         if: failure()
         shell: bash
         run: grep -E '^(FAILED|ERROR) ' pytest.log | head -40 | sed 's/^/::error::/' || true
+      - name: Install the pinned OpenCode test binary
+        shell: bash
+        run: npm install --prefix "$RUNNER_TEMP/trace-opencode" --no-audit --no-fund @opencode/cli@2.2.5
+      - name: Verify the installed wheel and native OpenCode
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import sqlite3
+          import subprocess
+          import sys
+          import tempfile
+          from contextlib import closing
+          from pathlib import Path
+
+          source = Path.cwd()
+          with tempfile.TemporaryDirectory(prefix="trace-wheel-") as path:
+              root = Path(path)
+              subprocess.run([sys.executable, "-m", "pip", "wheel", "--no-deps", "--wheel-dir", path, "."],
+                             cwd=source, check=True)
+              wheel, = root.glob("trace-*.whl")
+              subprocess.run([sys.executable, "-m", "venv", str(root / "venv")], check=True)
+              bin_dir = root / "venv" / ("Scripts" if os.name == "nt" else "bin")
+              python = bin_dir / ("python.exe" if os.name == "nt" else "python")
+              trace = bin_dir / ("trace.exe" if os.name == "nt" else "trace")
+              subprocess.run([str(python), "-m", "pip", "install", "-c", str(source / "constraints.txt"), str(wheel)],
+                             cwd=root, check=True)
+              subprocess.run([str(python), "-m", "pip", "check"], cwd=root, check=True)
+              project = root / "project"
+              project.mkdir()
+              subprocess.run([str(trace), "--version"], cwd=project, check=True)
+              subprocess.run([str(trace), "init"], cwd=project, check=True)
+              backup = root / "backup.db"
+              subprocess.run([str(trace), "backup", str(backup)], cwd=project, check=True)
+              with closing(sqlite3.connect(backup)) as db:
+                  assert db.execute("PRAGMA quick_check").fetchone() == ("ok",)
+              package = Path(os.environ["RUNNER_TEMP"]) / "trace-opencode/node_modules/@opencode/cli"
+              manifest = json.loads((package / "package.json").read_text(encoding="utf-8"))
+              assert manifest["version"] == "2.2.5"
+              result = subprocess.run(
+                  [sys.executable, "-m", "research.phase6.native_smoke", "--major", "2", "--managed",
+                   "--binary", str(package / manifest["bin"]["opencode"]),
+                   "--python", str(python), "--scratch", str(root / "native")],
+                  cwd=source, capture_output=True, text=True,
+              )
+              if result.returncode:
+                  raise RuntimeError(result.stderr + result.stdout)
+              print(result.stdout, end="")
+              observed = json.loads(result.stdout)
+              assert observed["native_evidence_round_trip"] and observed["backup_restore_verified"]
+          PY

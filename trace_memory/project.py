@@ -14,16 +14,24 @@ No benchmark imports: this module only uses ``memory.*``.
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import subprocess
 import sys
+from contextlib import closing, contextmanager
 from dataclasses import asdict
 from pathlib import Path
+from uuid import uuid4
 
+from memory import captured_outcomes
+from memory import entity_graph
 from memory import episodic as episodic_mod
+from memory import evidence as evidence_mod
 from memory import git_events as git_events_mod
 from memory import store as store_mod
+from memory import session_context as session_context_mod
 from memory import structural as structural_mod
+from memory import task_library
 from memory import transcript as transcript_mod
 from memory import opencode_capture as opencode_capture_mod
 from memory import opencode_transparent as opencode_transparent_mod
@@ -129,7 +137,7 @@ def index_project(project: Path) -> dict:
     return {"project": str(project), "db": str(db_path(project)), **stats}
 
 
-def _counts(conn: sqlite3.Connection) -> dict:
+def memory_counts(conn: sqlite3.Connection) -> dict:
     symbols = conn.execute("SELECT COUNT(*) FROM symbols").fetchone()[0]
     relationships = conn.execute("SELECT COUNT(*) FROM relationships").fetchone()[0]
     files = conn.execute("SELECT COUNT(DISTINCT file) FROM symbols").fetchone()[0]
@@ -158,13 +166,72 @@ def _events_by_source(conn: sqlite3.Connection) -> dict[str, int]:
     return {row[0]: row[1] for row in rows}
 
 
+def privacy_info(project: Path) -> dict:
+    """Report project-local capture and recall settings without reading transcript text."""
+    from memory.opencode_files import integration_marker, require_local_paths
+    from memory import opencode_plugin
+
+    database = db_path(project)
+    marker = integration_marker(project)
+    legacy = opencode_plugin.plugin_path(project)
+    modern = opencode_plugin.plugin_v2_dir(project) / "index.js"
+    require_local_paths(project, database, marker, legacy, modern)
+    initialized = database.is_file()
+    installed = any(path.is_file() and opencode_plugin.is_owned_plugin(path) for path in (legacy, modern))
+    disabled = os.path.lexists(marker)
+    test_capture = False
+    if initialized:
+        with closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True)) as db:
+            table = db.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'test_capture_policy'"
+            ).fetchone()
+            if table:
+                test_capture = db.execute("SELECT 1 FROM test_capture_policy WHERE id = 1").fetchone() is not None
+    capture = opencode_service_mod.get_service(project)
+    capture.check_storage_paths()
+    pause_file = project / opencode_service_mod.SERVICE_DIR_NAME / opencode_service_mod.DISABLED_FILE
+    if pause_file.is_file():
+        capture_state = "paused"
+    elif (pause_file.parent / opencode_service_mod.PID_FILE).is_file():
+        capture_state = capture.status(cleanup_stale=False)["status"]
+    else:
+        capture_state = "stopped"
+    return {
+        "database": str(database),
+        "initialized": initialized,
+        "capture": capture_state,
+        "automatic_recall": "disabled" if disabled else (
+            "plugin installed" if initialized and installed else "not configured"
+        ),
+        "selected_test_capture_opt_in": test_capture,
+    }
+
+
+def preview_context(project: Path, session_id: str | None, query: str | None) -> str:
+    """Render the block TRACE would assemble for a new request."""
+    from memory import synthetic
+    from memory.opencode_files import integration_marker, require_local_paths
+
+    database = db_path(project)
+    marker = integration_marker(project)
+    require_local_paths(project, database, marker)
+    if marker.exists():
+        return ""
+    task_aware = os.environ.get("TRACE_TASK_AWARE") != "0"
+    result = session_context_mod.get_session_start_context(
+        database, project_root=project, exclude_session_id=session_id,
+        query=query if task_aware else None, use_bound_task=task_aware,
+    )
+    return synthetic.render_user_block(result["items"])
+
+
 def status_info(project: Path) -> dict:
     """Small dict describing local memory state (used by status + report)."""
     project = project.resolve()
     db = require_db(project)
     conn = store_mod.connect(db)
     try:
-        counts = _counts(conn)
+        counts = memory_counts(conn)
         by_type = _events_by_type(conn)
         by_source = _events_by_source(conn)
     finally:
@@ -187,7 +254,66 @@ def recent_events(project: Path, limit: int = 10) -> list[dict]:
         events = episodic_mod.search_events(conn, limit=store_mod.clamp_limit(limit))
     finally:
         conn.close()
-    return [asdict(e) for e in events]
+    return [e.as_record() for e in events]
+
+
+@contextmanager
+def task_database(project: Path):
+    conn = store_mod.connect(require_db(project))
+    try:
+        yield conn
+    except ValueError as exc:
+        raise TraceUserError(
+            str(exc), "the task or event could not be selected or saved.",
+            "Run 'trace task list' or 'trace events' to find IDs for this project.",
+        ) from exc
+    finally:
+        conn.close()
+
+
+def task_details(conn: sqlite3.Connection, task_id: str, limit: int) -> dict:
+    store_mod.ensure_evidence_schema(conn)
+    task = task_library.get_task(conn, task_id)
+    task["events"] = [event.as_record() for event in episodic_mod.search_events(conn, task_id=task_id, limit=limit)]
+    return task
+
+
+def invalidate_context_cache(project: Path) -> bool:
+    from memory.opencode_files import atomic_write_text, require_local_paths
+
+    target = memory_dir(project) / task_library.TASK_BINDINGS_VERSION
+    try:
+        require_local_paths(project, target)
+        atomic_write_text(target, uuid4().hex)
+    except (OSError, TraceUserError):
+        return False
+    return True
+
+
+def bind_task_session(project: Path, conn: sqlite3.Connection, task_id: str, session_id: str) -> dict:
+    result = task_library.bind_session(conn, task_id, session_id)
+    if not invalidate_context_cache(project):
+        result["restart_opencode_to_refresh"] = True
+    return result
+
+
+def task_context(project: Path, task_id: str, query: str, limit: int, *, file: str | None = None) -> str:
+    with task_database(project) as conn:
+        task_library.get_task(conn, task_id)
+    return session_context_mod.get_session_start_context(
+        require_db(project), project_root=project, task_id=task_id, query=query, max_items=store_mod.clamp_limit(limit),
+        file=task_library.task_context_file(file),
+    )["text"]
+
+
+def expand_evidence(project: Path, reference: str, task_id: str | None, offset: int) -> str:
+    with task_database(project) as conn:
+        return evidence_mod.expand(conn, project, reference, task_id=task_id, offset=offset)
+
+
+def test_capture_policy(project: Path, action: str) -> dict:
+    with closing(store_mod.connect(require_db(project))) as conn:
+        return captured_outcomes.configure(conn, action)
 
 
 def record_user_event(
@@ -200,6 +326,8 @@ def record_user_event(
     file: str | None = None,
     symbol: str | None = None,
     commit: str | None = None,
+    task_id: str | None = None,
+    evidence: list[dict] | None = None,
 ) -> dict:
     """Record one episodic event from the CLI. Returns {'id': ...}."""
     project = project.resolve()
@@ -220,6 +348,9 @@ def record_user_event(
                 file=file,
                 symbol=symbol,
                 payload=merged,
+                task_id=task_id,
+                evidence=evidence,
+                project_root=project,
             )
         except (ValueError, TypeError) as exc:
             raise TraceUserError(
@@ -244,6 +375,19 @@ def find_definitions(project: Path, name: str, limit: int = 10) -> list[dict]:
         return store_mod.find_definition(conn, name, limit)
     finally:
         conn.close()
+
+
+def code_graph(project: Path, node_id: str | None, name: str | None, limit: int, offset: int) -> dict:
+    project = project.resolve()
+    ensure_structural_memory(project)
+    with closing(store_mod.connect(require_db(project))) as conn:
+        conn.execute("BEGIN")
+        result = entity_graph.query(conn, node_id, name, limit, offset)
+        if "node" in result:
+            from memory import entity_history
+
+            result["history"] = entity_history.neighborhood(conn, project, result["node"]["id"])
+        return result
 
 
 def find_callers_of(project: Path, name: str, limit: int = 10) -> list[dict]:
@@ -277,6 +421,7 @@ def search_project_events(
     file: str | None = None,
     commit: str | None = None,
     limit: int = 10,
+    task_id: str | None = None,
 ) -> list[dict]:
     project = project.resolve()
     db = require_db(project)
@@ -291,6 +436,7 @@ def search_project_events(
                 file=file,
                 commit=commit,
                 limit=limit,
+                task_id=task_id,
             )
         except ValueError as exc:
             raise TraceUserError(
@@ -301,7 +447,7 @@ def search_project_events(
             ) from exc
     finally:
         conn.close()
-    return [asdict(e) for e in events]
+    return [e.as_record() for e in events]
 
 
 def _git(project: Path, *args: str) -> str | None:
@@ -368,26 +514,27 @@ def gitignore_hint(project: Path) -> str | None:
     """One-line reminder to keep local memory out of git, or None.
 
     Best-effort and never raises: returns the hint only when the project
-    is a git repository but ``.agent-memory/`` is not ignored there.
+    is a git repository and at least one TRACE directory is not ignored.
     """
     project = project.resolve()
     if not (project / ".git").exists():
         return None
-    try:
-        proc = subprocess.run(
-            ["git", "check-ignore", "-q", f"{MEMORY_DIRNAME}/"],
-            cwd=str(project),
-            capture_output=True,
-            timeout=30,
-        )
-    except (OSError, subprocess.SubprocessError):
+    missing = []
+    for directory in (MEMORY_DIRNAME, opencode_service_mod.SERVICE_DIR_NAME):
+        try:
+            proc = subprocess.run(
+                ["git", "check-ignore", "-q", f"{directory}/"],
+                cwd=str(project),
+                capture_output=True,
+                timeout=5,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+        if proc.returncode == 1:
+            missing.append(f"{directory}/")
+    if not missing:
         return None
-    if proc.returncode == 0:
-        return None  # already ignored
-    return (
-        f"note: add '{MEMORY_DIRNAME}/' to .gitignore "
-        "to keep local memory out of git"
-    )
+    return f"note: add {', '.join(missing)} to .gitignore to keep TRACE files out of git"
 
 
 def transcript_files(project: Path) -> list[str]:
@@ -514,20 +661,26 @@ def transcript_count(project: Path) -> int:
         conn.close()
 
 
-def mcp_server_command(project: Path) -> list[str]:
+def mcp_server_command(project: Path, *, opencode: bool = False) -> list[str]:
     """Command an MCP-compatible agent uses to reach this project's memory."""
     project = project.resolve()
     db = require_db(project)
-    return [
+    command = [
         sys.executable,
         "-P",  # never import from the project: its queue/ or json.py must not shadow the stdlib
         "-m",
         "memory.mcp_server",
+        "--evidence",
         "--db",
         str(db),
         "--repo",
         str(project),
     ]
+    if opencode:
+        from memory.opencode_files import integration_marker
+
+        command.extend(("--integration-marker", str(integration_marker(project))))
+    return command
 
 
 def mcp_config(project: Path) -> dict:
@@ -545,18 +698,81 @@ def mcp_config_json(project: Path) -> str:
     return json.dumps(mcp_config(project), indent=2)
 
 
+def backup_project(project: Path, destination: Path) -> Path:
+    """Publish a complete SQLite snapshot at a new filename."""
+    import os
+    import tempfile
+    import time
+    from contextlib import closing
+
+    source = require_db(project)
+    target = destination.expanduser().absolute()
+    deadline = time.monotonic() + 30
+
+    def check_progress(_status: int, _remaining: int, _total: int) -> None:
+        if time.monotonic() > deadline:
+            raise TimeoutError("backup exceeded 30 seconds")
+
+    staged = None
+    try:
+        if os.path.lexists(target):
+            raise FileExistsError("destination already exists")
+        with tempfile.NamedTemporaryFile(dir=target.parent, prefix=".trace-backup-", delete=False) as file:
+            staged = Path(file.name)
+        with closing(sqlite3.connect(source.as_uri() + "?mode=ro", uri=True)) as src:
+            with closing(sqlite3.connect(staged)) as dst:
+                src.backup(dst, pages=256, progress=check_progress)
+        if os.name == "nt":
+            os.rename(staged, target)  # Windows rename refuses an existing target.
+        else:
+            os.link(staged, target)  # Publish without clobbering a concurrent writer.
+    except (OSError, sqlite3.Error) as exc:
+        raise TraceUserError(
+            f"could not back up to {target}",
+            str(exc),
+            "Use a new filename in a private local directory. Stop capture and retry if the database is busy.",
+        ) from exc
+    finally:
+        if staged is not None:
+            staged.unlink(missing_ok=True)
+    return target
+
+
 def reset_project(project: Path) -> dict:
-    """Delete local TRACE memory for one project (explicit only)."""
+    """Delete local TRACE memory for one project after capture has stopped."""
+    import shutil
+
+    from memory.opencode_files import atomic_write_text, integration_marker, require_local_paths
+
     project = project.resolve()
     mem = memory_dir(project)
     db = db_path(project)
-    # A running monitor holds the database open (and would recreate it).
+    marker = integration_marker(project)
+    require_local_paths(project, mem, db, marker)
     service = opencode_service_mod.get_service(project).stop(disable=True)
+    if service["status"] not in ("stopped", "not_running"):
+        raise TraceUserError(
+            "could not reset project memory",
+            service.get("message", "capture has not stopped"),
+            "Wait for capture to stop and run reset again.",
+        )
     if not mem.exists():
         return {"project": str(project), "removed": False, "service": service}
-    import shutil
-
-    shutil.rmtree(mem, ignore_errors=False)
+    lock = opencode_service_mod.LockHandle(
+        project / opencode_service_mod.SERVICE_DIR_NAME / opencode_service_mod.LOCK_FILE,
+    )
+    if not lock.acquire():
+        raise TraceUserError(
+            "could not reset project memory",
+            "the capture lock is in use.",
+            "Wait for capture to stop and run reset again.",
+        )
+    try:
+        require_local_paths(project, mem, db, marker)
+        atomic_write_text(marker, "disabled by TRACE reset\n")
+        shutil.rmtree(mem, ignore_errors=False)
+    finally:
+        lock.release()
     return {"project": str(project), "removed": True, "db_was": str(db), "service": service}
 
 

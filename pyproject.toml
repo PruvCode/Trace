@@ -8,10 +8,13 @@ requires-python = ">=3.11"
 dependencies = [
     "pyyaml>=6.0",
     # Phase 2 structural memory: official MCP SDK (v2 API: MCPServer),
-    # tree-sitter core + Python grammar only. No embeddings, no graph DB.
+    # Tree-sitter grammars provide local structural indexing.
     "mcp>=2.2",
     "tree-sitter>=0.26",
     "tree-sitter-python>=0.25",
+    "tree-sitter-javascript>=0.25,<0.26",
+    "tree-sitter-typescript>=0.23.2,<0.24",
+    "tree-sitter-html>=0.23.2,<0.24",
     # Phase 4.1 real-agent adapter: OpenAI-compatible client only.
     # Lazy use: the automated suite runs keyless via fakes; only real
     # (manual, credentialed) runs touch this package.
@@ -29,12 +32,15 @@ corpus = [
 ]
 
 [build-system]
-requires = ["setuptools>=77"]
+requires = ["setuptools>=84.1"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["benchmark*", "agent*", "memory*", "corpus*", "trace_memory*"]
+
+[tool.setuptools.package-data]
+trace_memory = ["obsidian_graph_plugin/*.js", "obsidian_graph_plugin/*.json", "obsidian_graph_plugin/*.css"]
 
 [project.scripts]
 trace = "trace_memory.cli:main"
