@@ -430,7 +430,8 @@ on functions from Rubaru, WISIT, and TRACE. On a separate Rubaru browser task,
 TRACE passed 2 of 3 checks in the fresh trial and 3 of 3 on replay. Notes
 passed 1 of 3 and 2 of 3. Both arms received the same retry feedback on replay.
 These small, single-model trials leave broader coding effectiveness open.
-See the [effectiveness protocol](research/preview/EFFECTIVENESS.md).
+See the [preview scorecard](docs/engineering-audit/PREVIEW_SCORECARD.md) and
+[effectiveness protocol](research/preview/EFFECTIVENESS.md).
 
 Separately, the automatic retrieval path itself has bounded experimental
 evidence: 9/9 valid single-fact recall trials succeeded under the tested
