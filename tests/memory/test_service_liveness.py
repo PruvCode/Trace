@@ -145,6 +145,22 @@ def test_repeated_status_queries_are_non_destructive(tmp_path, live_process):
     assert process_is_alive(live_process.pid) is True
 
 
+def test_status_does_not_resolve_transient_status_file(tmp_path, live_process, monkeypatch):
+    svc = _service(tmp_path / "proj")
+    _record_running_service(svc, live_process.pid)
+    transient = svc._status_file.with_suffix(".tmp")
+    resolve = Path.resolve
+
+    def resolve_while_writing(path, *args, **kwargs):
+        if path == transient:
+            raise PermissionError("status update is in progress")
+        return resolve(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "resolve", resolve_while_writing)
+    svc._write_status({"captured": 3})
+    assert svc.status()["captured"] == 3
+
+
 def test_is_running_clears_stale_pid_file(tmp_path):
     """A dead PID must still be reported as stopped and its file cleaned up."""
     dead = subprocess.Popen([sys.executable, "-c", "pass"])
