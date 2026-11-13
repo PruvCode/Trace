@@ -26,6 +26,7 @@ import signal
 import sqlite3
 import subprocess
 import sys
+import tempfile
 import time
 from contextlib import closing
 from dataclasses import dataclass, field
@@ -310,7 +311,7 @@ class OpenCodeCaptureService:
         require_local_paths(
             self.project_path, self._service_dir, self._pid_file, self._status_file,
             self._lock_file, self._stop_file, self._disabled_file, self._service_dir / LOG_FILE,
-            self._status_file.with_suffix(".tmp"), self.trace_db_path,
+            self.trace_db_path,
         )
 
     def _get_service_dir(self) -> Path:
@@ -341,18 +342,25 @@ class OpenCodeCaptureService:
         then fall back to a direct write.
         """
         text = json.dumps(status, indent=2)
+        tmp = None
         try:
             self._service_dir.mkdir(parents=True, exist_ok=True)
-            tmp = self._status_file.with_suffix(".tmp")
-            tmp.write_text(text)
-            for _ in range(10):
-                try:
-                    os.replace(tmp, self._status_file)
-                    return
-                except PermissionError:
-                    time.sleep(0.05)
-            self._status_file.write_text(text)
-            tmp.unlink(missing_ok=True)
+            try:
+                with tempfile.NamedTemporaryFile(
+                    mode="w", dir=self._service_dir, prefix=".status-", delete=False,
+                ) as handle:
+                    tmp = Path(handle.name)
+                    handle.write(text)
+                for _ in range(10):
+                    try:
+                        os.replace(tmp, self._status_file)
+                        return
+                    except PermissionError:
+                        time.sleep(0.05)
+                self._status_file.write_text(text)
+            finally:
+                if tmp is not None:
+                    tmp.unlink(missing_ok=True)
         except OSError as exc:
             self._log(f"status write failed: {type(exc).__name__}: {exc}")
 
