@@ -61,7 +61,8 @@ class Provider(BaseHTTPRequestHandler):
         ):
             tools = [tool.get("function", {}) for tool in body.get("tools", [])]
             evidence = next((tool["name"] for tool in tools
-                             if "trace" in tool.get("name", "") and "get_evidence" in tool["name"]), None)
+                             if "trace" in tool.get("name", "") and "get_evidence" in tool["name"]),
+                            self.server.stale_evidence_tool)
             call = None
             if evidence and self.server.evidence_probe and not self.server.sent_evidence:
                 self.server.sent_evidence = True
@@ -165,6 +166,7 @@ def run(root, binary, python, major, managed=False):
         server.sent_read = False
         server.sent_evidence = False
         server.evidence_probe = None
+        server.stale_evidence_tool = None
         server.wait_for_connection = False
         server.log_file = Path(env["XDG_DATA_HOME"]) / "opencode/log/opencode.log"
         address = f"http://127.0.0.1:{server.server_port}/v1"
@@ -193,7 +195,7 @@ def run(root, binary, python, major, managed=False):
             requests = server.requests[before:]
             if not requests or REPLY not in result.stdout:
                 raise RuntimeError(f"Native request or fixture reply missing: {result.stdout[-1000:]}")
-            return requests
+            return requests, result.stdout
 
         try:
             session("Initialize this disposable OpenCode profile.")
@@ -226,14 +228,15 @@ def run(root, binary, python, major, managed=False):
             with closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True)) as db:
                 reference = db.execute("SELECT reference FROM event_evidence").fetchone()[0]
             server.evidence_probe = {"reference": reference, "task_id": task}
-            evidence = session(FOLLOWUP)
+            evidence, _ = session(FOLLOWUP)
             messages = [message for request in evidence for message in request["messages"]]
             memory = [message for message in messages
                       if MARKER in json.dumps(message) and "[TRACE PROJECT MEMORY" in json.dumps(message)]
             assert memory and all(message["role"] == "user" for message in memory), "TRACE memory missing"
             tools = [str(tool.get("function", {}).get("name") or tool.get("name", ""))
                      for request in evidence for tool in request.get("tools", [])]
-            visible = any("trace" in name and "get_evidence" in name for name in tools)
+            evidence_tool = next((name for name in tools if "trace" in name and "get_evidence" in name), None)
+            visible = evidence_tool is not None
             connected = visible or mcp_connected(server.log_file)
             tool_result = any(message.get("role") == "tool" and MARKER in json.dumps(message) for message in messages)
             server.wait_for_connection = False
@@ -262,15 +265,21 @@ def run(root, binary, python, major, managed=False):
                 assert db.execute("PRAGMA integrity_check").fetchone() == ("ok",)
             assert MARKER in cli("preview", "--project", str(restored.parent.parent)).stdout
             server.sent_evidence = False
+            server.stale_evidence_tool = evidence_tool if major == 2 else None
             server.read_probe = None
-            after_requests = session(AFTER_TEARDOWN)
+            after_requests, after_output = session(AFTER_TEARDOWN)
             assert all("[TRACE PROJECT MEMORY" not in json.dumps(r) and MARKER not in json.dumps(r)
-                       for r in after_requests)
+                       for r in after_requests), "TRACE memory reached the provider after teardown"
+            assert MARKER not in after_output, "TRACE evidence reached the CLI after teardown"
             if server.sent_evidence:
-                assert any(
-                    message.get("role") == "tool" and "integration is disabled" in json.dumps(message)
-                    for request in after_requests for message in request["messages"]
-                )
+                # OpenCode may drop a stale call before it emits a tool event.
+                events = [json.loads(line) for line in after_output.splitlines() if line.strip()]
+                assert not any(
+                    event.get("type") == "tool_use"
+                    and "get_evidence" in event["part"]["tool"]
+                    and event["part"]["state"]["status"] == "completed"
+                    for event in events
+                ), "TRACE evidence tool completed after teardown"
             if managed:
                 assert json.loads(service_state.read_text(encoding="utf-8"))["pid"] == managed_pid
             return {"version": version, "mode": "managed" if managed else ("standalone" if major == 2 else "native"),
