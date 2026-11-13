@@ -1,11 +1,13 @@
 # TRACE
 
-**TRACE gives coding agents persistent local memory across sessions — and measures whether that memory actually helps.**
+**TRACE gives coding agents persistent local memory across sessions and provides tools to measure its effect.**
+
+TRACE 0.1.x is an experimental research preview.
 
 ```powershell
 git clone https://github.com/PruvCode/Trace.git TRACE
 cd TRACE
-python -m pip install -e .
+python -m pip install -c constraints.txt .
 trace init
 trace mcp        # connect an MCP-compatible agent
 trace status     # inspect what TRACE stored
@@ -35,12 +37,13 @@ memory works. It gives you the infrastructure to measure it.**
 your project                    agent (any MCP-compatible client)
      │                                    │
      ▼                                    ▼
-.agent-memory/memory.db  ◄── stdio ── MCP server (9 tools)
+.agent-memory/memory.db  ◄── stdio ── MCP server
 (SQLite + FTS5, local)        find_definition / find_callers /
                               search_symbols / record_event /
                               search_events / get_git_history /
                               record_transcript_message /
-                              search_transcripts / get_transcript_session
+                              search_transcripts / get_transcript_session /
+                              get_task_context / get_evidence
 ```
 
 Session N records findings → Session N+1 retrieves them. See
@@ -52,27 +55,42 @@ Session N records findings → Session N+1 retrieves them. See
 
 - **Agent layer** — OpenCode (see the compatibility matrix); any MCP-compatible client for explicit queries.
 - **TRACE memory layer** — structural, episodic, Git, and transcript services over one interface.
-- **Local storage** — one SQLite + FTS5 database per project (`.agent-memory/memory.db`); nothing leaves the machine.
+- **Local storage** — one SQLite + FTS5 database per project (`.agent-memory/memory.db`). Agents can send retrieved records to their configured provider.
 - **Automatic OpenCode path** — a monitor captures sessions into memory; a plugin injects bounded prior-session context into every model request.
-- **MCP explicit-query path** — 9 tools over stdio; not required for automatic retrieval.
+- **MCP explicit-query path** — project memory and evidence tools over stdio.
 - **Benchmark/research subsystem** — isolated baseline-vs-memory runs with mechanical evaluation ([interactive diagram](docs/architecture/trace-architecture.html), [memory flow](docs/architecture/trace-memory-flow.html), [benchmark flow](docs/architecture/trace-benchmark-flow.html)).
 
 ## Installation
 
-Requirements: Python 3.11+. TRACE is installed from source:
+### Windows x64 preview bundle
+
+Extract `TRACE-Windows-x64.zip` and run one command from the extracted folder:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Install-TRACE.ps1
+```
+
+The bundle includes TRACE, its own Python and dependencies, and OpenCode.
+The installer fetches a pinned copy of Git for Windows if Git is missing.
+Open a new PowerShell window and run `trace --version` or `trace-opencode`.
+Enable capture separately inside each project that should use TRACE.
+
+### Install from source or wheel
+
+TRACE requires Python 3.11 or newer. Install from a reviewed source checkout in a dedicated environment.
 
 ```powershell
 git clone https://github.com/PruvCode/Trace.git TRACE
 cd TRACE
 python -m venv .venv
 .venv\Scripts\Activate.ps1
-python -m pip install -e .
+python -m pip install -c constraints.txt .
 ```
 
-For development (includes pytest):
+For development with pytest:
 
 ```powershell
-python -m pip install -e ".[dev]"
+python -m pip install -c constraints.txt -e ".[dev]"
 ```
 
 ## Quick Start: Automatic Capture (Recommended)
@@ -87,9 +105,9 @@ git clone https://github.com/PruvCode/Trace.git TRACE
 cd TRACE
 python -m venv .venv
 .venv\Scripts\Activate.ps1
-python -m pip install -e .
+python -m pip install -c constraints.txt .
 
-# 2. In your project, initialize TRACE and configure OpenCode for transparent capture
+# 2. Open OpenCode once, then initialize TRACE in your project
 cd your-project
 trace init
 trace setup opencode --transparent
@@ -103,7 +121,8 @@ opencode
 
 # ... code normally with OpenCode ...
 
-# 4. Exit OpenCode when done — TRACE has already captured everything
+# 4. Inspect capture status after your session
+trace status
 ```
 
 ### Next session — continue where you left off
@@ -195,10 +214,11 @@ while keeping recorded events and transcripts.
 | User message | Transcript | `trace transcript search`, `trace context` |
 | Assistant response (once complete) | Transcript | `trace transcript search`, `trace context` |
 | Completed memory-tool call | Event (`source=capture`) | `trace events` |
+| Supported pytest outcome, with project opt-in | Event and linked tool evidence | `trace events --query pytest` |
 
 ### What is NOT captured automatically
 
-- Other tool calls and their output (shell, file reads/writes, web fetches)
+- Raw shell commands and output, file reads/writes, and web fetches
 - Step markers and finish reasons ("tool-calls", "stop")
 - Sessions from other project directories (each project has its own database)
 
@@ -227,10 +247,10 @@ With the OpenCode integration, both directions are automatic: the background mon
 and the project-local plugin adds bounded prior-session memory to every
 model request as one labeled contextual message — the agent does not need
 to call any retrieval tool for the previous session to be available.
-OpenCode setup enables the four memory tools agents actually used
+OpenCode setup enables the four memory tools used in prior trials
 (`record_event`, `search_events`, `search_transcripts`,
-`get_transcript_session`), because tool schemas are resent on every request.
-`trace mcp` prints the full 9-tool server for other clients, and `trace`
+`get_transcript_session`) plus `get_evidence` for expanding references.
+`trace mcp` prints the full server configuration for other clients, and `trace`
 commands cover the rest.
 
 Supported: any agent that speaks MCP over stdio and can spawn a local
@@ -274,6 +294,107 @@ untested clients should be treated as experimental.
 - Inspect with `trace status` / `trace report`, or open the SQLite file
   with any SQLite browser.
 
+## Task library
+
+Give an investigation a stable ID and optionally group it by subsystem. The
+commands below use the current project. Use `--project` to select a different
+project for `trace task`.
+
+```text
+trace task create --title "Login timeout" --subsystem auth
+trace task list --subsystem auth
+trace record --type attempt --task TASK_ID --message "Increasing the timeout did not fix login"
+trace events --task TASK_ID --query timeout
+trace task show TASK_ID
+```
+
+Use the ID returned by `trace task create`. `trace task link TASK_ID EVENT_ID`
+assigns an existing unassigned event to the task. Use `trace events` to find
+legacy event IDs. Existing event searches without a task filter still search
+the project. OpenCode uses an explicit session binding to select task context.
+Bound sessions can also receive up to two matching messages from prior sessions assigned to that task.
+Unbound sessions receive general findings and unassigned conversations.
+
+Attach evidence when recording an event:
+
+- `--transcript-evidence MESSAGE_ID` links a message in this project's TRACE
+  database. Find its ID with `trace transcript search`.
+- `--git-evidence FULL_COMMIT:repo/relative/file.py` links a file at a commit
+  already present in the project’s local Git repository. Use the Git root as
+  the TRACE project for this option.
+
+Both flags are repeatable, up to ten references total. TRACE stores links
+without copying transcript text or Git file contents into the event. A link
+identifies a source and does not verify the finding. In MCP, use the optional
+`task_id` on `record_event` and `search_events` and pass references in
+`record_event.evidence` as objects with `type: "transcript"` and
+`message_id`, or `type: "git"`, `commit` and `path`.
+
+## Opt-in pytest outcomes
+
+After setting up automatic OpenCode capture, enable structured test evidence for
+this project with `trace test-capture on`. Use `trace test-capture status` to
+inspect the setting and `trace test-capture off` to stop collecting new outcomes.
+Only tool records created after opt-in are eligible. Turning it off preserves
+previous evidence.
+
+TRACE recognizes direct `pytest` and `python -m pytest` calls, including common
+short options and simple test paths. Compound shell commands, other runners,
+unfinished calls, and tool results with neither a recognizable summary nor an
+exit code are skipped. The evidence contains an outcome, available counts,
+and OpenCode source IDs. When pytest reports a failure, TRACE can recover up
+to four project-local failing test identifiers in the bound task's context.
+These identify historical checks to rerun. Raw shell commands, arguments,
+assertion values, and error text stay in OpenCode. The outcome reflects the
+tool's report.
+
+When a verified decision names functions or methods, TRACE can show their
+indexed definitions and the parts of the decision that name them. These links
+help an agent check the definition and its callers before editing. TRACE
+omits ambiguous names and definitions whose source has changed since indexing.
+Run `trace index` after moving or editing code to refresh the locations.
+Agents connected to the full TRACE MCP server can request the same task context
+on demand using `get_task_context` with the task ID and the current query.
+Pass a repository-relative `file` to retrieve only findings recorded for that
+file. The CLI equivalent is `trace context "query" --task TASK_ID --file path/to/file`.
+
+Use `trace transcript sessions` to find a captured OpenCode session and
+`trace task bind-session TASK_ID SESSION_ID` to assign its future captured
+outcomes explicitly. Without a binding the outcomes remain unassigned.
+Use `trace events --query pytest` or the task's event history to inspect them.
+Re-run `trace setup opencode --transparent` on upgrade to install the updated
+plugin that passes the first prompt to the retrieval helper over standard input.
+Restart OpenCode to load the plugin. If the TRACE monitor was already running
+when you upgraded, run `trace service restart` to load the new capture code.
+
+## Task context and evidence
+
+Use `trace task bind-session TASK_ID SESSION_ID` to give a captured OpenCode
+session its task context. Updated plugins refresh their cached context after
+the binding changes. The task context prefers current findings and linked
+test outcomes. If the task has no usable findings, TRACE searches unassigned
+history for matches to the prompt. It excludes findings and conversations
+assigned to other tasks.
+
+```text
+trace context "login timeout" --task TASK_ID
+trace task show TASK_ID
+trace evidence EVIDENCE_REF --task TASK_ID
+```
+
+Use a reference from the context block or `evidence_refs` in an event search.
+The MCP tool `get_evidence` takes the same reference and optional task ID.
+Expansion returns a redacted, framed page. Use its `next_offset` with
+`--offset` or the MCP `offset` argument to continue. Source bodies over 64 KiB
+and non-UTF-8 Git blobs receive a status instead of text.
+
+Git freshness compares the recorded blob with HEAD and the checked-out file.
+TRACE marks a changed or missing path stale and leaves freshness unknown when
+it cannot establish a comparison. The startup block keeps superseded claims
+out and shows up to two references per finding. Explicit expansion still
+shows the original evidence with its supersession label. Freshness reflects
+the files at context assembly or expansion time.
+
 ## Measurement
 
 TRACE measures token usage so you can evaluate whether memory helps your
@@ -296,9 +417,20 @@ no memory (83% vs 38% pooled), but **TRACE did not beat a plain AGENTS.md
 notes file** (83% vs 83%, inconclusive at this sample size) and used about
 twice the input tokens. A later held-out test on longer histories, cut short by
 a usage limit (30 valid runs on four tasks), found notes and current TRACE tied
-(8/8 and 7/7) with TRACE using about 14% fewer input tokens. Whether TRACE helps
-when nobody asks for notes is still untested. See
+(8/8 and 7/7) with TRACE using about 14% fewer input tokens. The later six-task controlled comparison measured 0/6 without
+memory or notes, 4/6 with a supplied handoff, 3/6 with audited TRACE, and
+2/6 with enhanced TRACE. Enhanced TRACE surfaced the prior decision in
+all six tasks. This is a small synthetic sample with one local model.
+See [the comparison protocol](research/phase5/COMPARISON.md) and
 [`docs/engineering-audit/FINAL_REPORT.md`](docs/engineering-audit/FINAL_REPORT.md).
+
+In a newer matched pilot, TRACE passed 7 of 8 synthetic coding tasks and
+maintained notes passed 3 of 8. The same two arms each passed 1 of 6 tasks
+on functions from Rubaru, WISIT, and TRACE. On a separate Rubaru browser task,
+TRACE passed 2 of 3 checks in the fresh trial and 3 of 3 on replay. Notes
+passed 1 of 3 and 2 of 3. Both arms received the same retry feedback on replay.
+These small, single-model trials leave broader coding effectiveness open.
+See the [effectiveness protocol](research/preview/EFFECTIVENESS.md).
 
 Separately, the automatic retrieval path itself has bounded experimental
 evidence: 9/9 valid single-fact recall trials succeeded under the tested
@@ -306,25 +438,161 @@ conditions (OpenCode 1.18.32, `opencode/big-pickle`, zero-tool clean
 attribution, disposable projects). This says nothing about coding
 performance and must not be read as a reliability percentage.
 
+## Browse the code graph
+
+Use `trace graph` in an initialized project to start at the repository root.
+Search by exact name, qualified name, or repository-relative path, then use
+the returned entity ID to follow its parent, children and code relationships.
+
+```text
+trace graph --find apps/web/src/lib/media-gallery.ts.mountMedia
+trace graph --node ENTITY_ID --limit 20
+```
+
+The graph stores resolved static links and reads unresolved observations from
+the selected file's parser cache. It records working-tree generations, source file
+hashes and one-based line and UTF-8 byte column locations for definitions.
+
+Automatic context uses task scope, exact indexed code entities and lexical
+search. It prioritizes relevant decisions and linked evidence. It excludes
+superseded events and transcript messages referenced only by superseded
+events in the active task. Stale findings carry a revalidation flag. The
+original evidence remains available through `trace evidence`.
+
+When recording a verified decision with a transcript or Git reference, add
+one `--acceptance "Expected behavior"` flag per requirement that an agent
+should verify. TRACE carries these checks into relevant, bounded recall.
+The checks are stored as text. Use the project's tests to verify the patch.
+
+### Open the recursive graph in Obsidian
+
+On Obsidian Desktop, create or choose a local vault outside the project.
+Run this from your initialized project with the updated TRACE build.
+
+```powershell
+trace obsidian --vault "C:\path\to\my-vault" --graph --install-view
+```
+
+Enable **TRACE Code Graph** in Obsidian's Community plugins, then run
+**Open TRACE Code Graph** from the command palette. Use the **+** control
+to expand a node, its label to select it, and the breadcrumbs to return
+to a parent. Drag the graph background to pan. Search accepts a symbol
+name or path. Use **Cross-links** to show relationships for the selected
+entity, including clickable related entities and source locations.
+
+**Open source** asks for the local repository folder on first use.
+The view opens the current file in a bounded, read-only text preview.
+The graph reflects the exported working-tree snapshot. Re-run
+`trace obsidian --vault "C:\path\to\my-vault" --graph` and select **Refresh**
+in Obsidian after the code changes. Each project keeps its own snapshot
+and source-folder binding. Only use a vault where you're comfortable
+storing the graph's relative paths, identifiers, and structural links.
+The export contains no file contents or engineering history.
+
+The installer uses the standard `.obsidian` configuration directory
+and copies plugin assets without enabling plugins or changing existing
+notes. The `--map` export still provides the linked Markdown and native
+Canvas views. The plugin runs without a server or Node installation.
+Use `--graph --include-history` for a private local vault to include
+event IDs, lifecycle labels and source references. Select a code entity
+and expand **Engineering history**. Run the displayed `trace graph --event ID`
+or `trace evidence REFERENCE` from the associated project to inspect the
+actual record. The export keeps transcript text, Git blobs and finding
+summaries in TRACE's project store. Exported reference metadata can
+remain in earlier generations after a later refresh.
+To rebuild its packaged JavaScript, run `npm ci` followed by `npm run build`
+in `plugins/trace-code-graph`.
+
+IDs are scoped to the project index and survive line movement. File renames
+create new path-based identities. Repeated declarations under the same owner
+are distinguished by source order.
+
+TRACE reuses parsed facts for unchanged source contents and updates graph
+records transactionally. Cross-file resolution runs over the cached facts
+after a change so an unedited caller can follow a moved or updated definition.
+Unsupported files remain in the inventory. Call resolution is conservative,
+especially for runtime dispatch, custom aliases and ambiguous bindings.
+
+## Browse memory in Obsidian
+
+From the project folder, export a snapshot to an existing local Obsidian vault.
+No Obsidian plugin is required.
+
+```text
+trace obsidian --vault "C:\path\to\my-vault"
+```
+
+Open the `TRACE …` note in Obsidian. It links to tasks, recent findings and
+test outcomes, session metadata, the code index, and Git history. Superseded
+events are marked. Linked Git evidence shows whether the file has changed.
+Evidence references can be opened on demand with `trace evidence` from the
+same project. Full transcripts and source excerpts stay in TRACE.
+
+Run the same command again to refresh the generated note. TRACE keeps an
+existing note if its contents have been edited. Keep private observations
+in a separate note. Choose the destination deliberately because a synced
+vault can copy the exported summaries to other devices.
+
+For a visual code map, use the same command with `--map`. Choose a file
+with `--focus` or let TRACE pick the most connected source file.
+
+```text
+trace obsidian --vault "C:\path\to\my-vault" --map --focus apps/web/src/lib/media-gallery.ts
+```
+
+Open the generated `TRACE … Code Map` note. The Folder Tree Canvas links
+to the repository inventory. The Relationships Canvas shows the selected
+file's immediate neighbors. Source notes show definitions, incoming and
+outgoing references, and any TRACE task records explicitly attached to
+that path. Links show the relevant source lines. Evidence stays available
+through `trace evidence` and records with no matching revision are marked
+as unknown.
+
+TRACE builds these views from its own SQLite index. It supports Python,
+JavaScript, TypeScript, and Astro frontmatter and script blocks. Resolved
+links cover supported static imports, local package exports, and explicit
+imported calls. Dynamic targets, arbitrary TypeScript resolver plugins,
+and ambiguous names may be absent. The folder inventory also includes
+visible project files in unsupported languages. Dependencies, TRACE
+storage, redirected paths, and common credential files are excluded.
+
+Export into a vault outside the project. Re-run the command to refresh
+after working-tree edits. TRACE moves the map entry to the newest complete
+snapshot and retains earlier generated maps. A vault can contain local
+file links and redacted task summaries, so choose its sharing settings
+accordingly.
+
 ## Privacy
 
-**Your code, memory, and transcripts remain on your machine.**
+TRACE stores project memory in `<project>/.agent-memory/memory.db`. Its
+capture, indexing, and MCP services run locally. OpenCode can include
+retrieved messages and findings in requests to your chosen model
+provider. The benchmark's real-model adapters can also call a configured
+provider.
 
-- No telemetry, no analytics, no accounts, no cloud sync.
-- TRACE itself makes no network calls: storage is SQLite, indexing is
-  local tree-sitter, the MCP server is a local stdio process.
-- Transcript memory is stored in the same local SQLite database as other
-  memory layers, inside `<project>/.agent-memory/memory.db`.
-- The only network traffic in the system is between *your agent* and *your
-  chosen model provider*, when you run an LLM-backed agent — TRACE's
-  memory storage is never sent anywhere.
+Run `trace privacy` to see where memory lives, whether the capture service
+is running or paused, whether the recall plugin is installed, and whether
+structured test recording is opted in. Use `trace preview` to inspect the
+memory block TRACE can assemble for a new request. Supply `--session ID`
+for an existing OpenCode session's task binding and `--query-stdin` to read
+a prospective request from UTF-8 standard input. This previews TRACE's
+part of a request using current memory. The plugin can cache a block for
+an already-running session. `trace service stop` pauses capture while
+preserving recall. `trace teardown opencode` disables both.
+
+Keep `.agent-memory/`, `.trace-service/`, and backups out of source control and in a directory
+you control. The database and its snapshots are ordinary SQLite files.
+Redaction is best effort. Treat recalled content as untrusted historical
+data. See [security guidance](SECURITY.md) and the
+[install, upgrade, and rollback guide](docs/release-lifecycle.md). The
+[preview pilot guide](docs/preview-pilot.md) uses a disposable project.
 
 ## Benchmark / Research
 
 `benchmark/` is experimental research infrastructure for the question
 "does memory help?": a task corpus (`tasks/`), baseline-vs-memory configs
-(`configs/`), an isolated runner, and descriptive analysis. Results are
-labeled pilot/calibration, never evidence of effectiveness. The
+(`configs/`), an isolated runner, and descriptive analysis. Pilot and
+calibration results apply to the tested tasks and conditions. The
 SWE-bench/Django corpus work in the tree is unfinished and does not affect
 daily TRACE use.
 
@@ -335,29 +603,32 @@ with Python 3.11+. Git-history features need a git repository. Temporary
 and run directories should live outside cloud-synced folders (OneDrive,
 etc.) for performance.
 
-### Compatibility matrix (2026-10-31)
+### Compatibility matrix
 
-| Surface | Tested | Status |
-|---|---|---|
-| OpenCode 2.2.5, 2.1.4 with `--standalone` | Live two-session probe in isolation: capture, injection, recall, MCP | **Works** |
-| OpenCode 2.x background service (default mode) | Not run, to keep tests away from a real service and database | **Unverified** |
-| OpenCode 1.18.32 | Same probe, plus controlled comparisons | **Works** |
-| Other OpenCode versions | Not run | Unverified |
-| Claude Code | No integration exists; it can use the MCP server as any client would | **Not supported** for automatic memory |
-| Any MCP client | Server tests only | Explicit tools only |
-| Windows, Python 3.11 | Fresh clone, CI | Passing |
-| Linux, Python 3.11 | CI, deterministic tests only | Passing; never run with a real agent |
-| macOS | Not run | Unverified |
-| Structural indexing | Python only | By design |
+The OpenCode checks ran native Windows binaries with fresh
+profiles and a scripted local provider. They exercise transport and
+capture behavior. Coding effectiveness is measured separately.
 
-On 2.x TRACE records user and assistant text; memory-tool activity is not captured yet. Run OpenCode once
+| Surface | Phase 6 evidence |
+|---|---|
+| OpenCode 1.18.32 | Native capture, user-channel injection, model-facing MCP tools and teardown verified |
+| OpenCode 2.1.4 and 2.2.5 with `--standalone` | Native capture, user-channel injection, five-tool MCP connection and teardown verified. The provider’s tool list omitted TRACE’s named evidence tool in the checked requests |
+| OpenCode 2.1.4 and 2.2.5 managed service | Native capture, injection, evidence retrieval through the model-facing MCP tool, and immediate teardown verified in isolated profiles |
+| Other OpenCode versions | Unverified |
+| Other MCP clients | Explicit TRACE tools verified over stdio. Individual clients may require configuration |
+| Windows, Python 3.11 | Installed wheel, upgrade, backup, rollback and deterministic tests verified |
+| Linux, Python 3.11 | CI passed on the audited base. Current wheel and suite checks are configured in CI |
+| macOS, Python 3.11 | Current wheel and suite checks are configured in CI. Native integration remains unverified |
+| Structural indexing | Python, JavaScript, TypeScript, Apps Script and Astro script sections |
+
+Use managed mode on the tested OpenCode 2.x versions when the agent needs model-facing evidence tools. On 2.x TRACE records user and assistant text and supports opt-in selected pytest outcomes. Run OpenCode once
 before `trace setup`, so setup can see which version's layout your database uses. OpenCode 1.x installs its
 plugin SDK the first time a user configures a plugin: about 60 MB and two minutes, once per user.
 
 ## Development
 
 ```powershell
-python -m pip install -e ".[dev]"
+python -m pip install -c constraints.txt -e ".[dev]"
 # Run tests with a temp dir OUTSIDE OneDrive/cloud-synced folders:
 python -m pytest -q --no-header -p no:cacheprovider --basetemp="$env:TEMP\TracePytest"
 ```
@@ -368,10 +639,9 @@ sole benchmark orchestrator, `agent/` stays provider-neutral, and the new
 
 ## Testing
 
-The deterministic tests are all local — no network, keys, or models
-required, and CI runs them on Windows and Linux. Latest run, on a fresh Windows
-clone: 586 passed, 22 skipped, 1 expected failure. The `corpus` extra (`pyarrow`)
-is needed for eight of them. 21 of the skips are real-OpenCode integration tests that run the actual `opencode` binary
+The deterministic tests run locally without network access, keys, or models.
+CI is configured for Windows, Linux, and macOS. The `corpus` extra (`pyarrow`)
+enables the corpus tests. The opt-in real-OpenCode integration tests run the actual `opencode` binary
 against the free-tier model (network + model required): timing-sensitive,
 with occasional provider latency/timeout flakes, and on Windows their
 fixtures can hit external file-lock teardown flakes (`WinError 32` from
@@ -380,8 +650,8 @@ are environmental, not assertion failures in TRACE logic.
 
 ## Limitations
 
-- Structural indexing covers Python only; other languages are invisible
-  to structural memory (episodic/git/transcript memory still work).
+- Files outside the supported languages appear in the graph inventory.
+  Dynamic dispatch, custom aliases, and ambiguous bindings can remain unresolved.
 - Same-named methods on different classes can conflate in call edges;
   symbol attribution from diffs is best-effort overlap, not proof.
 - Automatic capture and injection cover OpenCode only (see the compatibility
@@ -389,16 +659,14 @@ are environmental, not assertion failures in TRACE logic.
 - Session resolution fails open: continued/stale sessions, TUI multi-session
   use, and concurrent same-project runs may receive no automatic injection
   rather than a wrong one.
-- Model usefulness has been tested only within bounded conditions (single
-  unambiguous prior fact: 9/9 valid recalls; multi-fact selection is weaker).
-  No claim is made that memory improves coding performance.
+- The coding trials cover small, bounded task sets. Representative results
+  across more repositories and models are still pending.
 - Secret redaction is best-effort pattern matching — not guaranteed to catch all secrets. A
   password in plain prose with no nearby keyword cannot be detected, and bare high-entropy
   strings are left alone to avoid destroying hashes and ids.
 - Stored memory reaches the model as data: each record is one JSON line inside a boundary it
   cannot forge, under a notice that records are untrusted. That stops stored text from
   impersonating the block, but a model can still choose to obey what it reads.
-- Benchmark evidence is pilot-scale; no effectiveness claims are made.
 - MCP integration is labeled by what it is (MCP-compatible agents),
   not by an exhaustive tested-client matrix.
 

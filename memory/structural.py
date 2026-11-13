@@ -1,45 +1,27 @@
-"""Tree-sitter structural indexer (Python only, Phase 2).
+"""Local structural indexer for Python, JavaScript, TypeScript and Astro.
 
-Extracts function/class definitions, call edges, and module imports into the
-store. Deterministic: files visited in sorted order, tables cleared before
-each index run.
-
-Known limitations (documented, not worked around):
-- Attribute calls (`obj.method()`) are recorded under the attribute name, so
-  same-named methods on different classes conflate. MVP accepts this; the
-  benchmark measures downstream task outcomes, not graph perfection.
-- Dynamic calls (`getattr`, decorators-as-calls aside) and star-import
-  re-exports are not resolved.
-- Only `.py` files under the size cap are indexed; binaries are skipped.
+Publishes the legacy symbol index and the typed entity graph in one
+transaction. Source files with matching content and parser versions reuse
+cached facts. Link resolution uses the current repository inventory.
 """
 
 from __future__ import annotations
 
+import ast
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 import hashlib
 import json
-import subprocess
+import zlib
 
 import tree_sitter_python
 from tree_sitter import Language, Parser, Query, QueryCursor
 
+from memory import code_graph, entity_graph, source_files, web_structure
 from memory import store as store_mod
-
-SKIP_DIRS = frozenset(
-    {
-        ".git",
-        "__pycache__",
-        ".venv",
-        ".agent-memory",
-        ".pytest_cache",
-        ".hypothesis",
-        "node_modules",
-        ".hg",
-    }
-)
-MAX_FILE_BYTES = 256_000
+from memory.graph_model import Definition, Fragment
+from memory.opencode_files import require_local_paths
 
 _DEFS_PATTERN = """
 ((function_definition name: (identifier) @fname) @fnode)
@@ -66,6 +48,8 @@ class Symbol:
     line: int  # 1-based first line of the definition
     end_line: int  # 1-based last line of the definition body
     signature: str
+    column: int
+    end_column: int
 
 
 @dataclass(frozen=True)
@@ -119,9 +103,9 @@ def _enclosing_function(node, source: bytes) -> str:
     return "<module>"
 
 
-def extract_symbols(source: bytes, relpath: str) -> list[Symbol]:
+def extract_symbols(source: bytes, relpath: str, *, tree=None) -> list[Symbol]:
     """Definitions in one file: (name, kind, file, 1-based line, signature)."""
-    tree = _parser().parse(source)
+    tree = tree if tree is not None else _parser().parse(source)
     lines = source.decode("utf-8", errors="replace").splitlines()
     defs_query, _, _ = _queries()
     found: list[Symbol] = []
@@ -143,14 +127,16 @@ def extract_symbols(source: bytes, relpath: str) -> list[Symbol]:
                     line=line,
                     end_line=def_node.end_point[0] + 1,
                     signature=signature,
+                    column=name_node.start_point[1] + 1,
+                    end_column=def_node.end_point[1] + 1,
                 )
             )
     return found
 
 
-def extract_calls(source: bytes, relpath: str) -> list[CallEdge]:
+def extract_calls(source: bytes, relpath: str, *, tree=None) -> list[CallEdge]:
     """Call edges in one file: (caller fn or <module>, callee, file, line)."""
-    tree = _parser().parse(source)
+    tree = tree if tree is not None else _parser().parse(source)
     _, calls_query, _ = _queries()
     found: list[CallEdge] = []
     for _pattern, captures in QueryCursor(calls_query).matches(tree.root_node):
@@ -168,9 +154,9 @@ def extract_calls(source: bytes, relpath: str) -> list[CallEdge]:
     return found
 
 
-def extract_imports(source: bytes, relpath: str) -> list[ImportEdge]:
+def extract_imports(source: bytes, relpath: str, *, tree=None) -> list[ImportEdge]:
     """Module imports in one file (best-effort, deterministic)."""
-    tree = _parser().parse(source)
+    tree = tree if tree is not None else _parser().parse(source)
     _, _, imports_query = _queries()
     found: list[ImportEdge] = []
     for _pattern, captures in QueryCursor(imports_query).matches(tree.root_node):
@@ -185,144 +171,148 @@ def extract_imports(source: bytes, relpath: str) -> list[ImportEdge]:
     return found
 
 
-def iter_python_files(root: Path) -> list[Path]:
-    """Sorted .py files under root, minus skipped dirs/oversized/binary."""
-    collected: list[Path] = []
-    for path in sorted(root.rglob("*.py")):
-        if any(part in SKIP_DIRS for part in path.relative_to(root).parts[:-1]):
-            continue
-        try:
-            if path.stat().st_size > MAX_FILE_BYTES:
-                continue
-            with open(path, "rb") as fh:
-                head = fh.read(8192)
-            if b"\x00" in head:
-                continue
-        except OSError:
-            continue
-        collected.append(path)
-    return collected
+INDEX_VERSION = "trace-entity-graph-2"
+PARSER_VERSION = 2
+CODE_SUFFIXES = (".py", *web_structure.WEB_SUFFIXES)
+
+
+def _fingerprint(files) -> str:
+    inputs = [
+        (name, info.st_mtime_ns, info.st_ctime_ns, info.st_size)
+        if Path(name).suffix.lower() in CODE_SUFFIXES or Path(name).name == "package.json" else (name,)
+        for name, info in files.items()
+    ]
+    return hashlib.sha256(json.dumps([INDEX_VERSION, inputs], ensure_ascii=True).encode("ascii")).hexdigest()
+
+
+def _parse(path: str, source: bytes, suffix: str) -> Fragment:
+    if suffix != ".py":
+        return web_structure.extract(source, suffix)
+    tree = _parser().parse(source)
+    symbols = extract_symbols(source, path, tree=tree)
+    calls = extract_calls(source, path, tree=tree)
+    imports = extract_imports(source, path, tree=tree)
+    try:
+        exports, observations = code_graph.python_facts(ast.parse(source))
+    except (SyntaxError, ValueError, RecursionError):
+        exports, observations = {}, []
+    return Fragment(
+        [Definition(s.name, s.kind, s.line, s.column, s.end_line, s.end_column) for s in symbols],
+        [(s.name, s.kind, s.line, s.signature) for s in symbols],
+        [(call.caller, "calls", call.callee, call.line) for call in calls]
+        + [(path, "imports", edge.module, edge.line) for edge in imports],
+        exports, observations,
+    )
+
+
+def _publish_legacy(conn, fragments, hashes, reparsed, links):
+    versions = {row[0]: (row[1], row[2]) for row in conn.execute(
+        "SELECT file, parser_version, source_hash FROM structural_fragments"
+    )}
+    existing = {row[0] for row in conn.execute(
+        "SELECT file FROM indexed_code_files UNION SELECT file FROM symbols UNION SELECT file FROM relationships"
+    )}
+    updated = {path for path, digest in hashes.items() if versions.get(path) != (PARSER_VERSION, digest)
+               or path not in existing or path in reparsed}
+    affected = [(path,) for path in sorted(updated | (existing - fragments.keys()))]
+    if affected:
+        conn.executemany("DELETE FROM symbols WHERE file=?", affected)
+        conn.executemany("DELETE FROM relationships WHERE file=?", affected)
+        conn.executemany("INSERT INTO symbols(name,kind,file,line,signature) VALUES(?,?,?,?,?)", (
+            (name, kind, path, line, signature) for path in sorted(updated)
+            for name, kind, line, signature in fragments[path].symbols
+        ))
+        conn.executemany("INSERT INTO relationships(src,rel,dst,file,line) VALUES(?,?,?,?,?)", (
+            (source or path, kind, target, path, line) for path in sorted(updated)
+            for source, kind, target, line in fragments[path].relationships
+        ))
+        store_mod.rebuild_fts(conn)
+    previous = {tuple(row) for row in conn.execute("SELECT * FROM code_links")}
+    conn.executemany(
+        "DELETE FROM code_links WHERE (source_file,target_file,kind,source_line,target_symbol,target_line)=(?,?,?,?,?,?)",
+        sorted(previous - links),
+    )
+    indexed = {row[0] for row in conn.execute("SELECT file FROM indexed_code_files")}
+    conn.executemany("DELETE FROM indexed_code_files WHERE file=?", ((path,) for path in indexed - fragments.keys()))
+    conn.executemany("INSERT INTO indexed_code_files(file) VALUES (?)", ((path,) for path in fragments.keys() - indexed))
+    conn.executemany("INSERT INTO code_links VALUES (?,?,?,?,?,?)", sorted(links - previous))
+    conn.executemany("DELETE FROM structural_fragments WHERE file=?", ((path,) for path in versions.keys() - fragments.keys()))
+    conn.executemany("""
+        INSERT INTO structural_fragments VALUES (?,?,?,?) ON CONFLICT(file) DO UPDATE SET
+        parser_version=excluded.parser_version, source_hash=excluded.source_hash, payload=excluded.payload
+    """, ((path, PARSER_VERSION, hashes[path], fragments[path].encode()) for path in sorted(updated)))
 
 
 def index_workspace(root: Path, db_path: Path) -> dict:
-    """(Re)build the structural index for root into db_path. Deterministic."""
+    """Publish one complete structural snapshot without changing episodic rows."""
     root = root.resolve()
+    db_path = db_path.absolute()
+    require_local_paths(root if db_path.is_relative_to(root) else db_path.parent.resolve(),
+                        db_path, Path(str(db_path) + "-wal"), Path(str(db_path) + "-shm"))
+    files = source_files.inventory(root)
+    fingerprint = _fingerprint(files)
     conn = store_mod.connect(db_path)
     try:
         store_mod.init_schema(conn)
-        store_mod.clear(conn)
-        files = symbol_count = rel_count = 0
-        for path in iter_python_files(root):
-            relpath = path.relative_to(root).as_posix()
-            try:
-                source = path.read_bytes()
-            except OSError:
+        cache = {row["file"]: (row["source_hash"], row["payload"]) for row in conn.execute(
+            "SELECT file, source_hash, payload FROM structural_fragments WHERE parser_version=?", (PARSER_VERSION,)
+        )}
+        fragments, hashes, reparsed = {}, {}, set()
+        for name in files:
+            suffix = Path(name).suffix.lower()
+            if suffix not in CODE_SUFFIXES:
                 continue
-            files += 1
-            for symbol in extract_symbols(source, relpath):
-                store_mod.insert_symbol(
-                    conn, symbol.name, symbol.kind, symbol.file,
-                    symbol.line, symbol.signature,
-                )
-                symbol_count += 1
-            for edge in extract_calls(source, relpath):
-                store_mod.insert_relationship(
-                    conn, edge.caller, "calls", edge.callee,
-                    edge.file, edge.line,
-                )
-                rel_count += 1
-            for edge in extract_imports(source, relpath):
-                store_mod.insert_relationship(
-                    conn, edge.file, "imports", edge.module,
-                    edge.file, edge.line,
-                )
-                rel_count += 1
-        store_mod.rebuild_fts(conn)
-        conn.commit()
-        # Store fingerprint after successful index
-        _store_fingerprint(root, conn)
-        return {
-            "files": files,
-            "symbols": symbol_count,
-            "relationships": rel_count,
-            "db": str(db_path),
-        }
+            source = source_files.read_source(root, name)
+            if source is None:
+                continue
+            digest = hashes[name] = hashlib.sha256(source).hexdigest()
+            old_hash, data = cache.get(name, (None, None))
+            if old_hash == digest:
+                try:
+                    fragments[name] = Fragment.decode(data)
+                    continue
+                except (ValueError, TypeError, KeyError, IndexError, zlib.error):
+                    pass
+            fragments[name] = _parse(name, source, suffix)
+            reparsed.add(name)
+        packages = code_graph.read_packages(root, [path for path in files if Path(path).name == "package.json"])
+        resolutions = code_graph.resolve(fragments, packages)
+        links = code_graph.legacy_links(resolutions)
+        nodes, edges, unresolved = entity_graph.build(list(files), fragments, packages, resolutions)
+        with conn:
+            conn.execute("BEGIN IMMEDIATE")
+            if _fingerprint(source_files.inventory(root)) != fingerprint:
+                raise ValueError("source files changed during indexing; rerun TRACE")
+            _publish_legacy(conn, fragments, hashes, reparsed, links)
+            entity_graph.publish(conn, nodes, edges)
+            store_mod.set_structural_fingerprint(conn, None, fingerprint)
+        return {"files": len(fragments), "symbols": sum(len(item.symbols) for item in fragments.values()),
+                "relationships": sum(len(item.relationships) for item in fragments.values()),
+                "resolved_links": len(links), "parsed_files": len(reparsed), "cached_files": len(fragments) - len(reparsed),
+                "graph_nodes": len(nodes), "graph_edges": len(edges), "graph_unresolved": unresolved, "db": str(db_path)}
     finally:
         conn.close()
 
 
-def _compute_git_tree_hash(project_root: Path) -> str | None:
-    """Compute Git tree hash for the repository (deterministic)."""
-    try:
-        result = subprocess.run(
-            ["git", "ls-tree", "-r", "HEAD", "--", "."],
-            cwd=str(project_root),
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        if result.returncode != 0:
-            return None
-        # Hash the tree output for a stable fingerprint
-        return hashlib.sha256(result.stdout.encode()).hexdigest()[:32]
-    except (OSError, subprocess.SubprocessError):
-        return None
-
-
-def _compute_file_mtimes(project_root: Path) -> str | None:
-    """Compute file mtimes hash as fallback for non-Git repos."""
-    try:
-        files = iter_python_files(project_root)
-        if not files:
-            return None
-        mtime_data = {}
-        for path in files:
-            relpath = path.relative_to(project_root).as_posix()
-            try:
-                mtime_data[relpath] = int(path.stat().st_mtime * 1e6)  # microseconds
-            except OSError:
-                continue
-        if not mtime_data:
-            return None
-        # Create deterministic JSON and hash it
-        json_str = json.dumps(mtime_data, sort_keys=True)
-        return hashlib.sha256(json_str.encode()).hexdigest()[:32]
-    except Exception:
-        return None
-
-
-def _store_fingerprint(project_root: Path, conn) -> None:
-    """Store the current fingerprint after indexing."""
-    git_hash = _compute_git_tree_hash(project_root)
-    file_hash = _compute_file_mtimes(project_root)
-    store_mod.set_structural_fingerprint(conn, git_hash, file_hash)
-
-
 def get_current_fingerprint(project_root: Path) -> dict:
-    """Compute the current fingerprint of the project."""
-    return {
-        "git_tree_hash": _compute_git_tree_hash(project_root),
-        "file_mtimes": _compute_file_mtimes(project_root),
-    }
+    """Fingerprint working files so edits do not need a Git commit."""
+    return {"git_tree_hash": None,
+            "file_mtimes": _fingerprint(source_files.inventory(project_root.resolve()))}
 
 
 def is_structural_fresh(project_root: Path) -> bool:
     """Check if structural memory is up to date."""
+    project_root = project_root.resolve()
     db = project_root / ".agent-memory" / "memory.db"
+    require_local_paths(project_root, db, Path(str(db) + "-wal"), Path(str(db) + "-shm"))
     if not db.exists():
         return False
     conn = store_mod.connect(db)
     try:
-        stored = store_mod.get_structural_fingerprint(conn)
-        if not stored:
+        if not conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='graph_nodes'").fetchone():
             return False
-        current = get_current_fingerprint(project_root)
-        # Compare git hash if available, otherwise file mtimes
-        if current["git_tree_hash"] and stored["git_tree_hash"]:
-            return current["git_tree_hash"] == stored["git_tree_hash"]
-        if current["file_mtimes"] and stored["file_mtimes"]:
-            return current["file_mtimes"] == stored["file_mtimes"]
-        return False
+        stored = store_mod.get_structural_fingerprint(conn)
+        return bool(stored and get_current_fingerprint(project_root)["file_mtimes"] == stored["file_mtimes"])
     finally:
         conn.close()
 

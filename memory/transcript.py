@@ -15,6 +15,7 @@ from memory import redact as redact_mod
 from memory import store as store_mod
 
 ROLES = frozenset({"user", "assistant", "system", "tool"})
+DECISION_WORDS = ("approved", "agreed", "decided", "decision", "must", "never", "requires")
 
 
 @dataclass(frozen=True)
@@ -135,6 +136,11 @@ def search_messages(
     role: str | None = None,
     query: str | None = None,
     limit: int = 10,
+    unassigned_only: bool = False,
+    task_id: str | None = None,
+    exclude_session_id: str | None = None,
+    decision_only: bool = False,
+    exclude_superseded: list[int] | None = None,
 ) -> list[TranscriptMessage]:
     """Narrow bounded retrieval.
 
@@ -147,6 +153,17 @@ def search_messages(
 
     clauses: list[str] = []
     params: list = []
+    if exclude_superseded:
+        ids = json.dumps(exclude_superseded)
+        clauses.append("""NOT EXISTS (
+            SELECT 1 FROM event_evidence retired
+            WHERE retired.transcript_id = tm.id AND retired.event_id IN (SELECT value FROM json_each(?))
+            AND NOT EXISTS (
+                SELECT 1 FROM event_evidence active
+                WHERE active.transcript_id=tm.id AND active.event_id NOT IN (SELECT value FROM json_each(?))
+            )
+        )""")
+        params.extend((ids, ids))
     if session_id is not None:
         if not isinstance(session_id, str) or not session_id.strip():
             raise ValueError("session_id must be a non-empty string or None")
@@ -155,12 +172,28 @@ def search_messages(
     if role is not None:
         clauses.append("tm.role = ?")
         params.append(role)
+    if task_id is not None:
+        if unassigned_only:
+            raise ValueError("task_id and unassigned_only are mutually exclusive")
+        if not store_mod.has_session_bindings(conn):
+            return []
+        clauses.append(f"tm.session_id IN ({_BOUND_SESSIONS} AND task_sessions.task_id = ?)")
+        params.append(task_id)
+    elif unassigned_only and store_mod.has_session_bindings(conn):
+        clauses.append(_UNASSIGNED_SESSION)
+    if exclude_session_id is not None:
+        clauses.append("tm.session_id <> ?")
+        params.append(exclude_session_id)
     join = ""
     order = "tm.id"
     if query is not None and query.strip():
         join = " JOIN transcript_messages_fts ON transcript_messages_fts.rowid = tm.id"
         clauses.append("transcript_messages_fts MATCH ?")
-        params.append(store_mod.fts_query(query))
+        match = store_mod.fts_query(query)
+        if decision_only:
+            cues = store_mod.fts_query(" OR ".join(DECISION_WORDS))
+            match = f"({match}) AND content : ({cues})"
+        params.append(match)
         order = "bm25(transcript_messages_fts), tm.id DESC"
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     try:
@@ -243,11 +276,20 @@ def session_parent(conn: sqlite3.Connection, session_id: str) -> str | None:
     return parent or None
 
 
-def list_sessions(conn: sqlite3.Connection, limit: int = 50) -> list[dict]:
+_BOUND_SESSIONS = (
+    "SELECT marker.session_id FROM task_sessions"
+    " JOIN transcript_messages AS marker ON marker.id = task_sessions.transcript_id"
+    " WHERE marker.source_id = ('session:' || marker.session_id)"
+)
+_UNASSIGNED_SESSION = f"tm.session_id NOT IN ({_BOUND_SESSIONS})"
+
+
+def list_sessions(conn: sqlite3.Connection, limit: int = 50, *, unassigned_only: bool = False) -> list[dict]:
     """List distinct session_ids with message counts, newest first."""
+    where = f" WHERE {_UNASSIGNED_SESSION}" if unassigned_only and store_mod.has_session_bindings(conn) else ""
     rows = conn.execute(
         "SELECT session_id, COUNT(*) as count, MAX(timestamp) as last_activity"
-        " FROM transcript_messages"
+        f" FROM transcript_messages tm{where}"
         " GROUP BY session_id"
         # Timestamps have one-second precision; ties go to the latest insert.
         " ORDER BY last_activity DESC, MAX(id) DESC"

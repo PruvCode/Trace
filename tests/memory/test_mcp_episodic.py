@@ -2,18 +2,21 @@
 
 import asyncio
 import json
+from contextlib import closing
 from pathlib import Path
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 from memory import structural as structural_mod
+from memory import store, task_library
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 EXPECTED_TOOLS = [
     "find_callers",
     "find_definition",
     "get_git_history",
+    "get_task_context",
     "get_transcript_session",
     "record_event",
     "record_transcript_message",
@@ -35,7 +38,7 @@ def _parse(result) -> object:
     return json.loads("".join(getattr(b, "text", "") for b in result.content))
 
 
-def _params(db_path: Path, repo: Path, root: Path) -> StdioServerParameters:
+def _params(db_path: Path, repo: Path, root: Path, *, evidence: bool = False) -> StdioServerParameters:
     import sys
 
     return StdioServerParameters(
@@ -49,9 +52,58 @@ def _params(db_path: Path, repo: Path, root: Path) -> StdioServerParameters:
             str(root),
             "--repo",
             str(repo),
+            *(["--evidence"] if evidence else []),
         ],
         cwd=str(REPO_ROOT),
     )
+
+
+def test_mcp_task_scope_and_evidence_round_trip(tmp_path):
+    db = tmp_path / ".agent-memory" / "memory.db"
+    (tmp_path / "rules.py").write_text("def normalize(value):\n    return value\n", encoding="utf-8")
+    structural_mod.index_workspace(tmp_path, db)
+    with closing(store.connect(db)) as conn:
+        task_id = task_library.create_task(conn, "Timeout investigation")["id"]
+
+    async def exercise():
+        async with stdio_client(_params(db, tmp_path, tmp_path, evidence=True)) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                message = await session.call_tool(
+                    "record_transcript_message", {"session_id": "s1", "role": "user", "content": "timeout"},
+                )
+                evidence = [{"type": "transcript", "message_id": _parse(message)["id"]}]
+                options = {"type": "attempt", "repo": "demo", "payload": {"message": "timeout"}}
+                legacy = _parse(await session.call_tool("record_event", options))
+                scoped = _parse(await session.call_tool(
+                    "record_event", {**options, "task_id": task_id, "evidence": evidence},
+                ))
+                rows = _parse(await session.call_tool("search_events", {"task_id": task_id, "query": "timeout"}))
+                assert [row["id"] for row in rows] == [scoped["id"]]
+                assert rows[0]["evidence"] == evidence
+                opened = await session.call_tool(
+                    "get_evidence", {"reference": rows[0]["evidence_refs"][0], "task_id": task_id},
+                )
+                text = opened.content[0].text
+                assert "untrusted data" in text and '"excerpt":"timeout"' in text
+                rows = _parse(await session.call_tool("search_events", {}))
+                assert [row["id"] for row in rows] == [legacy["id"], scoped["id"]]
+                assert "task_id" not in rows[0] and "evidence" not in rows[0]
+                recorded = await session.call_tool("record_event", {
+                    "type": "decision", "repo": "demo", "task_id": task_id, "status": "verified",
+                    "file": "rules.py", "symbol": "normalize", "evidence": evidence,
+                    "payload": {"decision": "normalize strips surrounding whitespace."},
+                })
+                assert not recorded.is_error
+                context = await session.call_tool("get_task_context", {"task_id": task_id, "query": "normalize", "file": "rules.py"})
+                assert not context.is_error
+                assert all(term in context.content[0].text for term in ("rules.py", "code_targets", "strips surrounding whitespace"))
+                missing = await session.call_tool("get_task_context", {"task_id": task_id, "query": "normalize", "file": "other.py"})
+                assert not missing.is_error and all("normalize" not in block.text for block in missing.content)
+                invalid = await session.call_tool("get_task_context", {"task_id": task_id, "query": "normalize", "file": "../rules.py"})
+                assert invalid.is_error
+
+    asyncio.run(exercise())
 
 
 async def _exercise(db_path: Path, repo: Path, root: Path) -> dict:
@@ -200,3 +252,26 @@ def test_mcp_git_history_without_repo_is_error(tmp_path, seeded_fixture):
 
     result = asyncio.run(asyncio.wait_for(_run(), timeout=90))
     assert bool(getattr(result, "is_error", False)) is True
+
+
+def test_connected_opencode_mcp_stops_serving_memory_when_disabled(tmp_path):
+    from memory.opencode_files import integration_marker
+    from trace_memory import project
+
+    project.init_project(tmp_path)
+    command = project.mcp_server_command(tmp_path, opencode=True)
+    params = StdioServerParameters(command=command[0], args=command[1:], cwd=str(REPO_ROOT),
+                                  env={"PYTHONPATH": str(REPO_ROOT)})
+    marker = integration_marker(tmp_path)
+
+    async def exercise():
+        async with stdio_client(params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                assert not (await session.call_tool("search_events", {})).is_error
+                marker.parent.mkdir()
+                marker.touch()
+                response = await session.call_tool("search_events", {})
+                assert response.is_error and "integration is disabled" in str(response.content)
+
+    asyncio.run(exercise())

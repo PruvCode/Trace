@@ -101,6 +101,7 @@ def get_message_start_context(
     project_dir: str | Path,
     session_id: str | None = None,
     query: str | None = None,
+    use_bound_task: bool = True,
     max_items: int = session_context_mod.MAX_ITEMS,
     max_chars: int = session_context_mod.MAX_CHARS,
 ) -> dict[str, Any]:
@@ -136,6 +137,8 @@ def get_message_start_context(
         max_items=max_items,
         max_chars=max_chars,
         query=query,
+        use_bound_task=use_bound_task,
+        project_root=Path(project_dir).resolve(),
     )
     stats["message_items"] = sum(1 for i in result["items"] if i.get("kind") == "message")
     stats["finding_items"] = sum(1 for i in result["items"] if i.get("kind") == "finding")
@@ -146,6 +149,13 @@ def get_message_start_context(
         "truncated": result["truncated"],
         "stats": stats,
     }
+
+
+def read_query(stream) -> str | None:
+    try:
+        return stream.buffer.read(8000).decode("utf-8", errors="replace").replace("\0", " ")[:2000]
+    except (AttributeError, OSError, ValueError):
+        return None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -160,12 +170,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--opencode-db", required=True, help="OpenCode opencode.db path")
     parser.add_argument("--project-dir", required=True, help="Project directory to resolve")
     parser.add_argument("--session-id", default=None, help="Current session id (from the hook)")
-    parser.add_argument("--query", default=None, help="Current task prompt (task-aware retrieval)")
+    query_input = parser.add_mutually_exclusive_group()
+    query_input.add_argument("--query", help=argparse.SUPPRESS)  # already-installed legacy plugins
+    query_input.add_argument("--query-stdin", action="store_true", help="Read the task prompt from UTF-8 stdin")
     parser.add_argument(
         "--ensure-capture", action="store_true",
         help="catch up and (re)start the capture service before assembling",
     )
     args = parser.parse_args(argv)
+    query = read_query(sys.stdin) if args.query_stdin else args.query
     capture: dict = {}
     if args.ensure_capture:
         try:
@@ -177,13 +190,15 @@ def main(argv: list[str] | None = None) -> int:
         except Exception as exc:  # noqa: BLE001 - memory must never break OpenCode
             capture = {"status": "error", "message": f"{type(exc).__name__}"}
     try:
+        task_aware = os.environ.get("TRACE_TASK_AWARE") != "0"
         result = get_message_start_context(
             args.db,
             opencode_db_path=args.opencode_db,
             project_dir=args.project_dir,
             session_id=args.session_id,
             # TRACE_TASK_AWARE=0 restores recency-only retrieval (experiment arm C2).
-            query=None if os.environ.get("TRACE_TASK_AWARE") == "0" else args.query,
+            query=query if task_aware else None,
+            use_bound_task=task_aware,
         )
     except Exception:
         return 0

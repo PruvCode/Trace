@@ -48,7 +48,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from memory.opencode_files import INTEGRATION_DISABLED, atomic_write_text, require_local_paths
 from memory.opencode_service import SERVICE_DIR_NAME, default_opencode_db_path
+from memory.task_library import TASK_BINDINGS_VERSION
 from trace_memory import project as project_mod
 
 PLUGIN_FILENAME = "opencode-plugin.js"
@@ -62,7 +64,35 @@ def _js_string(value: str) -> str:
     return json.dumps(value)
 
 
+_TASK_CACHE_JS = """
+const taskVersionPath = join(dirname(TRACE_DB), __TASK_VERSION_FILE__);
+const integrationDisabled = join(dirname(dirname(TRACE_DB)), __SERVICE_DIR__, __INTEGRATION_DISABLED__);
+let taskVersion = "";
+
+function memoryUnavailable() {
+  return existsSync(integrationDisabled) || !existsSync(TRACE_DB);
+}
+
+function refreshTaskBindings() {
+  let version = "";
+  try {
+    const info = lstatSync(taskVersionPath);
+    if (info.isFile() && info.size === 32) version = readFileSync(taskVersionPath, "utf8");
+  } catch {}
+  if (version !== taskVersion) {
+    taskVersion = version;
+    traceBlocks.clear();
+    traceAttempts.clear();
+  }
+}
+""".replace("__TASK_VERSION_FILE__", _js_string(TASK_BINDINGS_VERSION)).replace(
+    "__SERVICE_DIR__", _js_string(SERVICE_DIR_NAME)
+).replace("__INTEGRATION_DISABLED__", _js_string(INTEGRATION_DISABLED))
+
+
 PLUGIN_JS_TEMPLATE = PLUGIN_HEADER + """
+import { existsSync, lstatSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 // PATHS BAKED AT INSTALL TIME - regenerated on every setup_integration.
 const TRACE_PYTHON = __TRACE_PYTHON__;
 const TRACE_DB = __TRACE_DB__;
@@ -78,6 +108,7 @@ const traceBlocks = new Map();
 // still bounding spawns when the helper is broken for good.
 const traceAttempts = new Map();
 const TRACE_HELPER_ATTEMPTS = 2;
+__TRACE_TASK_CACHE__
 
 function hasTraceBlock(messages) {
   return messages.some((m) => Array.isArray(m && m.parts) && m.parts.some(
@@ -87,6 +118,7 @@ function hasTraceBlock(messages) {
 export const TraceMemoryPlugin = async ({ directory }) => {
   return {
     "experimental.chat.messages.transform": async (input, output) => {
+      if (memoryUnavailable()) return;
       const started = Date.now();
       let sessionID = null;
       let spawned = false;
@@ -113,6 +145,7 @@ export const TraceMemoryPlugin = async ({ directory }) => {
           reason = "no-session-id";
           return;
         }
+        refreshTaskBindings();
         if (!traceBlocks.has(sessionID)) {
           if ((traceAttempts.get(sessionID) || 0) >= TRACE_HELPER_ATTEMPTS) {
             reason = "helper-failed";
@@ -129,8 +162,9 @@ export const TraceMemoryPlugin = async ({ directory }) => {
               "--project-dir", directory,
               "--session-id", sessionID,
               "--ensure-capture",
-              ...(taskText ? [`--query=${taskText.replace(/\\0/g, " ")}`] : []),
-            ], { cwd: directory, stderr: "pipe", stdout: "pipe", timeout: 30000 });
+              "--query-stdin",
+            ], { cwd: directory, stdin: Buffer.from(taskText, "utf8"),
+                 stderr: "pipe", stdout: "pipe", timeout: 30000 });
           } catch (spawnError) {
             reason = "spawn-failed";
           }
@@ -158,7 +192,7 @@ export const TraceMemoryPlugin = async ({ directory }) => {
           // else: nothing cached yet, so the next request retries once.
         }
         const block = traceBlocks.get(sessionID);
-        if (!block) {
+        if (!block || memoryUnavailable()) {
           return;
         }
         if (hasTraceBlock(output.messages)) {
@@ -202,7 +236,7 @@ export const TraceMemoryPlugin = async ({ directory }) => {
 PLUGIN_V2_TEMPLATE = PLUGIN_HEADER + """
 // PATHS BAKED AT INSTALL TIME - regenerated on every setup_integration.
 import { spawnSync } from "node:child_process";
-import { appendFileSync } from "node:fs";
+import { appendFileSync, existsSync, lstatSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 const TRACE_PYTHON = __TRACE_PYTHON__;
@@ -213,6 +247,7 @@ const TRACE_LABEL = "[TRACE PROJECT MEMORY";
 const TRACE_HELPER_ATTEMPTS = 2;
 const traceBlocks = new Map();
 const traceAttempts = new Map();
+__TRACE_TASK_CACHE__
 
 function textOf(message) {
   const content = message && message.content;
@@ -230,8 +265,8 @@ function helper(sessionID, task) {
     "--project-dir", TRACE_PROJECT,
     "--session-id", sessionID,
     "--ensure-capture",
-    ...(task ? [`--query=${task.replace(/\\0/g, " ")}`] : []),
-  ], { cwd: TRACE_PROJECT, encoding: "utf8", windowsHide: true, timeout: 30000 });
+    "--query-stdin",
+  ], { cwd: TRACE_PROJECT, input: task, encoding: "utf8", windowsHide: true, timeout: 30000 });
   const out = (proc.stdout || "").trim();
   if (out.startsWith(TRACE_LABEL)) traceBlocks.set(sessionID, out);
   else if (proc.status === 0 || traceAttempts.get(sessionID) >= TRACE_HELPER_ATTEMPTS) traceBlocks.set(sessionID, "");
@@ -242,19 +277,20 @@ export default {
   async setup(ctx) {
     if (!ctx || !ctx.session || typeof ctx.session.hook !== "function") return;
     await ctx.session.hook("context", (event) => {
-      if (!event || !event.sessionID || !Array.isArray(event.messages)) return;
+      if (memoryUnavailable() || !event || !event.sessionID || !Array.isArray(event.messages)) return;
       const started = Date.now();
       let spawned = false;
       let chars = 0;
       let error = null;
       try {
         const first = event.messages.find((m) => m && m.role === "user");
+        refreshTaskBindings();
         if (!traceBlocks.has(event.sessionID)) {
           spawned = true;
           helper(event.sessionID, textOf(first).slice(0, 2000));
         }
         const block = traceBlocks.get(event.sessionID);
-        if (block && !event.messages.some((m) => textOf(m).startsWith(TRACE_LABEL))) {
+        if (block && !memoryUnavailable() && !event.messages.some((m) => textOf(m).startsWith(TRACE_LABEL))) {
           event.messages.unshift({ role: "user", content: [{ type: "text", text: block }] });
           chars = block.length;
         }
@@ -281,6 +317,7 @@ def render_plugin(python_exe: str, trace_db: str, opencode_db: str) -> str:
         .replace("__TRACE_PYTHON__", _js_string(python_exe))
         .replace("__TRACE_DB__", _js_string(trace_db))
         .replace("__OPENCODE_DB__", _js_string(opencode_db))
+        .replace("__TRACE_TASK_CACHE__", _TASK_CACHE_JS)
     )
 
 
@@ -309,27 +346,50 @@ def is_trace_plugin_entry(entry: object) -> bool:
     return isinstance(entry, str) and entry.endswith(f"/{SERVICE_DIR_NAME}/{PLUGIN_FILENAME}")
 
 
+def is_owned_plugin(path: Path) -> bool:
+    try:
+        with path.open(encoding="utf-8") as handle:
+            return handle.readline(len(PLUGIN_HEADER) + 2).rstrip("\r\n") == PLUGIN_HEADER
+    except (OSError, UnicodeError):
+        return False
+
+
+def check_install_targets(project: Path) -> None:
+    targets = (plugin_path(project), plugin_v2_dir(project) / "index.js")
+    require_local_paths(project, *targets)
+    for target in targets:
+        if ((target.parent.exists() and not target.parent.is_dir())
+                or (target.exists() and not is_owned_plugin(target))):
+            raise project_mod.TraceUserError(
+                f"refusing to replace {target}",
+                "the existing file was not installed by TRACE.",
+                "Move the file aside yourself if you want TRACE to use that path.",
+            )
+
+
 def install_plugin(project_path: Path, opencode_db_path: Path | None = None) -> dict:
     """Write the project-local TRACE plugin, replacing an older install. Returns status info."""
     project_path = project_path.resolve()
+    check_install_targets(project_path)
     trace_db = str(project_mod.db_path(project_path))
     python_exe = project_mod.mcp_server_command(project_path)[0]
     opencode_db = str(opencode_db_path or default_opencode_db_path())
     target = plugin_path(project_path)
     target.parent.mkdir(parents=True, exist_ok=True)
     existed = target.exists()
-    target.write_text(render_plugin(python_exe, trace_db, opencode_db), encoding="utf-8")
+    atomic_write_text(target, render_plugin(python_exe, trace_db, opencode_db))
     v2_index = plugin_v2_dir(project_path) / "index.js"
     v2_index.parent.mkdir(exist_ok=True)
-    v2_index.write_text(
+    atomic_write_text(
+        v2_index,
         PLUGIN_V2_TEMPLATE
         .replace("__TRACE_PYTHON__", _js_string(python_exe))
         .replace("__TRACE_DB__", _js_string(trace_db))
         .replace("__OPENCODE_DB__", _js_string(opencode_db))
-        .replace("__TRACE_PROJECT__", _js_string(str(project_path))),
-        encoding="utf-8",
+        .replace("__TRACE_PROJECT__", _js_string(str(project_path)))
+        .replace("__TRACE_TASK_CACHE__", _TASK_CACHE_JS),
     )
-    _remove_if_ours(project_path / LEGACY_PLUGIN_PATH)
+    _remove_if_ours(project_path, project_path / LEGACY_PLUGIN_PATH)
     return {
         "status": "updated" if existed else "created",
         "plugin_path": str(target),
@@ -339,19 +399,20 @@ def install_plugin(project_path: Path, opencode_db_path: Path | None = None) -> 
 
 def uninstall_plugin(project_path: Path) -> dict:
     """Remove the plugin only if TRACE wrote it (its header line matches)."""
-    _remove_if_ours(project_path.resolve() / LEGACY_PLUGIN_PATH)
-    _remove_if_ours(plugin_v2_dir(project_path) / "index.js")
-    return _remove_if_ours(plugin_path(project_path))
+    project_path = project_path.resolve()
+    _remove_if_ours(project_path, project_path / LEGACY_PLUGIN_PATH)
+    _remove_if_ours(project_path, plugin_v2_dir(project_path) / "index.js")
+    return _remove_if_ours(project_path, plugin_path(project_path))
 
 
-def _remove_if_ours(target: Path) -> dict:
+def _remove_if_ours(project: Path, target: Path) -> dict:
+    try:
+        require_local_paths(project, target)
+    except project_mod.TraceUserError:
+        return {"status": "kept", "plugin_path": str(target), "message": "redirected path; left in place"}
     if not target.exists():
         return {"status": "absent", "plugin_path": str(target)}
-    try:
-        first_line = target.read_text(encoding="utf-8").splitlines()[0]
-    except (OSError, IndexError):
-        first_line = ""
-    if first_line != PLUGIN_HEADER:
+    if not is_owned_plugin(target):
         return {"status": "kept", "plugin_path": str(target),
                 "message": "file was not written by TRACE; left in place"}
     target.unlink()

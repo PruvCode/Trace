@@ -42,7 +42,7 @@ No other agent has any integration code in TRACE.
 **Secondary: MCP Server** (`trace_memory.mcp_server`)
 
 - Configured via `opencode.json` created by `trace setup opencode --transparent`
-- Exposes 9 tools: find_definition, find_callers, search_symbols, record_event, search_events, get_git_history, record_transcript_message, search_transcripts, get_transcript_session
+- Exposes structural, episodic, transcript and task-context tools, including `get_task_context` for a task's decisions, indexed definitions and prior checks.
 - Explicit on-demand querying by the agent (or via `trace` CLI commands); complements automatic injection, does not replace it
 
 ## How TRACE Runs Automatically

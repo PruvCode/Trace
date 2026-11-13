@@ -211,3 +211,29 @@ def test_bad_tool_arguments_do_not_wedge_capture(tmp_path):
     conn = store_mod.connect(project_mod.db_path(project))
     assert conn.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 4
     conn.close()
+
+
+def test_stop_waits_for_a_capture_lock_even_without_pid(tmp_path, monkeypatch):
+    service = _service(tmp_path / "project")
+    lock = service_mod.LockHandle(service._lock_file)
+    assert lock.acquire()
+    monkeypatch.setattr(service_mod, "STOP_TIMEOUT_SECONDS", 0.01)
+    try:
+        assert service.stop()["status"] == "error"
+        assert service._disabled_file.is_file()
+        assert service._stop_file.is_file()
+    finally:
+        lock.release()
+    assert service.stop()["status"] == "not_running"
+    assert not service._stop_file.exists()
+
+
+def test_automatic_start_cannot_clear_a_disable_marker(tmp_path):
+    service = _service(tmp_path / "project")
+    service._service_dir.mkdir()
+    service._disabled_file.touch()
+    assert service.start(enable=False)["status"] == "disabled"
+    assert service.capture_once(respect_disabled=True)["status"] == "disabled"
+    assert service.run_foreground() == 3
+    assert service._disabled_file.is_file()
+    assert not service.trace_db_path.exists()

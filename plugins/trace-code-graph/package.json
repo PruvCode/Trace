@@ -1,0 +1,12 @@
+{
+  "name": "trace-code-graph",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.0",
+    "obsidian": "1.14.4",
+    "typescript": "5.9.3"
+  }
+}

@@ -102,6 +102,63 @@ def test_user_and_finished_assistant_text_are_captured_once(env):
     assert _rows(project) == [("user", "the codename is ZEPHYR"), ("assistant", "noted")]
 
 
+def test_v2_captures_terminal_shell_parts_without_copying_output(env):
+    from contextlib import closing
+    from memory import captured_outcomes, episodic
+
+    project, fake, service, state = env
+    sid = fake.session(project)
+    with closing(store_mod.connect(project_mod.db_path(project))) as conn:
+        since = captured_outcomes.configure(conn, "on")["enabled_since_ms"]
+
+    def shell(call_id, **overrides):
+        state = {"status": "completed", "input": {"command": "pytest -q"},
+                 "content": [{"type": "text", "text": "private stdout\n\x1b[32m3 passed\x1b[0m in 0.02s"}]}
+        return {"type": "tool", "name": "shell", "id": call_id, "state": {**state, **overrides}}
+
+    final = assistant(None)
+    final["content"] = [
+        shell("call-1"),
+        shell("call-2", status="error", metadata={"exit": 2}),
+        shell("call-3", status="error", metadata={"aborted": True}),
+        shell("call-4", status="running"),
+        shell("call-5", input={"command": "pytest; echo ignored"}),
+        shell("call-6", input={"command": "pytest", "workdir": str(project.parent)}),
+        shell("call-7", content=[{"type": "text", "text": "unrecognized output"}]),
+        shell("call-8", metadata={"status": "running"}),
+        shell("call-9", metadata={"timeout": True}),
+    ]
+    first = assistant(None, done=False)
+    first["content"] = final["content"]
+    mid = fake.message(sid, "assistant", first, created=since + 1)
+    other = fake.session(project.parent)
+    fake.message(other, "assistant", final, created=since + 1)
+    service.capture_pass(state)
+    with closing(store_mod.connect(project_mod.db_path(project))) as conn:
+        assert episodic.search_events(conn) == []
+    fake.update(mid, final)
+    service.capture_pass(state)
+    with closing(store_mod.connect(project_mod.db_path(project))) as conn:
+        assert episodic.search_events(conn) == []  # the finished message still has a running tool
+    final["content"][3] = shell("call-4", status="error", metadata={"aborted": True})
+    fake.update(mid, final)
+    service.capture_pass(state)
+    replay = service._prepare_state()
+    replay.cursors["message"] = 0
+    service.capture_pass(replay)
+    with closing(store_mod.connect(project_mod.db_path(project))) as conn:
+        events = episodic.search_events(conn)
+        assert [event.payload["outcome"] for event in events] == ["completed", "interrupted"]
+        assert [event.payload["basis"] for event in events] == ["pytest_summary", "exit_code"]
+        assert events[0].payload["counts"] == {"passed": 3}
+        assert all(event.task_id is None and len(event.evidence) == 1 for event in events)
+        for index, event in enumerate(events, 1):
+            row = conn.execute("SELECT content, metadata FROM transcript_messages WHERE id = ?",
+                               (event.evidence[0]["message_id"],)).fetchone()
+            assert json.loads(row["metadata"])["upstream_tool_id"] == f"call-{index}"
+            assert "private stdout" not in row["content"]
+
+
 def test_streaming_reply_waits_for_completion_and_later_rows_still_flow(env):
     project, fake, service, state = env
     sid = fake.session(project)
@@ -135,24 +192,45 @@ def test_restart_resumes_from_saved_cursors(env):
 def test_setup_uses_the_v2_plugin_key_and_teardown_removes_it(tmp_path, env, monkeypatch):
     project, fake, _, _ = env
     monkeypatch.setattr(service_mod, "default_opencode_db_path", lambda: fake.path)
-    (project / "opencode.json").write_text(json.dumps({"plugins": [{"package": "theirs"}]}))
+    from trace_memory import project as project_mod
+
+    path = project / "opencode.json"
+    other = {"type": "local", "command": ["other"]}
+    prior = {"type": "local", "enabled": False, "command": project_mod.mcp_server_command(project)}
+    path.write_text(json.dumps({"plugins": [{"package": "theirs"}],
+                                "mcp": {"trace-memory": prior, "servers": {"other": other}, "timeout": 9000}}))
     adapter = transparent_mod.create_opencode_transparent_adapter()
     adapter._create_opencode_config(project)
     adapter._create_opencode_config(project)
-    config = json.loads((project / "opencode.json").read_text(encoding="utf-8"))
+    config = json.loads(path.read_text(encoding="utf-8"))
     assert config["plugins"] == [{"package": "theirs"}, plugin_mod.plugin_v2_entry()]
-    assert "plugin" not in config
+    assert "plugin" not in config and "trace-memory" not in config["mcp"]
+    assert config["mcp"]["servers"]["trace-memory"] == {
+        "type": "local", "disabled": True, "codemode": False, "command": [*project_mod.mcp_server_command(project, opencode=True), "--tools", "core"],
+    }
     adapter.teardown_integration(project)
-    assert json.loads((project / "opencode.json").read_text(encoding="utf-8"))["plugins"] == [{"package": "theirs"}]
+    config = json.loads(path.read_text(encoding="utf-8"))
+    assert config["plugins"] == [{"package": "theirs"}]
+    assert config["mcp"] == {"servers": {"other": other}, "timeout": 9000}
 
 
 DRIVER = """
+import childProcess from "node:child_process";
+import { syncBuiltinESMExports } from "node:module";
 import { pathToFileURL } from "node:url";
+const prompt = "Find ZEPHYR 🧪";
+const original = childProcess.spawnSync;
+let safeTransport = false;
+childProcess.spawnSync = (file, args, opts) => {
+  safeTransport = args.includes("--query-stdin") && !args.some((arg) => arg.includes("ZEPHYR")) && opts.input === prompt;
+  return original(file, args, opts);
+};
+syncBuiltinESMExports();
 const plugin = (await import(pathToFileURL(process.argv[2]).href)).default;
 let hook;
 await plugin.setup({ session: { hook: async (name, fn) => { if (name === "context") hook = fn; } } });
 const system = [{ type: "text", text: "sys" }];
-const event = (sid) => ({ sessionID: sid, system, messages: [{ role: "user", content: [{ type: "text", text: "next task" }] }] });
+const event = (sid) => ({ sessionID: sid, system, messages: [{ role: "user", content: [{ type: "text", text: prompt }] }] });
 const a = event("ses_now");
 hook(a);
 const b = event("ses_now");
@@ -161,7 +239,7 @@ const carried = event("ses_now");
 carried.messages.unshift({ role: "user", content: [{ type: "text", text: a.messages[0].content[0].text }] });
 hook(carried);
 console.log(JSON.stringify({ id: plugin.id, first: a.messages[0].content[0].text, counts: [a, b, carried].map((e) => e.messages.length),
-  systemParts: system.length }));
+  systemParts: system.length, safeTransport }));
 """
 
 
@@ -169,7 +247,10 @@ console.log(JSON.stringify({ id: plugin.id, first: a.messages[0].content[0].text
 def test_v2_plugin_injects_into_messages_on_every_request(tmp_path, env, monkeypatch):
     project, _, _, _ = env
     conn = store_mod.connect(project_mod.db_path(project))
-    transcript_mod.record_message(conn, session_id="ses_old", role="user", content="the codename is ZEPHYR")
+    transcript_mod.record_message(conn, session_id="ses_old", role="user", content="the codename is ZEPHYR",
+                                  timestamp="2025-01-01T00:00:00Z")
+    for index in range(12):
+        transcript_mod.record_message(conn, session_id="ses_newer", role="user", content=f"Unrelated message {index}")
     conn.close()
     plugin_mod.install_plugin(project, tmp_path / "opencode.db")
     index = plugin_mod.plugin_v2_dir(project) / "index.js"
@@ -181,6 +262,7 @@ def test_v2_plugin_injects_into_messages_on_every_request(tmp_path, env, monkeyp
     assert run.returncode == 0, run.stderr
     report = json.loads(run.stdout.strip().splitlines()[-1])
     assert report["id"] == "trace-memory"
+    assert report["safeTransport"] is True
     assert report["first"].startswith("[TRACE PROJECT MEMORY") and "ZEPHYR" in report["first"]
     assert report["counts"] == [2, 2, 2]  # every request, never a second copy
     assert report["systemParts"] == 1  # memory stays out of the trusted system prompt

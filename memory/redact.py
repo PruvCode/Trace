@@ -180,9 +180,10 @@ def redact_value(value: object) -> object:
         out = {}
         for key, item in value.items():
             sensitive = isinstance(key, str) and _SENSITIVE_KEY.fullmatch(key) is not None
+            safe_key = redact_text(key)
             if sensitive and item not in (None, "", True, False) and not (isinstance(item, str) and _is_code(key, ":", item)):
-                out[key] = _R
+                out[safe_key] = _R
             else:
-                out[key] = redact_value(item)
+                out[safe_key] = redact_value(item)
         return out
     return value

@@ -38,14 +38,19 @@ to arrange a private channel.
 
 ## Scope Notes for Reviewers
 
-- TRACE stores project memory in a **local** SQLite database
-  (`<project>/.agent-memory/memory.db`). It is never transmitted by TRACE.
-- TRACE itself makes **no network calls**. Network traffic in a TRACE
-  workflow comes only from the agent/model provider *you* choose to run
-  (e.g. OpenCode talking to your configured LLM provider).
-- Secret redaction before storage is **best-effort pattern matching**,
-  not a guarantee (see `memory/redact.py`). Do not paste live
-  credentials into any agent session TRACE monitors.
-- The benchmark runner executes task code in isolated workspace copies;
-  do not run `benchmark/` against untrusted task definitions without
-  reviewing them first.
+- TRACE stores project memory in local SQLite
+  (`<project>/.agent-memory/memory.db`). Keep the database and backup files
+  in private directories and out of Git. SQLite storage and backup files
+  have no application-level encryption.
+- An agent may include retrieved excerpts in model requests. The benchmark
+  can also contact a configured provider. Review the provider and the
+  project's capture settings before using sensitive data.
+- Secret redaction is best effort. Treat recalled text as untrusted data.
+  A model can still act on instructions embedded in a stored record.
+- Run integration setup only in trusted project checkouts. Use a separate
+  OpenCode profile for tests. TRACE teardown retains project memory and
+  disable markers for capture, the loaded plugin, and the integration MCP
+  server. A separate MCP server you configured manually has its own lifecycle.
+- The general benchmark runner executes task code. Review task definitions
+  before using it. The Phase 5 research comparison grades its synthetic
+  edits separately in a restricted WASI environment.

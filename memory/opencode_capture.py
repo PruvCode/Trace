@@ -284,44 +284,33 @@ class OpenCodeCaptureAdapter(CaptureAdapter):
         """Set up OpenCode integration for a project."""
         project_path = project_path.resolve()
 
-        # Ensure TRACE is initialized
+        from memory.opencode_files import atomic_write_text, integration_marker, require_local_paths
+
+        config_path = project_path / "opencode.json"
+        jsonc_path = project_path / "opencode.jsonc"
+        marker = integration_marker(project_path)
+        require_local_paths(project_path, config_path, jsonc_path, project_mod.db_path(project_path), marker)
+        if config_path.exists() or jsonc_path.exists():
+            return {
+                "status": "already_configured",
+                "config_path": str(config_path if config_path.exists() else jsonc_path),
+                "message": "Existing OpenCode config kept. Use 'trace mcp' for the TRACE server command.",
+            }
+
         if not project_mod.is_initialized(project_path):
             project_mod.init_project(project_path)
 
-        # Check if OpenCode config exists
-        config_path = project_path / "opencode.json"
-        if config_path.exists():
-            return {
-                "status": "already_configured",
-                "config_path": str(config_path),
-                "message": "OpenCode config already exists",
-            }
+        from memory.opencode_service import default_opencode_db_path, opencode_uses_v2_schema
 
-        # Create basic OpenCode config with MCP memory server
-        # OpenCode expects MCP config with "type": "local" and "enabled": true
-        mcp_command = project_mod.mcp_server_command(project_path)
-        opencode_config = {
-            "$schema": "https://opencode.ai/config.json",
-            "permission": {
-                "read": "allow",
-                "edit": "allow",
-                "glob": "allow",
-                "grep": "allow",
-                "bash": "deny",
-                "task": "deny",
-                "webfetch": "deny",
-                "websearch": "deny",
-            },
-            "mcp": {
-                "trace-memory": {
-                    "type": "local",
-                    "enabled": True,
-                    "command": mcp_command,
-                }
-            },
-        }
+        entry = {"type": "local", "command": project_mod.mcp_server_command(project_path, opencode=True)}
+        if opencode_uses_v2_schema(default_opencode_db_path()):
+            mcp = {"servers": {"trace-memory": {**entry, "codemode": False}}}
+        else:
+            mcp = {"trace-memory": {**entry, "enabled": True}}
+        opencode_config = {"$schema": "https://opencode.ai/config.json", "mcp": mcp}
 
-        config_path.write_text(json.dumps(opencode_config, indent=2), encoding="utf-8")
+        atomic_write_text(config_path, json.dumps(opencode_config, indent=2) + "\n")
+        marker.unlink(missing_ok=True)
 
         return {
             "status": "created",

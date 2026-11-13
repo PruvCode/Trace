@@ -8,6 +8,8 @@ Schema:
   events_fts: FTS5 index over (type, symbol, file, payload_text), rowid = events.id
   transcript_messages(id, session_id, role, content, timestamp, metadata JSON, source_id)
   transcript_messages_fts: FTS5 index over (session_id, role, content), rowid = transcript_messages.id
+  tasks(id, title, subsystem?)
+  event_evidence(event_id, transcript_id? or git_commit + git_path)
 
 All queries are parameterized. All results are bounded (default 10, max 50).
 FTS5 is an implementation detail of this backend; callers only see dicts.
@@ -41,6 +43,57 @@ CREATE TABLE IF NOT EXISTS relationships (
 );
 CREATE INDEX IF NOT EXISTS idx_symbols_name ON symbols(name);
 CREATE INDEX IF NOT EXISTS idx_rel_dst ON relationships(rel, dst);
+CREATE TABLE IF NOT EXISTS indexed_code_files (
+    file TEXT PRIMARY KEY NOT NULL
+);
+CREATE TABLE IF NOT EXISTS code_links (
+    source_file TEXT NOT NULL REFERENCES indexed_code_files(file),
+    target_file TEXT NOT NULL REFERENCES indexed_code_files(file),
+    kind TEXT NOT NULL CHECK(kind IN ('imports', 're-exports', 'calls')),
+    source_line INTEGER NOT NULL CHECK(source_line > 0),
+    target_symbol TEXT NOT NULL,
+    target_line INTEGER NOT NULL CHECK(target_line >= 0),
+    PRIMARY KEY (source_file, target_file, kind, source_line, target_symbol, target_line)
+);
+CREATE INDEX IF NOT EXISTS idx_code_links_target ON code_links(target_file, source_file);
+CREATE INDEX IF NOT EXISTS idx_symbols_file ON symbols(file, line);
+CREATE INDEX IF NOT EXISTS idx_relationships_file ON relationships(file);
+CREATE TABLE IF NOT EXISTS structural_fragments (
+    file TEXT PRIMARY KEY NOT NULL,
+    parser_version INTEGER NOT NULL,
+    source_hash TEXT NOT NULL,
+    payload BLOB NOT NULL
+);
+CREATE TABLE IF NOT EXISTS graph_nodes (
+    id TEXT PRIMARY KEY NOT NULL,
+    parent_id TEXT REFERENCES graph_nodes(id) DEFERRABLE INITIALLY DEFERRED,
+    kind TEXT NOT NULL,
+    name TEXT NOT NULL,
+    qualified_name TEXT NOT NULL,
+    path TEXT NOT NULL,
+    language TEXT,
+    line INTEGER,
+    byte_column INTEGER,
+    end_line INTEGER,
+    end_byte_column INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_graph_nodes_parent ON graph_nodes(parent_id, kind, name, id);
+CREATE INDEX IF NOT EXISTS idx_graph_nodes_name ON graph_nodes(name, path, line, id);
+CREATE INDEX IF NOT EXISTS idx_graph_nodes_qualified ON graph_nodes(qualified_name, path, line, id);
+CREATE INDEX IF NOT EXISTS idx_graph_nodes_path ON graph_nodes(path, kind, id);
+CREATE TABLE IF NOT EXISTS graph_edges (
+    id TEXT PRIMARY KEY NOT NULL,
+    source_id TEXT NOT NULL REFERENCES graph_nodes(id) DEFERRABLE INITIALLY DEFERRED,
+    target_id TEXT NOT NULL REFERENCES graph_nodes(id) DEFERRABLE INITIALLY DEFERRED,
+    kind TEXT NOT NULL,
+    confidence TEXT NOT NULL CHECK(confidence IN ('explicit', 'resolved')),
+    path TEXT NOT NULL,
+    line INTEGER,
+    byte_column INTEGER,
+    label TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_graph_edges_source ON graph_edges(source_id, kind, line, byte_column, id);
+CREATE INDEX IF NOT EXISTS idx_graph_edges_target ON graph_edges(target_id, kind, path, line, byte_column, id);
 CREATE VIRTUAL TABLE IF NOT EXISTS symbols_fts USING fts5(
     name, kind, file, signature
 );
@@ -58,6 +111,7 @@ CREATE TABLE IF NOT EXISTS events (
 );
 CREATE INDEX IF NOT EXISTS idx_events_type ON events(type);
 CREATE INDEX IF NOT EXISTS idx_events_symbol ON events(symbol);
+CREATE INDEX IF NOT EXISTS idx_events_graph_file ON events(replace(file, char(92), '/'), id);
 CREATE VIRTUAL TABLE IF NOT EXISTS events_fts USING fts5(
     type, symbol, file, payload_text
 );
@@ -88,6 +142,34 @@ CREATE TABLE IF NOT EXISTS monitor_cursors (
     updated_at TEXT NOT NULL,
     PRIMARY KEY (project_name, source_table)
 );
+CREATE TABLE IF NOT EXISTS tasks (
+    id TEXT PRIMARY KEY NOT NULL,
+    title TEXT NOT NULL,
+    subsystem TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_tasks_subsystem ON tasks(subsystem, title, id);
+CREATE TABLE IF NOT EXISTS event_evidence (
+    id INTEGER PRIMARY KEY,
+    event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    transcript_id INTEGER REFERENCES transcript_messages(id) ON DELETE CASCADE,
+    git_commit TEXT,
+    git_path TEXT,
+    CHECK (
+        (transcript_id IS NOT NULL AND git_commit IS NULL AND git_path IS NULL)
+        OR (transcript_id IS NULL AND git_commit IS NOT NULL AND git_path IS NOT NULL)
+    )
+);
+CREATE INDEX IF NOT EXISTS idx_event_evidence_event ON event_evidence(event_id, id);
+CREATE INDEX IF NOT EXISTS idx_event_evidence_transcript ON event_evidence(transcript_id);
+CREATE INDEX IF NOT EXISTS idx_event_evidence_git_path ON event_evidence(git_path, event_id) WHERE git_path IS NOT NULL;
+CREATE TABLE IF NOT EXISTS test_capture_policy (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    enabled_since_ms INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS task_sessions (
+    transcript_id INTEGER PRIMARY KEY REFERENCES transcript_messages(id) ON DELETE CASCADE,
+    task_id TEXT NOT NULL REFERENCES tasks(id)
+);
 """
 
 
@@ -97,14 +179,61 @@ def connect(db_path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(str(db_path), timeout=30.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA busy_timeout = 5000")
+    conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
 
 def init_schema(conn: sqlite3.Connection) -> None:
-    conn.executescript(_SCHEMA)
-    _migrate_transcript_source_id(conn)
-    _migrate_events_source_id(conn)
-    conn.commit()
+    # Serialize schema detection and DDL so two processes can safely upgrade the same database.
+    with conn:
+        conn.executescript("BEGIN IMMEDIATE;\n" + _SCHEMA)
+        _migrate_transcript_source_id(conn)
+        _migrate_events_source_id(conn)
+        # Track this additive migration by schema shape. Older TRACE stamps user_version=2.
+        if not has_task_schema(conn):
+            conn.execute("ALTER TABLE events ADD COLUMN task_id TEXT REFERENCES tasks(id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_events_task_id ON events(task_id, id) WHERE task_id IS NOT NULL")
+        if not has_evidence_schema(conn):
+            conn.execute("ALTER TABLE event_evidence ADD COLUMN reference TEXT")
+            conn.execute("UPDATE event_evidence SET reference = 'ev_' || lower(hex(randomblob(16)))")
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_evidence_reference ON event_evidence(reference)")
+        conn.execute("""
+            CREATE TRIGGER IF NOT EXISTS assign_evidence_reference AFTER INSERT ON event_evidence
+            WHEN NEW.reference IS NULL BEGIN
+                UPDATE event_evidence SET reference = 'ev_' || lower(hex(randomblob(16))) WHERE id = NEW.id;
+            END
+        """)
+
+
+def has_task_schema(conn: sqlite3.Connection) -> bool:
+    return "task_id" in _table_columns(conn, "events")
+
+
+def ensure_task_schema(conn: sqlite3.Connection) -> None:
+    if not has_task_schema(conn):
+        if conn.in_transaction:
+            raise RuntimeError("initialize the task schema before starting a write transaction")
+        init_schema(conn)
+
+
+def ensure_capture_schema(conn: sqlite3.Connection) -> None:
+    if not has_session_bindings(conn):
+        init_schema(conn)
+
+
+def has_session_bindings(conn: sqlite3.Connection) -> bool:
+    return conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'task_sessions'").fetchone() is not None
+
+
+def has_evidence_schema(conn: sqlite3.Connection) -> bool:
+    return "reference" in _table_columns(conn, "event_evidence")
+
+
+def ensure_evidence_schema(conn: sqlite3.Connection) -> None:
+    if not has_evidence_schema(conn):
+        if conn.in_transaction:
+            raise RuntimeError("initialize evidence references before starting a write transaction")
+        init_schema(conn)
 
 
 def _table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
@@ -213,7 +342,12 @@ def clear(conn: sqlite3.Connection) -> None:
     conn.execute("DELETE FROM symbols")
     conn.execute("DELETE FROM relationships")
     conn.execute("DELETE FROM symbols_fts")
-    conn.commit()
+    conn.execute("DELETE FROM code_links")
+    conn.execute("DELETE FROM indexed_code_files")
+    conn.execute("DELETE FROM graph_edges")
+    conn.execute("DELETE FROM graph_nodes")
+    conn.execute("DELETE FROM structural_fragments")
+    conn.execute("DELETE FROM structural_fingerprint")
 
 
 def clear_events(conn: sqlite3.Connection) -> None:
@@ -260,13 +394,14 @@ def rebuild_fts(conn: sqlite3.Connection) -> None:
         "INSERT INTO symbols_fts (rowid, name, kind, file, signature)"
         " SELECT id, name, kind, file, signature FROM symbols"
     )
-    conn.commit()
 
 
 def clamp_limit(limit: object) -> int:
+    if isinstance(limit, bool):
+        return DEFAULT_LIMIT
     try:
         value = int(limit)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return DEFAULT_LIMIT
     return max(1, min(MAX_LIMIT, value))
 
@@ -294,7 +429,6 @@ def set_structural_fingerprint(
         "VALUES (1, ?, ?, ?)",
         (git_tree_hash, file_mtimes, updated_at),
     )
-    conn.commit()
 
 
 def get_monitor_cursor(conn: sqlite3.Connection, project_name: str, source_table: str) -> int:

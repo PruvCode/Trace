@@ -1,0 +1,33 @@
+TRACE preview for Windows x64
+
+Open PowerShell in this extracted folder and paste one line.
+
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Install-TRACE.ps1
+
+The installer sets up TRACE, its private Python and dependencies, and OpenCode.
+If Git is missing, it downloads a pinned copy of Git for Windows. The installer
+adds TRACE to your user PATH. Open a new PowerShell window after installation.
+
+Run trace --version to verify TRACE. To use it with an existing project:
+
+1. Open that project in a terminal and run trace-opencode. Complete OpenCode's
+   first-run setup with your chosen model, then exit OpenCode.
+2. Run trace init and trace setup opencode --transparent in that project.
+3. Run trace-opencode again. Run trace privacy to see the project settings.
+
+To browse project memory in Obsidian, run this from the project folder.
+
+trace obsidian --vault "C:\path\to\my-vault"
+
+For the expandable code graph, use a local vault outside your project.
+
+trace obsidian --vault "C:\path\to\my-vault" --graph --install-view
+
+Enable TRACE Code Graph in Obsidian Community plugins and run Open TRACE Code
+Graph from the command palette. Add --include-history only for a private vault
+where you want event IDs and evidence references to appear.
+
+The installer leaves project files and OpenCode history alone. After project
+setup, TRACE captures new OpenCode activity. OpenCode can send recalled content
+to the model you choose. Run trace teardown opencode to disable the integration
+and keep local memory. TRACE is a research preview.
