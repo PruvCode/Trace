@@ -365,7 +365,9 @@ def test_create_opencode_config_preserves_existing(temp_project):
     }
     config_path.write_text(json.dumps(existing, indent=2), encoding="utf-8")
 
-    result = adapter._create_opencode_config(temp_project)
+    # The project can be reached through an aliased parent (e.g. the runner's temp directory).
+    aliased_project = temp_project / ".." / temp_project.name
+    result = adapter._create_opencode_config(aliased_project)
     assert result["status"] == "updated"
 
     config = json.loads(config_path.read_text(encoding="utf-8"))

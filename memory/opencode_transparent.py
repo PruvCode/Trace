@@ -622,6 +622,7 @@ class OpenCodeTransparentAdapter(CaptureAdapter):
         from memory import opencode_plugin as opencode_plugin_mod
         from memory import opencode_service as opencode_service_mod
 
+        project_path = project_path.resolve()
         command = [*project_mod.mcp_server_command(project_path, opencode=True), "--tools", "core"]
         entry = {"type": "local", "enabled": True, "command": command}
         manual = (

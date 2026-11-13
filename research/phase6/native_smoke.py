@@ -193,7 +193,7 @@ def run(root, binary, python, major, managed=False):
             requests = server.requests[before:]
             if not requests or REPLY not in result.stdout:
                 raise RuntimeError(f"Native request or fixture reply missing: {result.stdout[-1000:]}")
-            return requests
+            return requests, result.stdout
 
         try:
             session("Initialize this disposable OpenCode profile.")
@@ -226,7 +226,7 @@ def run(root, binary, python, major, managed=False):
             with closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True)) as db:
                 reference = db.execute("SELECT reference FROM event_evidence").fetchone()[0]
             server.evidence_probe = {"reference": reference, "task_id": task}
-            evidence = session(FOLLOWUP)
+            evidence, _ = session(FOLLOWUP)
             messages = [message for request in evidence for message in request["messages"]]
             memory = [message for message in messages
                       if MARKER in json.dumps(message) and "[TRACE PROJECT MEMORY" in json.dumps(message)]
@@ -263,14 +263,19 @@ def run(root, binary, python, major, managed=False):
             assert MARKER in cli("preview", "--project", str(restored.parent.parent)).stdout
             server.sent_evidence = False
             server.read_probe = None
-            after_requests = session(AFTER_TEARDOWN)
+            after_requests, after_output = session(AFTER_TEARDOWN)
             assert all("[TRACE PROJECT MEMORY" not in json.dumps(r) and MARKER not in json.dumps(r)
-                       for r in after_requests)
+                       for r in after_requests), "TRACE memory reached the provider after teardown"
+            assert MARKER not in after_output, "TRACE evidence reached the CLI after teardown"
             if server.sent_evidence:
+                # OpenCode can reject a stale tool itself or forward TRACE's refusal.
+                events = [json.loads(line) for line in after_output.splitlines() if line.strip()]
                 assert any(
-                    message.get("role") == "tool" and "integration is disabled" in json.dumps(message)
-                    for request in after_requests for message in request["messages"]
-                )
+                    event.get("type") == "tool_use"
+                    and "get_evidence" in event["part"]["tool"]
+                    and event["part"]["state"]["status"] == "error"
+                    for event in events
+                ), "OpenCode did not report an error for the post-teardown evidence call"
             if managed:
                 assert json.loads(service_state.read_text(encoding="utf-8"))["pid"] == managed_pid
             return {"version": version, "mode": "managed" if managed else ("standalone" if major == 2 else "native"),
