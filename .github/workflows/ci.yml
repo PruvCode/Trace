@@ -32,21 +32,26 @@ jobs:
       - run: python -m ruff check memory trace_memory
       - name: Run tests
         shell: bash
-        run: python -m pytest tests -q -p no:cacheprovider -rfE --tb=short 2>&1 | tee pytest.log
+        run: |
+          set -o pipefail
+          python -m pytest tests -q -p no:cacheprovider -rfE --tb=short 2>&1 | tee pytest.log
       - name: Publish failed test names as annotations
         if: failure()
         shell: bash
         run: grep -E '^(FAILED|ERROR) ' pytest.log | head -40 | sed 's/^/::error::/' || true
-      - name: Install the pinned OpenCode test binary
+      - name: Install pinned native test clients
         shell: bash
-        run: npm install --prefix "$RUNNER_TEMP/trace-opencode" --no-audit --no-fund @opencode/cli@2.2.5
-      - name: Verify the installed wheel and native OpenCode
+        run: |
+          npm install --prefix "$RUNNER_TEMP/trace-clients" --no-audit --no-fund \
+            @opencode/cli@2.2.5 @openai/codex@0.163.0 @anthropic-ai/claude-code@2.1.295
+      - name: Verify the installed wheel with native clients
         shell: bash
         run: |
           python - <<'PY'
           import json
           import os
           import sqlite3
+          import shutil
           import subprocess
           import sys
           import tempfile
@@ -69,16 +74,21 @@ jobs:
               project = root / "project"
               project.mkdir()
               subprocess.run([str(trace), "--version"], cwd=project, check=True)
+              subprocess.run([str(trace), "install", "--agent", "codex", "--agent", "claude",
+                              "--agent", "antigravity"], cwd=project, check=True)
+              subprocess.run([str(trace), "doctor"], cwd=project, check=True)
+              subprocess.run([str(trace), "uninstall", "--all"], cwd=project, check=True)
               subprocess.run([str(trace), "init"], cwd=project, check=True)
               backup = root / "backup.db"
               subprocess.run([str(trace), "backup", str(backup)], cwd=project, check=True)
               with closing(sqlite3.connect(backup)) as db:
                   assert db.execute("PRAGMA quick_check").fetchone() == ("ok",)
-              package = Path(os.environ["RUNNER_TEMP"]) / "trace-opencode/node_modules/@opencode/cli"
+              packages = Path(os.environ["RUNNER_TEMP"]) / "trace-clients/node_modules"
+              package = packages / "@opencode/cli"
               manifest = json.loads((package / "package.json").read_text(encoding="utf-8"))
               assert manifest["version"] == "2.2.5"
               result = subprocess.run(
-                  [sys.executable, "-m", "research.phase6.native_smoke", "--major", "2", "--managed",
+                  [sys.executable, "-m", "research.phase6.native_smoke", "--major", "2", "--managed", "--universal",
                    "--binary", str(package / manifest["bin"]["opencode"]),
                    "--python", str(python), "--scratch", str(root / "native")],
                   cwd=source, capture_output=True, text=True,
@@ -88,4 +98,24 @@ jobs:
               print(result.stdout, end="")
               observed = json.loads(result.stdout)
               assert observed["native_evidence_round_trip"] and observed["backup_restore_verified"]
+              codex_name = "codex.exe" if os.name == "nt" else "codex"
+              codex, = (path for scope in (packages / "@openai", packages / "@openai/codex/node_modules/@openai")
+                        for path in scope.glob(f"codex-*/vendor/*/bin/{codex_name}"))
+              claude_package = packages / "@anthropic-ai/claude-code"
+              claude_manifest = json.loads((claude_package / "package.json").read_text(encoding="utf-8"))
+              claude = claude_package / claude_manifest["bin"]["claude"]
+              subprocess.run(
+                  [sys.executable, "-m", "research.phase6.universal_smoke", "--codex", str(codex),
+                   "--claude", str(claude), "--python", str(python), "--scratch", str(root / "universal")],
+                  cwd=source, check=True,
+              )
+              artifacts = Path(os.environ["RUNNER_TEMP"]) / "trace-wheel-artifact"
+              artifacts.mkdir(exist_ok=True)
+              shutil.copy2(wheel, artifacts / wheel.name)
           PY
+      - name: Upload the tested wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: trace-wheel-${{ matrix.os }}
+          path: ${{ runner.temp }}/trace-wheel-artifact/*.whl
+          if-no-files-found: error

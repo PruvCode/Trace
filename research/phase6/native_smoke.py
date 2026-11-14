@@ -128,13 +128,14 @@ def profile(root, python):
     return env
 
 
-def run(root, binary, python, major, managed=False):
+def run(root, binary, python, major, managed=False, universal=False):
     project = root / "project"
     project.mkdir()
     (project / ".gitignore").write_text(".agent-memory/\n.trace-service/\n", encoding="utf-8")
     probe = project / "fixture.txt"
     probe.write_text(READ_MARKER, encoding="utf-8")
     env = profile(root, python)
+    env["PATH"] = os.pathsep.join((str(binary.parent), env["PATH"]))
     config_path = project / "opencode.json"
     service_state = Path(env["XDG_STATE_HOME"]) / "opencode/service.json"
 
@@ -202,7 +203,10 @@ def run(root, binary, python, major, managed=False):
                 assert state["url"].rstrip("/") == f"http://127.0.0.1:{port}"
                 managed_pid = state["pid"]
             cli("init")
-            setup = json.loads(cli("setup", "opencode", "--transparent").stdout)
+            if universal:
+                setup = json.loads(cli("install", "--agent", "opencode").stdout)["opencode"]
+            else:
+                setup = json.loads(cli("setup", "opencode", "--transparent").stdout)
             assert setup["monitoring"]["status"] in ("started", "already_running"), setup["monitoring"]
             privacy = cli("privacy").stdout
             assert "OpenCode capture: running" in privacy and "Automatic recall: plugin installed" in privacy
@@ -301,12 +305,14 @@ def main():
     parser.add_argument("--python", type=Path, required=True, help="Python in an isolated TRACE wheel environment")
     parser.add_argument("--major", type=int, choices=(1, 2), required=True)
     parser.add_argument("--managed", action="store_true", help="use an isolated OpenCode 2.x managed service")
+    parser.add_argument("--universal", action="store_true", help="configure OpenCode through trace install")
     args = parser.parse_args()
     if args.managed and args.major != 2:
         parser.error("--managed requires --major 2")
     root = args.scratch.resolve()
     root.mkdir()
-    print(json.dumps(run(root, args.binary.resolve(strict=True), args.python.resolve(strict=True), args.major, args.managed)))
+    print(json.dumps(run(root, args.binary.resolve(strict=True), args.python.resolve(strict=True),
+                         args.major, args.managed, args.universal)))
 
 
 if __name__ == "__main__":

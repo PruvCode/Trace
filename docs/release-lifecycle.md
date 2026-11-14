@@ -2,6 +2,9 @@
 
 TRACE 0.1.x is a research preview. Use a reviewed source checkout or a wheel built from that checkout. Install into a Python 3.11 virtual environment and keep the environment in place while OpenCode uses TRACE. Integration commands store the environment's Python path.
 
+For the cross-platform installer and multi-agent lifecycle, follow
+[TRACE for coding agents](universal-agents.md). The steps below cover legacy OpenCode setup.
+
 ## Install and verify
 
 For the Windows x64 bundle, use the [one-command installer](../README.md#windows-x64-preview-bundle).
@@ -12,7 +15,7 @@ in OpenCode. Earlier installations remain available while projects reference the
 1. In the reviewed source checkout, update the virtual environment’s installer with `python -m pip install --upgrade pip`, then run `python -m pip install -c constraints.txt .`. For a wheel, substitute its filename for `.`.
 2. Run `trace --version`. Change to the project you want to enable and run `trace init`.
 3. Open OpenCode once to create its local database, then exit it. Run `trace setup opencode --transparent` in the project and check `trace service status`. Restart OpenCode to load the project plugin.
-4. Setup updates TRACE's MCP and plugin entries in a plain UTF-8 `opencode.json`. If you maintain JSONC, keep its comments and configure MCP manually using the `command` list from `trace mcp`. Use `mcp.trace-memory` on OpenCode 1.x and `mcp.servers.trace-memory` on 2.x, with `type` set to `local`. The automatic installer leaves JSONC alone.
+4. Setup updates TRACE's MCP and plugin entries in a plain UTF-8 `opencode.json`. For JSONC, take the executable and arguments from `trace mcp` and place them in a single OpenCode `command` array. Use `mcp.trace-memory` on OpenCode 1.x and `mcp.servers.trace-memory` on 2.x, with `type` set to `local`. The automatic installer leaves JSONC alone.
 5. Run `trace privacy` to check capture and recall settings. Run `trace preview` to inspect the memory TRACE can assemble for a new request.
 
 Transparent capture starts with new activity after setup and is project-scoped. TRACE opens OpenCode's database read-only. Recalled content can be sent to the configured model provider. The optional structured pytest capture stays off until you enable it for the project.

@@ -685,11 +685,13 @@ def mcp_server_command(project: Path, *, opencode: bool = False) -> list[str]:
 
 def mcp_config(project: Path) -> dict:
     """MCP client configuration snippet for this project's memory server."""
+    from trace_memory.integrations import mcp_entry
+
+    project = project.resolve()
+    require_db(project)
     return {
         "mcpServers": {
-            "trace-memory": {
-                "command": mcp_server_command(project),
-            }
+            "trace-memory": mcp_entry(project),
         }
     }
 
@@ -864,11 +866,13 @@ def get_opencode_monitoring_status(project: Path) -> dict:
     return adapter.get_monitoring_status(project)
 
 
-def setup_opencode_transparent(project: Path) -> dict:
+def setup_opencode_transparent(
+    project: Path, *, major: int | None = None, preserve_pause: bool = False,
+) -> dict:
     """Set up transparent OpenCode integration (one-time setup + start monitoring)."""
     project = project.resolve()
     adapter = opencode_transparent_mod.create_opencode_transparent_adapter()
-    return adapter.setup_integration(project)
+    return adapter.setup_integration(project, major=major, preserve_pause=preserve_pause)
 
 
 # Persistent service functions
