@@ -117,6 +117,37 @@ def test_context_prioritizes_linked_investigation_with_noise_and_supersession(tm
         assert result["items"][0]["evidence"] is None
         unbound = session_context.get_session_start_context(db, query="Fix deliver_batch in dispatch.py")
         assert "pending items" not in unbound["text"]
+def test_unbound_recall_keeps_old_verified_definition_above_same_file_noise(tmp_path):
+    (tmp_path / "routing.py").write_text(
+        "def deliver_batch():\n    pass\n\ndef other_batch():\n    pass\n", encoding="utf-8",
+    )
+    project.init_project(tmp_path)
+    db = project.db_path(tmp_path)
+    with closing(store.connect(db)) as conn:
+        def record(symbol, text, **payload):
+            ref = transcript.record_message(conn, session_id=symbol, role="user", content=text)
+            return episodic.record_event(
+                conn, repo="fixture", type="decision", file="routing.py", symbol=symbol,
+                payload={"decision": text, "status": "verified", **payload},
+                evidence=[{"type": "transcript", "message_id": ref}],
+            )
+
+        old = record("deliver_batch", "deliver_batch uses RETIRED_RULE")
+        decision = record("deliver_batch", "deliver_batch preserves the accepted queue", supersedes=old)
+        record("other_batch", "other_batch uses SIBLING_RULE")
+        for n in range(60):
+            episodic.record_event(
+                conn, type="observation", repo="fixture", file="routing.py",
+                symbol="deliver_batch", payload={"summary": f"Routine deliver_batch check {n}"},
+            )
+
+    exact = session_context.get_session_start_context(db, query="deliver_batch in routing.py", max_items=1)
+    assert exact["items"][0]["event_id"] == decision
+    assert all(marker not in exact["text"] for marker in ("RETIRED_RULE", "SIBLING_RULE"))
+    recent = session_context.get_session_start_context(db)
+    assert "RETIRED_RULE" not in recent["text"]
+
+
 def test_acceptance_checks_are_bounded_evidence_backed_and_optional(tmp_path, capsys):
     from memory import synthetic
 
