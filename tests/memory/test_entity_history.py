@@ -148,6 +148,28 @@ def test_unbound_recall_keeps_old_verified_definition_above_same_file_noise(tmp_
     assert "RETIRED_RULE" not in recent["text"]
 
 
+def test_explicit_file_and_definition_can_have_no_relevant_history(tmp_path):
+    (tmp_path / "routing.py").write_text(
+        "class InvalidRoute(Exception):\n    pass\n\ndef publish():\n    pass\n\ndef preview():\n    pass\n",
+        encoding="utf-8",
+    )
+    project.init_project(tmp_path)
+    db = project.db_path(tmp_path)
+    with closing(store.connect(db)) as conn:
+        text = "publish approved the ROUTING_102 rule for InvalidRoute"
+        ref = transcript.record_message(conn, session_id="prior", role="user", content=text)
+        episodic.record_event(
+            conn, repo="fixture", type="decision", file="routing.py", symbol="publish",
+            payload={"decision": text, "status": "verified"},
+            evidence=[{"type": "transcript", "message_id": ref}],
+        )
+        transcript.record_message(conn, session_id="prior", role="assistant", content="Reviewed preview; diagnostics pending.")
+    result = session_context.get_session_start_context(db, query="Update preview in routing.py for InvalidRoute")
+    assert result["items"] == []
+    recalled = session_context.get_session_start_context(db, query="Update publish in routing.py")
+    assert recalled["text"].count("ROUTING_102") == 1
+
+
 def test_acceptance_checks_are_bounded_evidence_backed_and_optional(tmp_path, capsys):
     from memory import synthetic
 

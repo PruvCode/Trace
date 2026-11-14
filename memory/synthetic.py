@@ -81,11 +81,14 @@ def render_lines(items: list[dict]) -> list[str]:
     for item in findings:
         if ((item.get("code") or item.get("acceptance") or item.get("code_targets")) and item.get("evidence")
                 and item["role"].startswith("decision (verified)") and not item.get("uncertain")):
+            targets = [{key: value for key, value in target.items()
+                        if key != "decision_excerpt" or value != item.get("text")}
+                       for target in item.get("code_targets") or []]
             lines.append(_record(
                 text=item.get("text"), acceptance=item.get("acceptance"),
                 finding=item.get("role"), evidence=item.get("evidence"),
                 event_id=item.get("event_id"), code=item.get("code"), freshness=item.get("freshness"),
-                code_targets=item.get("code_targets"),
+                code_targets=targets or None,
             ))
             continue
         lines.append(_record(

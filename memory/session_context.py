@@ -154,16 +154,17 @@ def _query_terms(text: str, limit: int = 16) -> list[str]:
 
 def _relevant_messages(conn: sqlite3.Connection, query: str, exclude_session_id: str | None,
                        limit: int = MAX_RELEVANT, *, task_id: str | None = None,
-                       retired: list[int] | None = None) -> list[dict]:
+                       retired: list[int] | None = None, symbols: tuple[str, ...] = ()) -> list[dict]:
     """Prior-session messages ranked by match with the current task (best first).
 
     Messages sharing more of the task's terms come first, a stated constraint
     or specific value counts as one more, and BM25 breaks ties.
     """
-    terms = _query_terms(query)
+    terms = list(symbols) if symbols else _query_terms(query)
     if not terms:
         return []
-    prefixes = [f"{term}*" for term in terms]
+    prefixes = terms if symbols else [f"{term}*" for term in terms]
+    named = set(symbols)
     scope = {"unassigned_only": task_id is None, "task_id": task_id, "exclude_session_id": exclude_session_id}
     if retired:
         scope["exclude_superseded"] = retired
@@ -194,6 +195,9 @@ def _relevant_messages(conn: sqlite3.Connection, query: str, exclude_session_id:
                 or msg.metadata.get("part_type") in transcript_mod.NON_CONVERSATIONAL_PART_TYPES
                 or synthetic_mod.is_synthetic_memory_text(content)
                 or transcript_mod.session_parent(conn, msg.session_id)):
+            continue
+        if named and (not named.intersection(re.findall(r"[a-z0-9_]+", content.lower()))
+                      or (msg.role != "user" and not _DECISION.search(content))):
             continue
         cap = MAX_ASSISTANT_ITEM_CHARS if msg.role == "assistant" and task_id is None else MAX_ITEM_CHARS
         out.append({"kind": "message", "role": msg.role, "text": _truncate(redact_mod.redact_text(content), cap)[0],
@@ -306,10 +310,12 @@ def _recent_findings(conn: sqlite3.Connection, project_root: Path | None = None,
     return items
 
 
-def _scoped_findings(conn, project, task_id, query, *, exact_only=False, file=None, retired=()) -> list[dict]:
+def _scoped_findings(conn, project, task_id, query, *, exact=None, file=None, retired=()) -> list[dict]:
     terms = _query_terms(query or "")
     match = " OR ".join(f"{term}*" for term in terms)
-    exact = relevance.graph_matches(conn, query, task_id, unassigned_only=task_id is None, exclude=retired)
+    exact_only = exact is not None
+    if exact is None:
+        exact, _ = relevance.graph_matches(conn, query, task_id, unassigned_only=task_id is None, exclude=retired)
     if task_id is None and not match and not exact:
         return []
     options = {"task_id": task_id, "unassigned_only": task_id is None, "limit": 25, "file": file, "normalize_file": True}
@@ -520,9 +526,13 @@ def get_session_start_context(
                         messages = _relevant_messages(conn, query, exclude_session_id, limit=2, retired=retired)
                     stats["task_fallback"] = bool(findings or messages)
             else:
-                relevant = _relevant_messages(conn, query, exclude_session_id, retired=retired) if query else []
-                exact = _scoped_findings(conn, root, None, query, exact_only=True, retired=retired) if query else []
-                if exact:
+                matches, symbols = relevance.graph_matches(conn, query, None, unassigned_only=True, exclude=retired)
+                relevant = (_relevant_messages(conn, query, exclude_session_id, retired=retired, symbols=symbols)
+                            if query else [])
+                exact = _scoped_findings(conn, root, None, query, exact=matches) if matches else []
+                if symbols:
+                    exact = [item for item in exact if item.get("evidence") or not item["role"].startswith("observation")]
+                if exact or symbols:
                     findings = list(reversed(exact))
                     supported = {item["text"] for item in exact if item.get("evidence")}
                     messages = list(reversed([item for item in relevant if item["text"] not in supported][:2]))
