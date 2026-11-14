@@ -32,7 +32,9 @@ def agent_binary(host: str) -> str | None:
     candidates = [shutil.which(name) for name in names]
     if host == "antigravity":
         if os.name == "nt":
-            programs = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData/Local")) / "Programs"
+            local = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData/Local"))
+            programs = local / "Programs"
+            candidates.append(str(local / "agy/bin/agy.exe"))
             candidates += [str(programs / folder / f"{folder}.exe") for folder in ("Antigravity", "Antigravity IDE")]
         elif sys.platform == "darwin":
             candidates += [
