@@ -168,6 +168,7 @@ def test_explicit_file_and_definition_can_have_no_relevant_history(tmp_path):
     assert result["items"] == []
     recalled = session_context.get_session_start_context(db, query="Update publish in routing.py")
     assert recalled["text"].count("ROUTING_102") == 1
+    assert recalled["items"][0]["evidence"]
 
 
 def test_acceptance_checks_are_bounded_evidence_backed_and_optional(tmp_path, capsys):

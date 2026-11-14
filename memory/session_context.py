@@ -6,7 +6,8 @@ session's first prompt matches earlier messages, those matches lead the
 block and only a short tail of the last session stays, within a smaller
 budget, because the block repeats on every model request. Otherwise
 retrieval falls back to recency: the newest conversation of prior sessions
-plus recent recorded findings.
+plus recent recorded findings. An unbound query naming a source file and
+indexed definition uses matching history and can return empty.
 
 Recency policy:
 - the newest 10 user/assistant messages, taken from the most recent prior

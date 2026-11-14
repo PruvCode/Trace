@@ -100,6 +100,78 @@ Qualification on three simple edits did not predict held-out performance.
 The predeclared representative gate requires repeated multi-file tasks, two
 qualified models, and a measured lift over notes.
 
+### Recovered fenced-editor replay
+
+A fenced-prompt replay of the same 24 tasks at the patch head finished writing
+all 72 verdicts shortly before the working session was interrupted by an
+inference-quota limit, and was never summarized. The preserved output and run
+context were recovered from the work directory and independently regraded with
+the current code: all 72 verdicts reproduced.
+
+| Completed tasks | TRACE | Maintained notes | No memory |
+| --- | ---: | ---: | ---: |
+| History-bearing tasks | 2/21 | 3/21 | 0/21 |
+| No-history controls | 1/3 | 1/3 | 1/3 |
+| All tasks | 3/24 | 4/24 | 1/24 |
+
+The exploratory difference was −4.2 percentage points versus notes (paired
+bootstrap 95% CI [−12.5, 0]).
+
+| Outcome or cost | TRACE | Maintained notes | No memory |
+| --- | ---: | ---: | ---: |
+| No accepted edit | 15 | 15 | 15 |
+| Accepted edit failed the preservation gate | 1 | 1 | 0 |
+| Accepted edit preserved behavior and missed the requested check | 5 | 4 | 8 |
+| Median input tokens | 390 | 207 | 181 |
+
+Memory changed coding outcomes on exactly two history-bearing tasks
+(`_parse_keywords` and `_identifier`: both memory arms passed, no memory
+missed both). The entire trace-versus-notes gap is one task (`is_git_path`,
+notes-only pass). On 15 of 24 tasks every arm produced no accepted edit, and on
+20 of 24 tasks no arm passed, so acceptance is aligned across arms and the
+one-shot editor remains the binding constraint rather than recall.
+
+### Editor mechanics, v2, and the requalification decision
+
+A deterministic raw-output probe on the replay's failures showed the mechanical
+cause: the model legitimately re-emits supporting definitions (`import re`,
+constants, small helper classes) inside its fenced block, and the v1
+function-only extractor rejected the extra top-level statements, discarding
+complete replies. Editor v2 (in `research/preview/editor.py`, uncommitted at
+this revision) adds strict-then-fallback mechanical extraction and one
+equal-budget mechanical retry with defect feedback, applied identically in
+every arm and never showing graded checks. The runner gained `--editor-v2`, an
+evidence-linked excerpt arm (`trace_min`), a durable `--output` JSONL, and a
+per-row `defect` field. Six unit tests cover the extraction and retry
+mechanics; the fenced replay regraded unchanged under the new code, and
+rebuilt recall blocks matched the frozen blocks semantically (21/21 decisions
+with evidence, three empty controls).
+
+A first launch of the development probe surfaced a scheduling defect: the v2
+arm tuple was applied by mutating a module global, so a caller importing
+`random_order` directly scheduled only three arms and silently skipped
+`trace_min`. Arm selection is now threaded explicitly through `random_order`
+and `summarize`. The aborted launch stopped after four tasks; its partial
+output is preserved as `devprobe-v2-qwen-r0-aborted-3arm.jsonl`.
+
+Requalification on three new disjoint cases (`_supersedes_ids`, `strip_ansi`,
+`is_normalized_name`) failed the predeclared gate: the 7B model scored 2/3,
+missing a small branch restructuring in `_supersedes_ids` despite the exact
+rule in the note. By the same rule that excluded Gemma at 2/3, the 7B is
+excluded from new held-out scoring. This host (15.5 GB RAM, about 1.4 GB free,
+CPU-only inference) cannot load a 14B-class local coder, so a new held-out
+round is blocked on hardware or qualification, not merely deferred. A
+development probe of editor v2 with the `trace_min` arm on the 24
+already-scored tasks (marked `dev_probe: true` throughout) is running as a
+diagnostic and is never held-out evidence.
+
+Dogfooding note: recorded agent decisions surface through `trace events`,
+`trace search`, `trace context --task`, and the session-start context path
+(verified: five findings returned in 39 ms with correct staleness labels after
+subsequent file edits). The unbound CLI command `trace context <query>`
+searches captured transcript messages only, which the development checkout
+does not collect; that is documented behavior, not a recall defect.
+
 ## Next effectiveness test
 
 Qualify the editor on disjoint repository tasks that resemble the held-out
@@ -129,3 +201,15 @@ Status writes now use the shared atomic writer with a private temporary file.
 If the final status file stays busy, the monitor logs the failure and keeps the
 last complete status. A regression test covers a legacy temporary file that
 cannot be resolved.
+
+## Follow-up on targeted recall
+
+When an unbound request names a source file and an indexed function, TRACE
+can now return an empty block when matching history is absent. It keeps the
+verified decision and evidence when they exist and avoids repeating the full
+decision as a definition excerpt. On the same 24 fixtures, TRACE recovered
+all 21 historical decisions with evidence, returned empty context on all
+three no-history controls, and reduced the median history-bearing block
+from 1,077 to 820 characters.
+
+The code and installed wheel passed [CI on all three platforms](https://github.com/PruvCode/Trace/actions/runs/43625497754).
