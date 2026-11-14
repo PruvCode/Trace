@@ -18,7 +18,7 @@ from textwrap import indent
 from time import perf_counter
 
 from memory import episodic, session_context, store, synthetic, task_library, transcript
-from research.phase5.grader import Grader
+from research.phase5.grader import Grader, MAX_SOURCE
 from research.preview.definition_trial import function_only
 from research.preview.effectiveness import emit, request
 from research.preview.notes_cases import CASES, QUALIFICATION, REPOS
@@ -31,6 +31,7 @@ MODELS = {QWEN: DIGEST, GEMMA: GEMMA_DIGEST}
 ARMS = ("no_memory", "notes", "trace")
 SEEDS = (52183, 52189, 52193)
 MAX_OUTPUT = 320
+FENCED_OUTPUT = 400
 WRONG = "TRACE_WRONG_TASK_MARKER"
 RETIRED = "TRACE_RETIRED_MARKER"
 CHECK_HELPER = """
@@ -154,7 +155,7 @@ def contexts(root, repos):
     return outputs
 
 
-def proposal(grader, case, original, model, seed, arm, context):
+def proposal(grader, case, original, model, seed, arm, context, *, fenced_editor=False):
     prompt = (f"{case.request}\nFile: {case.path}\n"
               "Return only the complete replacement Python function with the same signature. "
               "Use the approved rule in the historical project data when available. Preserve unrelated behavior.\n\n")
@@ -164,22 +165,36 @@ def proposal(grader, case, original, model, seed, arm, context):
         "Implement any approved rule for this function. Return a JSON object with a short rule in "
         "the plan field and the complete replacement source in the function field."
     )
+    schema = {"type": "object", "properties": {"plan": {"type": "string"}, "function": {"type": "string"}},
+              "required": ["plan", "function"], "additionalProperties": False}
+    if fenced_editor:
+        prompt = (
+            "Implement the user request by making the smallest code change. The project note gives the accepted rule "
+            "for this change. Retain every part of the existing function that the rule does not change. Respond with "
+            "the complete updated Python function in a Python code block.\n\n"
+            f"User request: {case.request}\n"
+            f"Project note: {context or '(none)'}\n\n"
+            + (f"Supporting definitions:\n```python\n{case.prelude}\n```\n\n" if case.prelude else "")
+            + f"```python\n{original}\n```"
+        )
     started = perf_counter()
     try:
         reply = request("/api/chat", {
             "model": model, "stream": False, "keep_alive": "10m",
-            "format": {"type": "object", "properties": {"plan": {"type": "string"}, "function": {"type": "string"}},
-                       "required": ["plan", "function"], "additionalProperties": False},
+            **({} if fenced_editor else {"format": schema}),
             "messages": [{"role": "user", "content": prompt}],
-            "options": {"temperature": 0, "seed": seed, "num_ctx": 2048, "num_predict": MAX_OUTPUT, "num_gpu": 0},
+            "options": {"temperature": 0, "seed": seed, "num_ctx": 2048,
+                        "num_predict": FENCED_OUTPUT if fenced_editor else MAX_OUTPUT, "num_gpu": 0},
         })
         reason = reply.get("done_reason")
         try:
-            body = json.loads(reply["message"]["content"])
+            content = reply["message"]["content"]
+            body = {"function": content} if fenced_editor else json.loads(content)
             updated = body.get("function") if isinstance(body, dict) else None
         except (TypeError, ValueError):
             updated = None
-        candidate = function_only(updated, case.symbol, original) if reason != "length" and isinstance(updated, str) else None
+        candidate = (function_only(updated, case.symbol, original)
+                     if reason != "length" and isinstance(updated, str) and len(updated) <= MAX_SOURCE else None)
     except (OSError, RuntimeError) as exc:
         reply, candidate, reason = {}, None, type(exc).__name__
     changed, preserved = grade(grader, case, candidate)
@@ -263,22 +278,26 @@ def run(args, root):
         emit("regrade", checked=len(selected), **summarize(rows))
         return
     tags = {row["name"]: row["digest"] for row in request("/api/tags")["models"]}
+    fenced_editor = args.fenced_editor
     emit("environment", model=args.model, model_digest=MODELS[args.model], num_gpu=0, context_tokens=2048,
-         max_output_tokens=MAX_OUTPUT, seeds=SEEDS, ollama=request("/api/version")["version"],
+         max_output_tokens=FENCED_OUTPUT if fenced_editor else MAX_OUTPUT, fenced_editor=fenced_editor,
+         seeds=SEEDS, ollama=request("/api/version")["version"],
          protocol_sha256=protocol_digest(),
          trace_revision=subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip())
     assert tags.get(args.model) == MODELS[args.model]
     if args.mode == "qualify":
         rows = []
         for case in QUALIFICATION:
-            row = proposal(grader, case, originals[key(case)], args.model, SEEDS[0], "qualification", case.note)
+            row = proposal(grader, case, originals[key(case)], args.model, SEEDS[0], "qualification", case.note,
+                           fenced_editor=fenced_editor)
             rows.append(row)
             emit("qualification", **row)
         emit("qualification_summary", model=args.model, passed=sum(r["passed"] for r in rows), required=len(rows))
         return
     qualified = read_rows(args.input)
     assert any(r["type"] == "environment" and r["model_digest"] == tags[args.model]
-               and r.get("protocol_sha256") == protocol_digest() for r in qualified)
+               and r.get("protocol_sha256") == protocol_digest() and r.get("fenced_editor", False) == fenced_editor
+               for r in qualified)
     qualification = [r for r in qualified if r["type"] == "qualification" and r["model"] == args.model]
     assert len(qualification) == len(QUALIFICATION) and all(
         any(row["task"] == key(case) and row["passed"]
@@ -297,7 +316,8 @@ def run(args, root):
             order = random_order(seed, key(case))
             for arm in order:
                 context = blocks[key(case)] if arm == "trace" else case.note if arm == "notes" else ""
-                row = proposal(grader, case, originals[key(case)], args.model, seed, arm, context)
+                row = proposal(grader, case, originals[key(case)], args.model, seed, arm, context,
+                               fenced_editor=fenced_editor)
                 rows.append({"type": "scored", **row})
                 emit("scored", **row)
     emit("summary", **summarize(rows))
@@ -319,6 +339,7 @@ def main():
     parser.add_argument("--input", type=Path)
     parser.add_argument("--repo", choices=REPOS)
     parser.add_argument("--repeat", type=int, choices=range(3), action="append")
+    parser.add_argument("--fenced-editor", action="store_true")
     args = parser.parse_args()
     if (not __debug__ or (args.mode != "recall" and args.wasi is None)
             or (args.mode in ("qualify", "score") and args.model is None)

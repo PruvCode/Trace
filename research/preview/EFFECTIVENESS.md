@@ -121,3 +121,16 @@ copy just `notes_trial.py` and `notes_cases.py` into that revision's disposable
 tracked export and run `recall` there, using the original Git checkout for
 `--trace`. Keep pilot qualification attempts and any partial scoring separate
 from the release result.
+
+### Diagnostic replay with a Python code-block editor
+
+Use `--fenced-editor` on both `qualify` and `score`. The request asks the
+model for a complete Python function in a code block. The runner checks the
+original signature with the existing validator and uses the same 400-token
+generation limit for each arm. The fixture rules, executable grader, seeds,
+and context window remain the same. The model still gets one edit with no
+access to tests or reference code.
+
+The 24 tasks have already been evaluated with the original editor. This
+replay measures the combined changes to recall and editing on known tasks.
+Run it as a separate result and qualify again before scoring it.
