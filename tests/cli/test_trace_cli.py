@@ -236,9 +236,9 @@ def test_mcp_prints_local_config(sample_project, capsys):
     captured = capsys.readouterr()
     config = json.loads(captured.out)
     server = config["mcpServers"]["trace-memory"]
-    assert server["command"][1:4] == ["-P", "-m", "memory.mcp_server"]
-    assert "--db" in server["command"] and "--repo" in server["command"]
-    assert "local" in captured.err and "nothing leaves" in captured.err
+    assert server["command"] == sys.executable
+    assert server["args"] == ["-I", "-m", "trace_memory.native", "mcp", "mcp", str(sample_project.resolve())]
+    assert "local" in captured.err and "model provider" in captured.err
 
 
 def test_mcp_requires_init(tmp_path, capsys):
