@@ -439,6 +439,10 @@ These small, single-model trials leave broader coding effectiveness open.
 See the [preview scorecard](docs/engineering-audit/PREVIEW_SCORECARD.md) and
 [effectiveness protocol](research/preview/EFFECTIVENESS.md).
 
+The [maintained-notes audit](docs/engineering-audit/MAINTAINED_NOTES_AUDIT.md)
+covers the retrieval fix and a fresh comparison on functions from TRACE,
+Click, and Packaging.
+
 Separately, the automatic retrieval path itself has bounded experimental
 evidence: 9/9 valid single-fact recall trials succeeded under the tested
 conditions (OpenCode 1.18.32, `opencode/big-pickle`, zero-tool clean
