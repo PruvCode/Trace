@@ -79,6 +79,22 @@ def build_parser() -> argparse.ArgumentParser:
     _project_arg(p)
     p.set_defaults(func=cmd_status)
 
+    from trace_memory import integrations
+
+    for name, help_text in (
+        ("install", "configure installed coding agents for this project"),
+        ("doctor", "inspect local memory and coding-agent integration"),
+        ("update", "refresh this project's installed integrations using this TRACE runtime"),
+        ("uninstall", "remove TRACE integrations while keeping memory"),
+        ("rollback", "undo TRACE integration changes while keeping memory"),
+    ):
+        host_parser = sub.add_parser(name, help=help_text)
+        targets = host_parser.add_mutually_exclusive_group()
+        targets.add_argument("--all", action="store_true", help="select all supported hosts (default)")
+        targets.add_argument("--agent", choices=integrations.HOSTS, action="append", help="select a host (repeatable)")
+        host_parser.add_argument("--project", default=".", help="project directory (default: current directory)")
+        host_parser.set_defaults(func=integrations.cli)
+
     p = sub.add_parser("privacy", help="show capture, recall, and test recording settings")
     p.add_argument("--project", default=".", help="project directory (default: current directory)")
     p.set_defaults(func=cmd_privacy)
@@ -529,8 +545,8 @@ def cmd_mcp(args) -> int:
     print(project_mod.mcp_config_json(project))
     print(
         "Add the object above to your MCP-compatible agent's config so it can "
-        "reach this project's local memory. It spawns a local stdio server; "
-        "nothing leaves this machine.",
+        "reach this project's local memory through stdio. Your agent may send "
+        "retrieved memory to its configured model provider.",
         file=sys.stderr,
     )
     return EXIT_OK
