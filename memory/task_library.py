@@ -85,7 +85,7 @@ def bind_session(conn: sqlite3.Connection, task_id: str, session_id: str) -> dic
             (task_id, f"session:{session_id}", session_id),
         )
         if not saved.rowcount:
-            raise ValueError("OpenCode session has not been captured in this project")
+            raise ValueError("session has not been captured in this project")
     return {"session_id": session_id, "task_id": task_id}
 
 
