@@ -23,8 +23,37 @@ class Case:
     history: bool = True
 
 
-# Each fixture edits only one existing definition. The text and approved rules
-# are authored for this trial, not claims about upstream decisions or bugs.
+# The three v2 editor-qualification cases below are likewise authored for this
+# trial, disjoint from QUALIFICATION and CASES, and validate against the same
+# grader contract.
+QUALIFICATION_V2 = (
+    Case("trace", "memory/episodic.py", "_supersedes_ids",
+         "Adjust _supersedes_ids for the approved empty-list handling.",
+         "In _supersedes_ids, an explicitly empty supersedes list is valid and returns an empty result instead of raising. Preserve every other rule.",
+         "value = payload.get('supersedes')\nif value is None:\n    return []\nvalues = value if isinstance(value, list) else [value]\nif not values:\n    return []\n"
+         "if not all(isinstance(v, int) and not isinstance(v, bool) and v > 0 for v in values):\n    raise ValueError('supersedes must be a positive event id or a list of them')\nreturn values",
+         "_supersedes_ids({'supersedes': []}) == []",
+         "_supersedes_ids({}) == [] and _supersedes_ids({'supersedes': 7}) == [7] "
+         "and raises(ValueError, _supersedes_ids, {'supersedes': [0]}) "
+         "and raises(ValueError, _supersedes_ids, {'supersedes': True}) "
+         "and raises(ValueError, _supersedes_ids, {'supersedes': -2})"),
+    Case("click", "src/click/_compat.py", "strip_ansi",
+         "Adjust strip_ansi for the approved non-string handling.",
+         "In strip_ansi, a non-string value returns an empty string. Preserve escape-sequence removal for strings.",
+         "return _ansi_re.sub('', value) if isinstance(value, str) else ''",
+         "strip_ansi(None) == ''",
+         "strip_ansi('\\x1b[0mok') == 'ok' and strip_ansi('plain') == 'plain'",
+         "import re\n_ansi_re = re.compile(r'\\033\\[[;?0-9]*[a-zA-Z]')"),
+    Case("packaging", "src/packaging/utils.py", "is_normalized_name",
+         "Adjust is_normalized_name for the approved non-string handling.",
+         "In is_normalized_name, a non-string value is not a normalized name and returns False instead of raising. Preserve the existing name rules.",
+         "return isinstance(name, str) and _normalized_regex.fullmatch(name) is not None",
+         "is_normalized_name(None) is False",
+         "is_normalized_name('foo') is True and is_normalized_name('Foo') is False "
+         "and is_normalized_name('foo-bar') is True and is_normalized_name('-foo') is False",
+         "import re\n_normalized_regex = re.compile(r'[a-z0-9]|[a-z0-9]([a-z0-9-](?!--))*[a-z0-9]')"),
+)
+
 QUALIFICATION = (
     Case("trace", "trace_memory/native.py", "_text", "Adjust _text for the incoming message boundary.",
          "In _text, strip surrounding whitespace from string values and keep the empty string for every non-string.",
