@@ -83,3 +83,41 @@ isolated `quickjs-emscripten@0.32.0` install. Each runner has `--preflight-only`
 and `--regrade RESULTS` modes. These are repository-source function tests.
 Application builds, browser flows, normal agent tool use and the wider release
 gate are additional evidence.
+
+## Maintained-notes repository-function trial
+
+`research.preview.notes_trial` uses 24 previously unscored, single-function
+tasks on pinned TRACE, Click and Packaging source. There are eight tasks per
+repository and three separate qualification tasks. The changes and historical
+decisions are authored fixtures. The trial exercises real repository source
+but does not run full applications or agent tool loops.
+
+The three arms use the same request, source, one-edit budget, response schema,
+context limit, and executable grader. The notes arm gets the complete
+approved note, TRACE gets its ordinary automatic recall after indexing the
+project, and the no-memory arm gets the source and request only. Three tasks
+require no historical context. The recall fixtures mix each note with newer
+updates, an explicitly superseded note, and another task's decision. The
+approved note is never taken from a test assertion or a model response.
+
+Choose the model before scoring and require all three qualification tasks to
+pass. Use the pinned loopback models, the fixed order seed per task and repeat,
+and bounded WASI for unchanged definitions, reference changes, and all
+generated edits. Score the requested changes and preserved behavior
+independently. Preserve invalid edits and timeouts as failures. The summary
+pairs the same task, model and repeat and bootstraps over tasks.
+
+```text
+python -m research.preview.notes_trial preflight --trace TRACE --click CLICK --packaging PACKAGING --scratch SCRATCH --wasi WASI
+python -m research.preview.notes_trial recall --trace TRACE --click CLICK --packaging PACKAGING --scratch SCRATCH
+python -m research.preview.notes_trial qualify --model MODEL --trace TRACE --click CLICK --packaging PACKAGING --scratch SCRATCH --wasi WASI
+python -m research.preview.notes_trial score --model MODEL --input QUALIFICATION_JSONL --trace TRACE --click CLICK --packaging PACKAGING --scratch SCRATCH --wasi WASI
+python -m research.preview.notes_trial regrade --input SCORED_JSONL --trace TRACE --click CLICK --packaging PACKAGING --scratch SCRATCH --wasi WASI
+```
+
+The same checkout can supply the TRACE source revision and the code under
+evaluation. To repeat the recall comparison on an earlier TRACE revision,
+copy just `notes_trial.py` and `notes_cases.py` into that revision's disposable
+tracked export and run `recall` there, using the original Git checkout for
+`--trace`. Keep pilot qualification attempts and any partial scoring separate
+from the release result.
