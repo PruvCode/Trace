@@ -51,6 +51,7 @@ jobs:
           import json
           import os
           import sqlite3
+          import shutil
           import subprocess
           import sys
           import tempfile
@@ -108,4 +109,13 @@ jobs:
                    "--claude", str(claude), "--python", str(python), "--scratch", str(root / "universal")],
                   cwd=source, check=True,
               )
+              artifacts = Path(os.environ["RUNNER_TEMP"]) / "trace-wheel-artifact"
+              artifacts.mkdir(exist_ok=True)
+              shutil.copy2(wheel, artifacts / wheel.name)
           PY
+      - name: Upload the tested wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: trace-wheel-${{ matrix.os }}
+          path: ${{ runner.temp }}/trace-wheel-artifact/*.whl
+          if-no-files-found: error
