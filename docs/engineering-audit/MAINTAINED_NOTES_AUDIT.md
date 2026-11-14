@@ -121,3 +121,11 @@ These checks cover supported local message payloads and hook behavior.
 Antigravity model-visible recall and general IDE or hosted behavior remain
 unverified. The retrieval and coding trials used local models and authored
 histories only.
+
+A subsequent [Windows CI run](https://github.com/PruvCode/Trace/actions/runs/43619946981)
+found a race on repeated OpenCode setup. The installer checked the monitor's
+fixed temporary status path while the monitor was writing or replacing it.
+Status writes now use the shared atomic writer with a private temporary file.
+If the final status file stays busy, the monitor logs the failure and keeps the
+last complete status. A regression test covers a legacy temporary file that
+cannot be resolved.

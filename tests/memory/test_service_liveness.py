@@ -145,6 +145,24 @@ def test_repeated_status_queries_are_non_destructive(tmp_path, live_process):
     assert process_is_alive(live_process.pid) is True
 
 
+def test_status_updates_ignore_a_busy_legacy_temporary_file(tmp_path, monkeypatch):
+    svc = _service(tmp_path / "proj")
+    svc._service_dir.mkdir()
+    legacy = svc._status_file.with_suffix(".tmp")
+    legacy.write_text("previous monitor")
+    resolve = Path.resolve
+
+    def resolve_path(path, *args, **kwargs):
+        if path == legacy:
+            raise PermissionError("status write in progress")
+        return resolve(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "resolve", resolve_path)
+    svc._write_status({"captured": 3})
+    assert svc.status()["captured"] == 3
+    assert legacy.read_text() == "previous monitor"
+
+
 def test_is_running_clears_stale_pid_file(tmp_path):
     """A dead PID must still be reported as stopped and its file cleaned up."""
     dead = subprocess.Popen([sys.executable, "-c", "pass"])
