@@ -25,7 +25,7 @@ def classify(event, text):
     return categories
 
 
-def graph_matches(conn, query, task_id, *, unassigned_only=False):
+def graph_matches(conn, query, task_id, *, unassigned_only=False, exclude=()):
     if not query or not entity_history.available(conn):
         return {}
     terms = list(dict.fromkeys(term.replace("\\", "/").rstrip(".") for term in IDENTIFIERS.findall(query[:2000])))[:24]
@@ -41,11 +41,14 @@ def graph_matches(conn, query, task_id, *, unassigned_only=False):
         ORDER BY path, line LIMIT 24
     """, (*terms, *terms, *terms)).fetchall()
     by_id = {row["id"]: row for row in rows}
-    links = entity_history.candidates(conn, list(by_id), task_id, unassigned_only=unassigned_only)
+    links = entity_history.candidates(conn, list(by_id), task_id, unassigned_only=unassigned_only, exclude=exclude)
     result = {}
-    for node_id, event_id in links:
-        node = by_id[node_id]
-        result.setdefault(event_id, {"path": node["path"], "name": node["name"]})
+    focused_paths = {by_id[row["node_id"]]["path"] for row in links if row["definition_match"]}
+    for row in links:
+        node = by_id[row["node_id"]]
+        if not row["definition_match"] and node["path"] in focused_paths:
+            continue
+        result.setdefault(row["id"], {"path": node["path"], "name": node["name"]})
     return result
 
 

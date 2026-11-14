@@ -23,6 +23,10 @@ def capture(db: Path, host: str, session: str, role: str, content: str, turn: st
     with closing(store.connect(db)) as conn, conn:
         conn.execute("PRAGMA busy_timeout = 750")
         transcript.record_message(
+            conn, autocommit=False, session_id=session, role="system", content="Session started",
+            metadata={"agent": host}, source_id=f"session:{session}",
+        )
+        transcript.record_message(
             conn, autocommit=False, session_id=session, role=role,
             content=clean[:MAX_MESSAGE_CHARS], metadata={"agent": host, "source": "native_hook"},
             source_id=source_id,

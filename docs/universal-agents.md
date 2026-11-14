@@ -44,7 +44,9 @@ scope. A Codex desktop or IDE session must be using a compatible local runtime.
 All hosts use the existing `.agent-memory/memory.db` and its structural,
 transcript, and event APIs. The first structural MCP lookup builds or refreshes
 the code index. Native hook session IDs carry a host prefix, so IDs can be
-shared with `trace task bind-session` without colliding across agents. Hooks store text
+shared with `trace task bind-session` without colliding across agents. Sessions
+captured by older native-hook builds get a bindable marker when they next
+capture a message. Hooks store text
 from bounded event payloads and use native host outputs for recall. They leave
 raw host transcript files alone.
 
