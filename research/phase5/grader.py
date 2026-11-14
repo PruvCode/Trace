@@ -14,8 +14,9 @@ MEMORY_BYTES = 128 * 1024 * 1024
 
 
 class Grader:
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, *, fuel: int = FUEL):
         self.library = str((root / "lib").resolve(strict=True))
+        self.fuel = fuel
         config = wasmtime.Config()
         config.consume_fuel = True
         self.engine = wasmtime.Engine(config)
@@ -37,7 +38,7 @@ class Grader:
         wasi.preopen_dir(self.library, "/lib", wasmtime.DirPerms.READ_ONLY, wasmtime.FilePerms.READ_ONLY)
         with wasmtime.Store(self.engine) as store:
             store.set_wasi(wasi)
-            store.set_fuel(FUEL)
+            store.set_fuel(self.fuel)
             store.set_limits(memory_size=MEMORY_BYTES)
             try:
                 instance = self.linker.instantiate(store, self.module)
