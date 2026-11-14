@@ -27,29 +27,38 @@ def classify(event, text):
 
 def graph_matches(conn, query, task_id, *, unassigned_only=False, exclude=()):
     if not query or not entity_history.available(conn):
-        return {}
+        return {}, ()
     terms = list(dict.fromkeys(term.replace("\\", "/").rstrip(".") for term in IDENTIFIERS.findall(query[:2000])))[:24]
     if not terms:
-        return {}
+        return {}, ()
     markers = ",".join("?" for _ in terms)
     rows = conn.execute(f"""
-        SELECT id, path, name, qualified_name FROM graph_nodes
+        SELECT id, path, name, kind, line FROM graph_nodes
         WHERE (kind='file' AND path IN ({markers})) OR
             (line IS NOT NULL AND qualified_name IN ({markers})) OR
             (line IS NOT NULL AND name IN ({markers}) AND
-               (SELECT count(*) FROM graph_nodes g WHERE g.name=graph_nodes.name AND g.line IS NOT NULL)=1)
+               (path IN ({markers}) OR (SELECT count(*) FROM graph_nodes g
+                                         WHERE g.name=graph_nodes.name AND g.line IS NOT NULL)=1))
         ORDER BY path, line LIMIT 24
-    """, (*terms, *terms, *terms)).fetchall()
+    """, (*terms, *terms, *terms, *terms)).fetchall()
     by_id = {row["id"]: row for row in rows}
+    named = {row["id"] for row in rows if row["line"] is not None and row["path"] in terms}
+    definitions = {row["id"] for row in rows if row["id"] in named and row["kind"] in ("function", "method")}
+    named = definitions or named
+    if named:
+        # An explicitly named file and definition outrank incidental symbols in the request.
+        by_id = {node: row for node, row in by_id.items() if node in named or row["line"] is None}
     links = entity_history.candidates(conn, list(by_id), task_id, unassigned_only=unassigned_only, exclude=exclude)
     result = {}
     focused_paths = {by_id[row["node_id"]]["path"] for row in links if row["definition_match"]}
+    focused_paths.update(by_id[node]["path"] for node in named)
     for row in links:
         node = by_id[row["node_id"]]
         if not row["definition_match"] and node["path"] in focused_paths:
             continue
         result.setdefault(row["id"], {"path": node["path"], "name": node["name"]})
-    return result
+    symbols = tuple(dict.fromkeys(row["name"].lower() for row in rows if row["id"] in named))
+    return result, symbols
 
 
 def decision_targets(conn, project, text, file, symbol, verified_files):
