@@ -8,9 +8,7 @@ TRACE 0.1.x is an experimental research preview.
 git clone https://github.com/PruvCode/Trace.git TRACE
 cd TRACE
 python -m pip install -c constraints.txt .
-trace init
-trace mcp        # connect an MCP-compatible agent
-trace status     # inspect what TRACE stored
+trace install --all --project "PATH_TO_YOUR_PROJECT"
 ```
 
 ## Why TRACE?
@@ -53,7 +51,7 @@ Session N records findings → Session N+1 retrieves them. See
 
 ![TRACE architecture](docs/architecture/trace-architecture.png)
 
-- **Agent layer** — OpenCode (see the compatibility matrix); any MCP-compatible client for explicit queries.
+- **Agent layer** — Codex, Claude Code, Antigravity, OpenCode, and local stdio MCP clients.
 - **TRACE memory layer** — structural, episodic, Git, and transcript services over one interface.
 - **Local storage** — one SQLite + FTS5 database per project (`.agent-memory/memory.db`). Agents can send retrieved records to their configured provider.
 - **Automatic OpenCode path** — a monitor captures sessions into memory; a plugin injects bounded prior-session context into every model request.
@@ -61,6 +59,14 @@ Session N records findings → Session N+1 retrieves them. See
 - **Benchmark/research subsystem** — isolated baseline-vs-memory runs with mechanical evaluation ([interactive diagram](docs/architecture/trace-architecture.html), [memory flow](docs/architecture/trace-memory-flow.html), [benchmark flow](docs/architecture/trace-benchmark-flow.html)).
 
 ## Installation
+
+From an existing TRACE installation, run `trace install --all` inside the project you want to enable.
+Use `trace doctor` to inspect the result. Start a new agent session and review
+the generated hooks and MCP entry in the host when prompted. Each enabled host
+uses the same project database.
+
+For setup from a reviewed wheel, supported host behavior, privacy controls,
+update and rollback, see [TRACE for coding agents](docs/universal-agents.md).
 
 ### Windows x64 preview bundle
 
@@ -93,7 +99,7 @@ For development with pytest:
 python -m pip install -c constraints.txt -e ".[dev]"
 ```
 
-## Quick Start: Automatic Capture (Recommended)
+## OpenCode legacy setup and automatic capture
 
 The recommended workflow uses **transparent automatic capture** — TRACE monitors your coding agent session without any wrapper commands. You just run your agent normally.
 

@@ -574,19 +574,25 @@ class OpenCodeTransparentAdapter(CaptureAdapter):
         service = opencode_service_mod.get_service(project_path)
         return service.status()
 
-    def setup_integration(self, project_path: Path) -> dict:
+    def setup_integration(
+        self, project_path: Path, *, major: int | None = None, preserve_pause: bool = False,
+    ) -> dict:
         """Set up OpenCode integration for automatic capture (one-time setup)."""
         project_path = project_path.resolve()
 
         from memory import opencode_plugin as opencode_plugin_mod
+        from memory.opencode_service import DISABLED_FILE
 
         require_local_paths(project_path, project_mod.db_path(project_path))
         _check_service_paths(project_path)
         opencode_plugin_mod.check_install_targets(project_path)
+        marker = integration_marker(project_path)
+        disabled = marker.parent / DISABLED_FILE
+        paused = preserve_pause and not marker.exists() and disabled.exists()
         if not project_mod.is_initialized(project_path):
             project_mod.init_project(project_path)
 
-        result = self._create_opencode_config(project_path, install_plugin=True)
+        result = self._create_opencode_config(project_path, install_plugin=True, major=major)
         plugin_result = result.pop("plugin")
         if not project_mod.invalidate_context_cache(project_path):
             raise project_mod.TraceUserError(
@@ -594,10 +600,13 @@ class OpenCodeTransparentAdapter(CaptureAdapter):
                 "the project memory directory could not be updated.",
                 "Check directory permissions, then run setup again.",
             )
-        integration_marker(project_path).unlink(missing_ok=True)
+        if marker.exists() and preserve_pause:
+            # Explicit installation reverses a prior teardown even before OpenCode has initialized.
+            disabled.unlink(missing_ok=True)
+        marker.unlink(missing_ok=True)
 
         # Also start persistent service
-        monitor_result = self.start_monitoring(project_path)
+        monitor_result = {"status": "disabled"} if paused else self.start_monitoring(project_path)
 
         return {
             "setup": result,
@@ -605,7 +614,9 @@ class OpenCodeTransparentAdapter(CaptureAdapter):
             "monitoring": monitor_result,
         }
 
-    def _create_opencode_config(self, project_path: Path, *, install_plugin: bool = False) -> dict:
+    def _create_opencode_config(
+        self, project_path: Path, *, install_plugin: bool = False, major: int | None = None,
+    ) -> dict:
         """Add TRACE's ``trace-memory`` MCP entry to the project's opencode.json.
 
         Safe merge: updates only TRACE’s MCP entry and plugin registration. TRACE never rewrites a file it cannot parse as plain
@@ -657,7 +668,8 @@ class OpenCodeTransparentAdapter(CaptureAdapter):
             opencode_config = loaded
 
         opencode_config.setdefault("$schema", "https://opencode.ai/config.json")
-        v2 = opencode_service_mod.opencode_uses_v2_schema(opencode_service_mod.default_opencode_db_path())
+        v2 = (major == 2 if major is not None else
+              opencode_service_mod.opencode_uses_v2_schema(opencode_service_mod.default_opencode_db_path()))
         if v2 is None:
             mcp = opencode_config.get("mcp")
             v2 = isinstance(opencode_config.get("plugins"), list) or (

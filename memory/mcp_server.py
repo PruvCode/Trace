@@ -17,6 +17,7 @@ import asyncio
 import os
 import sqlite3
 import sys
+from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
 
@@ -43,6 +44,7 @@ _DB_PATH: Path | None = None
 _REPO_PATH: Path | None = None
 _ROOT_PATH: Path | None = None
 _INTEGRATION_MARKER: Path | None = None
+_CHECK_INTEGRATION: Callable[[], bool] | None = None
 
 
 def _project_root() -> Path | None:
@@ -58,7 +60,8 @@ def _project_root() -> Path | None:
 def _ensure_structural_fresh() -> None:
     """Ensure structural memory is fresh before structural queries."""
     root = _project_root()
-    if root is not None and root.exists():
+    if (root is not None and root.exists() and _DB_PATH is not None
+            and _DB_PATH.resolve() == (root / ".agent-memory" / "memory.db").resolve()):
         from memory import structural as structural_mod
         structural_mod.ensure_structural_memory(root)
 
@@ -66,6 +69,13 @@ def _ensure_structural_fresh() -> None:
 def _check_integration() -> None:
     if _INTEGRATION_MARKER is not None and os.path.lexists(_INTEGRATION_MARKER):
         raise ToolError("TRACE integration is disabled for this project")
+    if _CHECK_INTEGRATION is not None:
+        try:
+            allowed = _CHECK_INTEGRATION()
+        except (OSError, ValueError, RuntimeError):
+            allowed = False
+        if not allowed:
+            raise ToolError("TRACE integration is disabled or its memory is unavailable")
 
 
 def _connect(*, refresh: bool = True) -> sqlite3.Connection:
@@ -315,8 +325,8 @@ def get_transcript_session(
         conn.close()
 
 
-def main(argv: list[str] | None = None) -> int:
-    global _DB_PATH, _REPO_PATH, _ROOT_PATH, _INTEGRATION_MARKER
+def main(argv: list[str] | None = None, *, check: Callable[[], bool] | None = None) -> int:
+    global _DB_PATH, _REPO_PATH, _ROOT_PATH, _INTEGRATION_MARKER, _CHECK_INTEGRATION
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--db", type=Path, required=True)
     parser.add_argument("--root", type=Path, default=None)
@@ -331,6 +341,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--integration-marker", type=Path, default=None, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     _INTEGRATION_MARKER = args.integration_marker
+    _CHECK_INTEGRATION = check
     _DB_PATH = args.db
     _ROOT_PATH = args.root
     _REPO_PATH = args.repo if args.repo is not None else args.root
