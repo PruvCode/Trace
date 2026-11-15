@@ -207,7 +207,9 @@ python -m research.preview.fresh_multifile regrade COMMON_ARGS --input SCORES_JS
 ```
 
 The score stage requires a 2/2 executable result on disjoint two-file
-qualification tasks under the same model and protocol. For this pilot,
+qualification tasks under the same model and protocol. Qualification
+supplies its approved examples and reports which of them failed on a
+first draft, matching the feedback available on scored tasks. For this pilot,
 look for a paired gain at each seed without any increase in preservation
 failures. Two tasks across two repositories are a starter batch. The
 representative release comparison requires a larger task set and

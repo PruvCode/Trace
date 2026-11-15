@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import ast
 from contextlib import chdir, closing
+from dataclasses import replace
 from hashlib import sha256
 import json
 import os
@@ -225,11 +226,17 @@ def qualify_sample(grader, case, model):
     names = tuple(next(node.name for node in ast.parse(code).body if isinstance(node, ast.FunctionDef))
                   for code in case.original)
     originals = tuple(definition(code, name)[1] for code, name in zip(case.original, names, strict=True))
-    prompt = prompt_for(case.task, case.review, paths, names, originals)
+    examples = "\n".join(f"{call} == {expected!r}" for call, expected in case.checks)
+    prompt = prompt_for(case.task, f"{case.review}\nApproved checks:\n{examples}", paths, names, originals)
     proposal, usage = ask(model, SEEDS[0], prompt, names, originals)
-    passed = evaluate(grader, qualified_source(case, proposal), case)
+    source = qualified_source(case, proposal)
+    passed = evaluate(grader, source, case)
     if not passed:
-        proposal, more = ask(model, SEEDS[0], f"{prompt}\nThe draft failed. Recheck both outputs.", names, originals)
+        failed = "\n".join(f"{call} == {expected!r}" for call, expected in case.checks
+                           if not evaluate(grader, source, replace(case, checks=((call, expected),))))
+        feedback = (f"Your draft: {json.dumps(proposal)}\nFailed approved examples:\n{failed}"
+                    if proposal else "The first reply was not a valid pair of function definitions.")
+        proposal, more = ask(model, SEEDS[0], f"{prompt}\n\n{feedback}\nCorrect both functions.", names, originals)
         usage = [left + right for left, right in zip(usage, more, strict=True)]
         passed = evaluate(grader, qualified_source(case, proposal), case)
     return dict(task=case.name, candidate=proposal, passed=passed, usage=usage)
@@ -285,7 +292,7 @@ def run_evals(args, grader, fixtures):
         from evals.record import LocalRecorder
 
     qualifying = args.mode == "qualify"
-    name = f"trace_fresh_multifile.{args.mode}.v1"
+    name = f"trace_fresh_multifile.{args.mode}.v2"
     run_config = {"model": args.model, "model_digest": trial.MODELS[args.model], "protocol": digest(),
                   "pins": PINS, "seeds": [SEEDS[0]] if qualifying else SEEDS}
     samples = QUALIFY if qualifying else [
@@ -332,9 +339,11 @@ def matches(rows):
 def verify_qualification(path, grader, model):
     rows = trial.read_rows(path)
     cfg = rows[0]["spec"]["run_config"]
-    verdicts = {row["task"]: row for row in matches(rows)}
+    scores = matches(rows)
+    verdicts = {row["task"]: row for row in scores}
     if (cfg["model_digest"] != trial.MODELS[model] or cfg["protocol"] != digest()
-            or rows[0]["spec"]["split"] != "qualify" or set(verdicts) != {case.name for case in QUALIFY}):
+            or rows[0]["spec"]["split"] != "qualify" or "final_report" not in rows[-1]
+            or len(scores) != len(verdicts) or set(verdicts) != {case.name for case in QUALIFY}):
         raise ValueError("qualification receipt does not match this protocol and model")
     for case in QUALIFY:
         row = verdicts[case.name]
