@@ -191,11 +191,12 @@ The TRACE arm retrieves the current verified decision and approved
 examples from a disposable, task-bound project with superseded and
 unrelated decisions. The maintained-notes arm gets the same current
 decision and approved examples from a prepared note. Both arms use the
-same source and two generation seeds. Each draft requests one edit per
-file, with both definitions visible. One repair based on the public checks
-is allowed, for a maximum of four model calls. Hidden behavior and preservation
-checks run after both files are edited. Reports list preservation
-failures alongside task passes for each arm.
+same source and two generation seeds. Each draft requests one numbered
+body-range edit per file, with both definitions visible. The runner
+preserves the original signature and applies the replacement locally.
+One repair based on the public checks is allowed, for a maximum of four
+model calls. Hidden behavior and preservation checks run after both files
+are edited. Reports list preservation failures alongside task passes.
 
 Use the local Evals environment described above. Run each stage with
 `--click CLICK --packaging PACKAGING --wasi WASI --scratch SCRATCH`.
@@ -207,11 +208,15 @@ python -m research.preview.fresh_multifile score COMMON_ARGS --model MODEL --inp
 python -m research.preview.fresh_multifile regrade COMMON_ARGS --input SCORES_JSONL
 ```
 
-The score stage requires a 2/2 executable result on disjoint two-file
-qualification tasks under the same model and protocol. Qualification
-supplies its approved examples and reports which of them failed on a
-first draft, matching the feedback available on scored tasks. For this pilot,
-look for a paired gain at each seed without any increase in preservation
-failures. Two tasks across two repositories are a starter batch. The
-representative release comparison requires a larger task set and
-qualified models.
+The score stage requires a 3/3 executable result on two calibration tasks
+and the Click table-width task from the first batch. That repository task
+now serves as calibration. The two fresh scoring tasks are Click's default
+color policy and Packaging's outer spacing policy for project names.
+Qualification supplies approved examples and can report which failed
+after a first draft. Look for a paired gain at each seed without an increase
+in preservation failures. Two tasks across two repositories are a starter
+batch. The representative release comparison requires a larger task set
+and qualified models.
+
+The first scoring batch and its whole-function editor can be rerun from
+[commit 928cd97](https://github.com/PruvCode/Trace/tree/928cd97d4b1149b059458d76f21beff004804294).

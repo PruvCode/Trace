@@ -21,15 +21,18 @@ from unittest.mock import patch
 from memory import episodic, session_context, store, synthetic, task_library, transcript
 from research.phase5.grader import MAX_SOURCE, Grader
 from research.preview import notes_trial as trial
-from research.preview.fresh_multifile_cases import CASES, PINS
+from research.preview.fresh_multifile_cases import CASES, FIRST_BATCH, PINS
 from research.preview.repository_js import show
 from research.production.multi_file import QUALIFY, evaluate
 from trace_memory import project
 
 SEEDS = (52183, 52189)
 ARMS = ("notes", "trace")
-OUTPUT_TOKENS = 440
+OUTPUT_TOKENS = 260
 CONTEXT_TOKENS = 3072
+# Importing Packaging's lockfile dependencies needs more fuel than the first batch.
+FUEL = 8_000_000_000
+DEVELOPMENT = replace(FIRST_BATCH[0], public=FIRST_BATCH[0].public + FIRST_BATCH[0].preserve)
 
 
 def digest():
@@ -101,6 +104,28 @@ def wraps_tag_error(filename):
 def wheel_parts(filename):
     name, version, build, tags = b.parse_wheel_filename(filename)
     return name, str(version), build, {{str(tag) for tag in tags}}
+class Stream:
+    def __init__(self, tty):
+        self.tty = tty
+    def isatty(self):
+        return self.tty
+def with_tty_stdin():
+    original = sys.stdin
+    sys.stdin = Stream(True)
+    try:
+        return a.should_strip_ansi()
+    finally:
+        sys.stdin = original
+def current_color(value):
+    from click.core import Command, Context
+    with Context(Command("sample"), color=value):
+        return b.resolve_color_default()
+def valid_name(value):
+    try:
+        a.canonicalize_name(value, validate=True)
+        return True
+    except a.InvalidName:
+        return False
 """
     script += f"print({marker!r}, " + ", ".join(f"check(lambda: {expr})" for expr in assertions) + ")"
     ok, output = grader.run(script)
@@ -149,7 +174,7 @@ def context_for(room, source, case):
 
 def prepare(grader, repos, root):
     fixtures = []
-    for case in CASES:
+    for case in (*CASES, DEVELOPMENT):
         source = sources_at_pin(repos[case.repo], case.repo)
         originals = tuple(definition(source[path], symbol)[1]
                           for path, symbol in zip(file_paths(case), case.symbols, strict=True))
@@ -178,7 +203,8 @@ def prepare(grader, repos, root):
                 raise ValueError(f"{case.name} does not need both files")
         contexts = context_for(root / case.name, source, case)
         trial.emit("fixture", task=case.name, paths=file_paths(case), preserved=len(case.preserve),
-                   hidden=len(case.hidden), checked_both_files=True, recalled=len(case.public))
+                   hidden=len(case.hidden), checked_both_files=True, recalled=len(case.public),
+                   qualification=case is DEVELOPMENT)
         fixtures.append((case, source, originals, contexts))
     for case in QUALIFY:
         if evaluate(grader, case.original, case) or not evaluate(grader, case.reference, case):
@@ -186,18 +212,46 @@ def prepare(grader, repos, root):
     return fixtures
 
 
+def apply_edit(reply, symbol, original):
+    """Apply a bounded function-body patch without trusting a model-written signature."""
+    try:
+        edit = json.loads(reply)
+    except (TypeError, ValueError, RecursionError):
+        return None
+    if not isinstance(edit, dict) or set(edit) != {"start", "end", "lines"}:
+        return None
+    start, end, changed = edit["start"], edit["end"], edit["lines"]
+    node = ast.parse(original).body[0]
+    if (type(start) is not int or type(end) is not int or not node.lineno < start
+            or not node.body[0].lineno <= start <= end <= node.end_lineno
+            or not isinstance(changed, list) or len(changed) > 24
+            or any(not isinstance(line, str) or "\r" in line or "\n" in line for line in changed)):
+        return None
+    lines = original.splitlines()
+    patched = "\n".join((*lines[:start - 1], *changed, *lines[end:]))
+    if len(patched) > MAX_SOURCE:
+        return None
+    return trial.function_only(patched, symbol, original)
+
+
 def ask(model, seed, prompt, symbols, originals):
     start = perf_counter()
     candidates = []
     input_tokens = output_tokens = 0
     for symbol, original in zip(symbols, originals, strict=True):
+        numbered = "\n".join(f"{i:>2} | {line}" for i, line in enumerate(original.splitlines(), 1))
         message = (
-            f"{prompt}\n\nEdit only {symbol} in this reply. Check the approved examples for that function. "
-            "Return the complete replacement Python function with the original signature in a Python code block."
+            f"{prompt}\n\nEdit only {symbol}. Here is its numbered source:\n{numbered}\n\n"
+            'Return JSON {"start": BODY_START, "end": BODY_END, "lines": ["    replacement line"]}. '
+            "Choose one inclusive range of existing body lines. Use the smallest change that satisfies the policy. "
+            "Use exact Python indentation in each replacement line. Leave the signature and other lines in place."
         )
         reply = trial.request("/api/chat", {
             "model": model, "stream": False, "keep_alive": "5m",
             "messages": [{"role": "user", "content": message}],
+            "format": {"type": "object", "properties": {"start": {"type": "integer"}, "end": {"type": "integer"},
+                        "lines": {"type": "array", "items": {"type": "string"}}},
+                       "required": ["start", "end", "lines"], "additionalProperties": False},
             "options": {"num_ctx": CONTEXT_TOKENS, "num_predict": OUTPUT_TOKENS, "num_gpu": 0,
                         "seed": seed, "temperature": 0},
         }, timeout=420)
@@ -205,7 +259,7 @@ def ask(model, seed, prompt, symbols, originals):
         output_tokens += reply.get("eval_count") or 0
         text = reply["message"]["content"]
         valid = reply.get("done_reason") != "length" and isinstance(text, str) and len(text) <= MAX_SOURCE
-        candidates.append(trial.function_only(text, symbol, original) if valid else None)
+        candidates.append(apply_edit(text, symbol, original) if valid else None)
     return (tuple(candidates) if all(candidates) else None,
             [input_tokens, output_tokens, round((perf_counter() - start) * 1000)])
 
@@ -231,7 +285,7 @@ def qualify_sample(grader, case, model):
         failed = "\n".join(f"{call} == {expected!r}" for call, expected in case.checks
                            if not evaluate(grader, source, replace(case, checks=((call, expected),))))
         feedback = (f"Your draft: {json.dumps(proposal)}\nFailed approved examples:\n{failed}"
-                    if proposal else "The first reply was not a valid pair of function definitions.")
+                    if proposal else "The first reply did not produce valid body edits for both functions.")
         proposal, more = ask(model, SEEDS[0], f"{prompt}\n\n{feedback}\nCorrect both functions.", names, originals)
         usage = [left + right for left, right in zip(usage, more, strict=True)]
         passed = evaluate(grader, qualified_source(case, proposal), case)
@@ -264,7 +318,7 @@ def score_sample(grader, sample, model):
     if not tested or not all(tested):
         failed = [rule for rule, passed in zip(case.public, tested) if not passed]
         feedback = (f"Your draft: {json.dumps(draft)}\nFailed approved examples:\n" + "\n".join(failed)
-                    if draft else "The first reply was not a valid pair of function definitions.")
+                    if draft else "The first reply did not produce valid body edits for both functions.")
         next_proposal, more = ask(model, seed, f"{prompt}\n\n{feedback}\nCorrect both functions.", case.symbols, originals)
         attempts += 1
         usage = [left + right for left, right in zip(usage, more, strict=True)]
@@ -281,24 +335,25 @@ def score_patch(grader, fixture, proposal):
     return all(checks(grader, patch, case, case.public + case.hidden)), not all(checks(grader, patch, case, case.preserve))
 
 
-def run_evals(args, grader, fixtures):
+def run_evals(args, grader, fixtures, development):
     with patch.dict(os.environ, OPENAI_API_KEY="trace-local", OPENAI_BASE_URL="http://127.0.0.1:11434/v1"):
         from evals import Eval
         from evals.base import RunSpec
         from evals.record import LocalRecorder
 
     qualifying = args.mode == "qualify"
-    name = f"trace_fresh_multifile.{args.mode}.v3"
+    name = f"trace_fresh_multifile.{args.mode}.v4"
     run_config = {"model": args.model, "model_digest": trial.MODELS[args.model], "protocol": digest(),
-                  "pins": PINS, "seeds": [SEEDS[0]] if qualifying else SEEDS, "max_model_calls": 4}
-    samples = QUALIFY if qualifying else [
+                  "pins": PINS, "seeds": [SEEDS[0]] if qualifying else SEEDS, "max_model_calls": 4,
+                  "fuel": FUEL, "output_tokens": OUTPUT_TOKENS, "context_tokens": CONTEXT_TOKENS}
+    samples = (*QUALIFY, (development, "notes", SEEDS[0])) if qualifying else [
         (fixture, arm, seed) for seed in SEEDS for fixture in fixtures
         for arm in Random(f"{seed}:{fixture[0].name}").sample(ARMS, len(ARMS))
     ]
 
     class MatchedEval(Eval):
         def eval_sample(self, sample, rng):
-            row = (qualify_sample(grader, sample, args.model) if qualifying
+            row = (qualify_sample(grader, sample, args.model) if qualifying and not isinstance(sample, tuple)
                    else score_sample(grader, sample, args.model))
             passed = row.pop("passed")
             recorder.record_match(passed, **row)
@@ -332,19 +387,24 @@ def matches(rows):
     return [row["data"] for row in rows if row.get("type") == "match"]
 
 
-def verify_qualification(path, grader, model):
+def verify_qualification(path, grader, model, development):
     rows = trial.read_rows(path)
     cfg = rows[0]["spec"]["run_config"]
     scores = matches(rows)
     verdicts = {row["task"]: row for row in scores}
+    required = {case.name for case in QUALIFY} | {DEVELOPMENT.name}
     if (cfg["model_digest"] != trial.MODELS[model] or cfg["protocol"] != digest()
             or rows[0]["spec"]["split"] != "qualify" or "final_report" not in rows[-1]
-            or len(scores) != len(verdicts) or set(verdicts) != {case.name for case in QUALIFY}):
+            or len(scores) != len(verdicts) or set(verdicts) != required):
         raise ValueError("qualification receipt does not match this protocol and model")
     for case in QUALIFY:
         row = verdicts[case.name]
         if not row["correct"] or not evaluate(grader, qualified_source(case, row["candidate"]), case):
             raise ValueError(f"model failed two-file qualification: {case.name}")
+    row = verdicts[DEVELOPMENT.name]
+    changed, regressed = score_patch(grader, development, row["candidate"])
+    if not row["correct"] or not changed or regressed:
+        raise ValueError(f"model failed repository-source qualification: {DEVELOPMENT.name}")
 
 
 def main():
@@ -362,13 +422,13 @@ def main():
         parser.error("enable assertions and provide --output for inference")
     if args.mode in {"score", "regrade"} and args.input is None:
         parser.error("--input requires the saved qualification (score) or score log (regrade)")
-    grader = Grader(args.wasi, fuel=4_000_000_000)
+    grader = Grader(args.wasi, fuel=FUEL)
     with TemporaryDirectory(prefix="trace-two-file-", dir=args.scratch) as directory:
         root = Path(directory)
         canary = root / "outside"
         canary.write_text("sandbox canary", encoding="utf-8")
         grader.verify_boundary(canary)
-        fixtures = prepare(grader, {repo: getattr(args, repo) for repo in PINS}, root)
+        *fixtures, development = prepare(grader, {repo: getattr(args, repo) for repo in PINS}, root)
         if args.mode == "preflight":
             return
         if args.mode == "regrade":
@@ -387,8 +447,8 @@ def main():
         if tags.get(args.model) != trial.MODELS[args.model]:
             raise ValueError("pinned local model is unavailable")
         if args.mode == "score":
-            verify_qualification(args.input, grader, args.model)
-        run_evals(args, grader, fixtures)
+            verify_qualification(args.input, grader, args.model, development)
+        run_evals(args, grader, fixtures, development)
 
 
 if __name__ == "__main__":

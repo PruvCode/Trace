@@ -266,3 +266,23 @@ short rows but omitted truncation, which the previous TRACE edit applied.
 The draft PR restores the previous renderer. The shorter context reduced
 prompt size and cost one passing task in this replay. The result covers one
 model on previously seen tasks.
+
+## First fresh two-file pilot
+
+The first OpenAI Evals batch used new changes to pinned Click and Packaging
+source. The grader loaded the actual packages in WASI, confirmed that the
+references passed, and confirmed that neither file could satisfy the
+acceptance checks on its own. Both arms received the same approved decision
+and examples. The model attempted each task under each arm and both seeds.
+
+| Context | Task passes | Preservation failures | Runs without a valid patch |
+| --- | ---: | ---: | ---: |
+| Maintained notes | 0/4 | 2 | 2 |
+| TRACE | 0/4 | 0 | 4 |
+
+Only Qwen 2.5 Coder 7B qualified. Regrading reproduced all eight verdicts.
+Both accepted notes patches changed terminal width for tabs, which the
+approved change was supposed to preserve. All four TRACE attempts yielded no
+valid patch. Its zero preservation failures reflect that none of those
+attempts changed the source. This batch established no advantage in task
+passes over maintained notes.

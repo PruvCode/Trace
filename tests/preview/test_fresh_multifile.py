@@ -1,10 +1,15 @@
+import json
+
 from research.preview import fresh_multifile as fixture
 
 
 def test_reply_requires_both_functions_and_preserves_signatures(monkeypatch):
     original = ("def width(value):\n    return len(value)", "def table(row):\n    return tuple(row)")
     symbols = ("width", "table")
-    replies = iter((*original, original[0], "def table():\n    return ()"))
+    widths = json.dumps({"start": 2, "end": 2, "lines": ["    return len(value)"]})
+    table = json.dumps({"start": 2, "end": 2, "lines": ["    return tuple(row)"]})
+    bad = json.dumps({"start": 1, "end": 1, "lines": ["def table():"]})
+    replies = iter((widths, table, widths, bad))
 
     def request(path, body, **kwargs):
         return {"message": {"content": next(replies)}, "done_reason": "stop"}
@@ -15,7 +20,7 @@ def test_reply_requires_both_functions_and_preserves_signatures(monkeypatch):
 
 
 def test_patch_edits_only_the_selected_top_level_function():
-    case = fixture.CASES[0]
+    case = fixture.FIRST_BATCH[0]
     paths = fixture.file_paths(case)
     source = {
         paths[0]: "def term_len(x: str) -> int:\n    return len(x)\n\nSENTINEL = 'kept'\n",
@@ -25,6 +30,13 @@ def test_patch_edits_only_the_selected_top_level_function():
     patched = fixture.replacements(source, case, (change, None))
     assert patched[paths[0]] == change + "\n\nSENTINEL = 'kept'\n"
     assert patched[paths[1]] == source[paths[1]]
+
+
+def test_body_editor_rejects_outside_statements():
+    source = "def width(value):\n    return len(value)"
+    for lines in (["    return len(value)", "unrelated = True"], ["    return len(value)\nunrelated = True"]):
+        edit = json.dumps({"start": 2, "end": 2, "lines": lines})
+        assert fixture.apply_edit(edit, "width", source) is None
 
 
 def test_qualification_retry_reports_the_failed_approved_example(monkeypatch):
