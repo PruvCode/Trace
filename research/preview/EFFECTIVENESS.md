@@ -191,8 +191,9 @@ The TRACE arm retrieves the current verified decision and approved
 examples from a disposable, task-bound project with superseded and
 unrelated decisions. The maintained-notes arm gets the same current
 decision and approved examples from a prepared note. Both arms use the
-same source, two generation seeds, a maximum of two model calls, and one
-repair based on the public checks. Hidden behavior and preservation
+same source and two generation seeds. Each draft requests one edit per
+file, with both definitions visible. One repair based on the public checks
+is allowed, for a maximum of four model calls. Hidden behavior and preservation
 checks run after both files are edited. Reports list preservation
 failures alongside task passes for each arm.
 

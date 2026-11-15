@@ -28,8 +28,8 @@ from trace_memory import project
 
 SEEDS = (52183, 52189)
 ARMS = ("notes", "trace")
-OUTPUT_TOKENS = 760
-CONTEXT_TOKENS = 4096
+OUTPUT_TOKENS = 440
+CONTEXT_TOKENS = 3072
 
 
 def digest():
@@ -186,39 +186,35 @@ def prepare(grader, repos, root):
     return fixtures
 
 
-def parse_reply(reply, symbols, originals):
-    try:
-        payload = json.loads(reply)
-    except (ValueError, TypeError, RecursionError):
-        return None
-    if not isinstance(payload, dict) or set(payload) != set(symbols):
-        return None
-    sources = tuple(trial.function_only(payload[name], name, original)
-                    if isinstance(payload[name], str) and len(payload[name]) <= MAX_SOURCE else None
-                    for name, original in zip(symbols, originals, strict=True))
-    return sources if all(sources) else None
-
-
 def ask(model, seed, prompt, symbols, originals):
     start = perf_counter()
-    reply = trial.request("/api/chat", {
-        "model": model, "stream": False, "keep_alive": "5m",
-        "messages": [{"role": "user", "content": prompt}],
-        "format": {"type": "object", "properties": {name: {"type": "string"} for name in symbols},
-                   "required": list(symbols), "additionalProperties": False},
-        "options": {"num_ctx": CONTEXT_TOKENS, "num_predict": OUTPUT_TOKENS, "num_gpu": 0,
-                    "seed": seed, "temperature": 0},
-    }, timeout=420)
-    text = reply["message"]["content"] if reply.get("done_reason") != "length" else None
-    return (parse_reply(text, symbols, originals),
-            [reply.get("prompt_eval_count") or 0, reply.get("eval_count") or 0, round((perf_counter()-start)*1000)])
+    candidates = []
+    input_tokens = output_tokens = 0
+    for symbol, original in zip(symbols, originals, strict=True):
+        message = (
+            f"{prompt}\n\nEdit only {symbol} in this reply. Check the approved examples for that function. "
+            "Return the complete replacement Python function with the original signature in a Python code block."
+        )
+        reply = trial.request("/api/chat", {
+            "model": model, "stream": False, "keep_alive": "5m",
+            "messages": [{"role": "user", "content": message}],
+            "options": {"num_ctx": CONTEXT_TOKENS, "num_predict": OUTPUT_TOKENS, "num_gpu": 0,
+                        "seed": seed, "temperature": 0},
+        }, timeout=420)
+        input_tokens += reply.get("prompt_eval_count") or 0
+        output_tokens += reply.get("eval_count") or 0
+        text = reply["message"]["content"]
+        valid = reply.get("done_reason") != "length" and isinstance(text, str) and len(text) <= MAX_SOURCE
+        candidates.append(trial.function_only(text, symbol, original) if valid else None)
+    return (tuple(candidates) if all(candidates) else None,
+            [input_tokens, output_tokens, round((perf_counter() - start) * 1000)])
 
 
 def prompt_for(request, context, paths, symbols, originals):
     sources = "\n\n".join(f"{path}\n{original}" for path, original in zip(paths, originals, strict=True))
     return (f"{request}\n\nProject history:\n{context}\n\nSource:\n{sources}\n\n"
-            f"Return JSON with exactly these keys: {', '.join(symbols)}. Each value must be the complete "
-            "replacement function, with its original signature. Preserve behavior outside the approved change.")
+            f"The two target functions are {', '.join(symbols)}. Preserve behavior outside the approved change "
+            "and use the existing imports and helpers.")
 
 
 def qualify_sample(grader, case, model):
@@ -292,9 +288,9 @@ def run_evals(args, grader, fixtures):
         from evals.record import LocalRecorder
 
     qualifying = args.mode == "qualify"
-    name = f"trace_fresh_multifile.{args.mode}.v2"
+    name = f"trace_fresh_multifile.{args.mode}.v3"
     run_config = {"model": args.model, "model_digest": trial.MODELS[args.model], "protocol": digest(),
-                  "pins": PINS, "seeds": [SEEDS[0]] if qualifying else SEEDS}
+                  "pins": PINS, "seeds": [SEEDS[0]] if qualifying else SEEDS, "max_model_calls": 4}
     samples = QUALIFY if qualifying else [
         (fixture, arm, seed) for seed in SEEDS for fixture in fixtures
         for arm in Random(f"{seed}:{fixture[0].name}").sample(ARMS, len(ARMS))

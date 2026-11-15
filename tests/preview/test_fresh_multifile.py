@@ -1,16 +1,17 @@
-import json
-
 from research.preview import fresh_multifile as fixture
 
 
-def test_reply_requires_both_functions_and_preserves_signatures():
+def test_reply_requires_both_functions_and_preserves_signatures(monkeypatch):
     original = ("def width(value):\n    return len(value)", "def table(row):\n    return tuple(row)")
     symbols = ("width", "table")
-    changes = dict(zip(symbols, original))
-    assert fixture.parse_reply(json.dumps(changes), symbols, original) == original
-    assert fixture.parse_reply(json.dumps({"width": original[0]}), symbols, original) is None
-    changes["table"] = "def table():\n    return ()"
-    assert fixture.parse_reply(json.dumps(changes), symbols, original) is None
+    replies = iter((*original, original[0], "def table():\n    return ()"))
+
+    def request(path, body, **kwargs):
+        return {"message": {"content": next(replies)}, "done_reason": "stop"}
+
+    monkeypatch.setattr(fixture.trial, "request", request)
+    assert fixture.ask("model", 1, "task", symbols, original)[0] == original
+    assert fixture.ask("model", 1, "task", symbols, original)[0] is None
 
 
 def test_patch_edits_only_the_selected_top_level_function():
