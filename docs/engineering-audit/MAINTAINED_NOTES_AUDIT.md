@@ -178,6 +178,10 @@ It gives a reason to test the shorter context on new tasks, but no reason
 to raise the rating or switch the default. The rows carry `dev_probe: true`;
 the qualified trial cannot count them toward its release gate.
 
+Every preserved scored artifact was regraded again on the final head with the
+current scorer: the plain batch, the fenced replay, and the four-arm probe
+reproduced 72/72, 72/72, and 96/96 verdicts respectively.
+
 Dogfooding note: recorded agent decisions surface through `trace events`,
 `trace search`, `trace context --task`, and the session-start context path
 (verified: five findings returned in 39 ms with correct staleness labels after
