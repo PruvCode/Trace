@@ -473,7 +473,11 @@ original evidence remains available through `trace evidence`.
 When recording a verified decision with a transcript or Git reference, add
 one `--acceptance "Expected behavior"` flag per requirement that an agent
 should verify. TRACE carries these checks into relevant, bounded recall.
-The checks are stored as text. Use the project's tests to verify the patch.
+A decision can be recalled from another file when it explicitly names a
+current, indexed definition there. TRACE groups checks that call one named
+function beside its source location and keeps cross-function checks with the
+decision. The checks are stored as text. Use the project's tests to verify
+the patch.
 
 ### Open the recursive graph in Obsidian
 

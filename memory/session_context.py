@@ -311,18 +311,73 @@ def _recent_findings(conn: sqlite3.Connection, project_root: Path | None = None,
     return items
 
 
+def _decision_targets(conn, project, event, text, hashes):
+    indexed = relevance.decision_targets(conn, project, text, event.file, event.symbol, hashes)
+    requirements = relevance.target_requirements(text, indexed)
+    primary = (event.file or "").replace("\\", "/")
+    targets = []
+    for target in indexed:
+        if rule := requirements.get(target["symbol"]):
+            targets.append({**target, "decision_excerpt": rule})
+        elif target["path"] == primary and event.symbol in (target["symbol"], target["qualified"]):
+            targets.append(target)
+    return targets
+
+
+def _source_matches(conn, project, task_id, query, retired, file=None):
+    query = " ".join(part for part in (query, file) if part)
+    exact, definitions = relevance.graph_matches(
+        conn, query, task_id, unassigned_only=task_id is None, exclude=retired,
+    )
+    if file is not None:
+        normalized = file.replace("\\", "/")
+        exact = {event_id: code for event_id, code in exact.items() if code["path"] == normalized}
+        definitions = tuple(pair for pair in definitions if pair[0] == normalized)
+    symbols = tuple(dict.fromkeys(name.lower() for _, name in definitions))
+    if project is None or not definitions:
+        return exact, symbols
+    terms = list(dict.fromkeys(name for _, name in definitions if name.isidentifier()
+                              and name not in {"AND", "OR", "NOT"}))
+    if not terms:
+        return exact, symbols
+    # Older records have a single primary location. Resolve explicitly named
+    # secondary definitions against the current snapshot before adding a match.
+    try:
+        decisions = episodic_mod.search_events(
+            conn, type="decision", query=" OR ".join(terms), task_id=task_id,
+            unassigned_only=task_id is None, limit=16,
+        )
+    except store_mod.SearchQueryError:
+        return exact, symbols
+    focus = set(definitions)
+    hashes = {}
+    excluded = set(retired)
+    for event in decisions:
+        if (event.id in exact or event.id in excluded or event.superseded_by is not None
+                or event.source == "capture" or not any(event.evidence_refs)
+                or not isinstance(event.payload, dict) or event.payload.get("status") != "verified"):
+            continue
+        text = _truncate(redact_mod.redact_text(_finding_text(event.payload).strip()), MAX_ITEM_CHARS)[0]
+        for target in _decision_targets(conn, project, event, text, hashes):
+            path, name = target["path"], target["symbol"]
+            if (path, name) in focus and "decision_excerpt" in target:
+                exact[event.id] = {"path": path, "name": name}
+                break
+    return exact, symbols
+
+
 def _scoped_findings(conn, project, task_id, query, *, exact=None, file=None, retired=()) -> list[dict]:
     terms = _query_terms(query or "")
     match = " OR ".join(f"{term}*" for term in terms)
     exact_only = exact is not None
     if exact is None:
-        exact, _ = relevance.graph_matches(conn, query, task_id, unassigned_only=task_id is None, exclude=retired)
+        exact, _ = _source_matches(conn, project, task_id, query, retired, file)
     if task_id is None and not match and not exact:
         return []
     options = {"task_id": task_id, "unassigned_only": task_id is None, "limit": 25, "file": file, "normalize_file": True}
     hits = episodic_mod.search_events(conn, query=match, **options) if match and not exact_only else []
     matched = {event.id for event in hits}
-    candidates = episodic_mod.search_events(conn, ids=list(exact), **{**options, "limit": 30}) if exact else []
+    candidates = episodic_mod.search_events(conn, ids=list(exact), **{**options, "file": None, "limit": 30}) if exact else []
     if match and not exact_only:
         candidates += episodic_mod.search_events(conn, query=match, decision_only=True, **options)
         candidates += hits
@@ -427,12 +482,8 @@ def _scoped_findings(conn, project, task_id, query, *, exact=None, file=None, re
         if item["event_id"] not in supported_decisions:
             continue
         event = selected[item["event_id"]]
-        targets = relevance.decision_targets(conn, project, item["text"], event.file, event.symbol, verified_files)
+        targets = _decision_targets(conn, project, event, item["text"], verified_files)
         if targets:
-            requirements = relevance.target_requirements(item["text"], targets)
-            for target in targets:
-                if rule := requirements.get(target["symbol"]):
-                    target["decision_excerpt"] = rule
             item["code_targets"] = targets
     return shortlisted
 
@@ -527,7 +578,7 @@ def get_session_start_context(
                         messages = _relevant_messages(conn, query, exclude_session_id, limit=2, retired=retired)
                     stats["task_fallback"] = bool(findings or messages)
             else:
-                matches, symbols = relevance.graph_matches(conn, query, None, unassigned_only=True, exclude=retired)
+                matches, symbols = _source_matches(conn, root, None, query, retired)
                 relevant = (_relevant_messages(conn, query, exclude_session_id, retired=retired, symbols=symbols)
                             if query else [])
                 exact = _scoped_findings(conn, root, None, query, exact=matches) if matches else []
@@ -558,16 +609,25 @@ def get_session_start_context(
     try:
         if task_id is not None:
             items, truncated = [], False
-            # Give a decision and the most relevant concrete failure room ahead of transcript excerpts.
+            # Keep matched decisions across files ahead of routine transcript excerpts.
             failure = next((item for item in findings[1:] if item.get("previously_failed_checks")), None)
             priority = [failure] if failure else []
-            for item in [*findings[:1], *priority, *messages, *(item for item in findings[1:] if item is not failure)]:
+            remaining = [item for item in findings[1:] if item is not failure]
+            decisions = [item for item in remaining if item.get("evidence") and item.get("code")
+                         and item["role"].startswith("decision (verified)") and not item.get("uncertain")]
+            other = [item for item in remaining if item not in decisions]
+            for item in [*findings[:1], *priority, *decisions, *messages, *other]:
                 if item.get("code_targets") and len(synthetic_mod.render_user_block([*items, item])) > max_chars:
-                    item = {key: value for key, value in item.items() if key != "code_targets"}
+                    item = {**item, "code_targets": [
+                        {key: value for key, value in target.items() if key != "decision_excerpt"}
+                        for target in item["code_targets"]
+                    ]}
                     truncated = True
                 if (item.get("acceptance") and len(synthetic_mod.render_user_block([*items, item])) > max_chars):
                     item = {key: value for key, value in item.items() if key != "acceptance"}
                     truncated = True
+                if item.get("code_targets") and len(synthetic_mod.render_user_block([*items, item])) > max_chars:
+                    item = {key: value for key, value in item.items() if key != "code_targets"}
                 if len(items) < max_items and len(synthetic_mod.render_user_block([*items, item])) <= max_chars:
                     items.append(item)
                 else:
