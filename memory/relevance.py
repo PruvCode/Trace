@@ -6,6 +6,8 @@ import re
 from memory import entity_history, redact, source_files
 
 IDENTIFIERS = re.compile(r"[A-Za-z_][A-Za-z0-9_]{2,}(?:[./\\-][A-Za-z0-9_-]+)*")
+LEADING_NAME = re.compile(r"`?([A-Za-z_][\w.]*)`?(?:\([^)]*\))?(?=[\s,:]|$)")
+NAME_SEPARATOR = re.compile(r"\s*(?:,\s*(?:and\s+)?|and\s+)")
 CATEGORIES = (
     ("debugging", r"\b(debug|bug|fix|failure|failed|error|investigat\w*)\b"),
     ("implementation", r"\b(feature|implement\w*|add\w*)\b"),
@@ -57,8 +59,8 @@ def graph_matches(conn, query, task_id, *, unassigned_only=False, exclude=()):
         if not row["definition_match"] and node["path"] in focused_paths:
             continue
         result.setdefault(row["id"], {"path": node["path"], "name": node["name"]})
-    symbols = tuple(dict.fromkeys(row["name"].lower() for row in rows if row["id"] in named))
-    return result, symbols
+    definitions = tuple(dict.fromkeys((row["path"], row["name"]) for row in rows if row["id"] in named))
+    return result, definitions
 
 
 def decision_targets(conn, project, text, file, symbol, verified_files):
@@ -102,15 +104,20 @@ def target_requirements(text, targets):
     """Group explicitly named clauses while keeping the full decision authoritative."""
     names = [target["symbol"] for target in targets]
     groups = {name: [] for name in names if names.count(name) == 1}
-    owner = None
-    # shortcut: group sentence-leading symbol names only, until decisions have structured rule links.
+    owners = []
+    # Only sentence-leading names count; a function mentioned in an example may be incidental.
     for sentence in re.split(r"(?<=\.)\s+", text.strip()):
-        if not sentence:
-            continue
-        opening = sentence.split(maxsplit=1)[0].split("(", 1)[0].strip("`:")
-        if opening in groups:
-            owner = opening
-        if owner:
+        clause = sentence
+        named = []
+        while (opening := LEADING_NAME.match(clause)) and opening[1] in groups:
+            named.append(opening[1])
+            separator = NAME_SEPARATOR.match(clause, opening.end())
+            if separator is None:
+                break
+            clause = clause[separator.end():]
+        if named:
+            owners = list(dict.fromkeys(named))
+        for owner in owners:
             groups[owner].append(sentence)
     return {name: " ".join(rules) for name, rules in groups.items() if rules}
 
