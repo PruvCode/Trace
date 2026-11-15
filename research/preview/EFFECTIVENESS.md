@@ -134,3 +134,12 @@ access to tests or reference code.
 The 24 tasks have already been evaluated with the original editor. This
 replay measures the combined changes to recall and editing on known tasks.
 Run it as a separate result and qualify again before scoring it.
+
+Editor v2 adds one format-only retry and a fourth arm that shows only an
+evidence-linked decision excerpt. For a development replay on the already
+scored fixtures, run `devprobe --fenced-editor --editor-v2 --model MODEL
+--output NEW_JSONL` with the same repository, scratch and WASI arguments.
+It runs the first repeat by default and marks all rows as development
+results. To recheck saved edits, use `regrade --fenced-editor --editor-v2
+--input NEW_JSONL`. Development results cannot be mixed with qualified
+score rows or used to complete the release matrix.
