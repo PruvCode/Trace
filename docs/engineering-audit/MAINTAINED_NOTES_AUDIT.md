@@ -137,8 +137,8 @@ A deterministic raw-output probe on the replay's failures showed the mechanical
 cause: the model legitimately re-emits supporting definitions (`import re`,
 constants, small helper classes) inside its fenced block, and the v1
 function-only extractor rejected the extra top-level statements, discarding
-complete replies. Editor v2 (in `research/preview/editor.py`, uncommitted at
-this revision) adds strict-then-fallback mechanical extraction and one
+complete replies. Editor v2 (in `research/preview/editor.py`) adds
+strict-then-fallback mechanical extraction and one
 equal-budget mechanical retry with defect feedback, applied identically in
 every arm and never showing graded checks. The runner gained `--editor-v2`, an
 evidence-linked excerpt arm (`trace_min`), a durable `--output` JSONL, and a
@@ -157,8 +157,8 @@ output is preserved as `devprobe-v2-qwen-r0-aborted-3arm.jsonl`.
 Requalification on three new disjoint cases (`_supersedes_ids`, `strip_ansi`,
 `is_normalized_name`) failed the predeclared gate: the 7B model scored 2/3,
 missing a small branch restructuring in `_supersedes_ids` despite the exact
-rule in the note. By the same rule that excluded Gemma at 2/3, the 7B is
-excluded from new held-out scoring. The four-arm editor v2 development probe
+rule in the note. Gemma 4B also scored 2/3 on these cases. Neither model
+qualified for new held-out scoring. The four-arm editor v2 development probe
 completed on the same 24 already-scored tasks, with one model and one repeat.
 Independent regrading reproduced all 96 results.
 
@@ -171,9 +171,9 @@ Independent regrading reproduced all 96 results.
 
 Both TRACE formats solved ten tasks and each lost one paired task to notes.
 The excerpt used 43% fewer median input tokens than the ordinary TRACE block.
-It solved one task the full block missed and missed one the full block solved. All 96
-edits reached the behavioral grader; the single retry was in the no-memory
-arm. The result separates output-format failures from coding failures.
+It solved one task the full block missed and missed one the full block solved.
+All 96 edits reached the behavioral grader; the single retry was in the
+no-memory arm. The result separates output-format failures from coding failures.
 It gives a reason to test the shorter context on new tasks, but no reason
 to raise the rating or switch the default. The rows carry `dev_probe: true`;
 the qualified trial cannot count them toward its release gate.
@@ -214,6 +214,11 @@ Status writes now use the shared atomic writer with a private temporary file.
 If the final status file stays busy, the monitor logs the failure and keeps the
 last complete status. A regression test covers a legacy temporary file that
 cannot be resolved.
+
+The development-report test subsequently exposed a separate CI failure: merely
+loading the report imported Wasmtime, which the ordinary test environment
+does not install. The grader now imports Wasmtime only when it runs WASI
+checks. Reporting and CI unit tests do not require the research runtime.
 
 ## Follow-up on targeted recall
 

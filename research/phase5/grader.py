@@ -6,8 +6,6 @@ import ast
 import secrets
 from pathlib import Path
 
-import wasmtime
-
 MAX_SOURCE = 6000
 FUEL = 210_000_000
 MEMORY_BYTES = 128 * 1024 * 1024
@@ -15,6 +13,8 @@ MEMORY_BYTES = 128 * 1024 * 1024
 
 class Grader:
     def __init__(self, root: Path, *, fuel: int = FUEL):
+        import wasmtime
+
         self.library = str((root / "lib").resolve(strict=True))
         self.fuel = fuel
         config = wasmtime.Config()
@@ -25,6 +25,8 @@ class Grader:
         self.linker.define_wasi()
 
     def run(self, script: str) -> tuple[bool, bytes]:
+        import wasmtime
+
         stdout = bytearray()
 
         def capture(data):
