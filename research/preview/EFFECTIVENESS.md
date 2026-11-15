@@ -176,3 +176,39 @@ Ollama with the pinned Qwen 2.5 Coder 7B model. The default run sends prompts
 to loopback only and needs no API key. Treat the scores as development
 evidence from one local model. This pilot grades single-function edits and
 does not cover full repository test suites or hosted agent sessions.
+
+## Fresh repository two-file pilot
+
+`research.preview.fresh_multifile` freezes two new behavioral changes in
+pinned Click and Packaging snapshots. The runner imports both edited
+modules and their repository dependencies in WASI. The only writable
+parts of the candidate are the two selected function definitions.
+Preflight verifies that the reference passes, that the original still
+passes the preservation checks, and that changing either file alone
+cannot satisfy the requested behavior.
+
+The TRACE arm retrieves the current verified decision and approved
+examples from a disposable, task-bound project with superseded and
+unrelated decisions. The maintained-notes arm gets the same current
+decision and approved examples from a prepared note. Both arms use the
+same source, two generation seeds, a maximum of two model calls, and one
+repair based on the public checks. Hidden behavior and preservation
+checks run after both files are edited. Reports list preservation
+failures alongside task passes for each arm.
+
+Use the local Evals environment described above. Run each stage with
+`--click CLICK --packaging PACKAGING --wasi WASI --scratch SCRATCH`.
+
+```text
+python -m research.preview.fresh_multifile preflight COMMON_ARGS
+python -m research.preview.fresh_multifile qualify COMMON_ARGS --model MODEL --output QUALIFICATION_JSONL
+python -m research.preview.fresh_multifile score COMMON_ARGS --model MODEL --input QUALIFICATION_JSONL --output SCORES_JSONL
+python -m research.preview.fresh_multifile regrade COMMON_ARGS --input SCORES_JSONL
+```
+
+The score stage requires a 2/2 executable result on disjoint two-file
+qualification tasks under the same model and protocol. For this pilot,
+look for a paired gain at each seed without any increase in preservation
+failures. Two tasks across two repositories are a starter batch. The
+representative release comparison requires a larger task set and
+qualified models.
