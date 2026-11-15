@@ -158,12 +158,25 @@ Requalification on three new disjoint cases (`_supersedes_ids`, `strip_ansi`,
 `is_normalized_name`) failed the predeclared gate: the 7B model scored 2/3,
 missing a small branch restructuring in `_supersedes_ids` despite the exact
 rule in the note. By the same rule that excluded Gemma at 2/3, the 7B is
-excluded from new held-out scoring. This host (15.5 GB RAM, about 1.4 GB free,
-CPU-only inference) cannot load a 14B-class local coder, so a new held-out
-round is blocked on hardware or qualification, not merely deferred. A
-development probe of editor v2 with the `trace_min` arm on the 24
-already-scored tasks (marked `dev_probe: true` throughout) is running as a
-diagnostic and is never held-out evidence.
+excluded from new held-out scoring. The four-arm editor v2 development probe
+completed on the same 24 already-scored tasks, with one model and one repeat.
+Independent regrading reproduced all 96 results.
+
+| Context | Passed / 24 | Preservation failures | Median input tokens |
+| --- | ---: | ---: | ---: |
+| No memory | 2 | 0 | 182 |
+| Maintained notes | 11 | 1 | 208 |
+| TRACE | 10 | 1 | 450 |
+| TRACE decision excerpt | 10 | 1 | 256 |
+
+Both TRACE formats solved ten tasks and each lost one paired task to notes.
+The excerpt used 43% fewer median input tokens than the ordinary TRACE block.
+It solved one task the full block missed and missed one the full block solved. All 96
+edits reached the behavioral grader; the single retry was in the no-memory
+arm. The result separates output-format failures from coding failures.
+It gives a reason to test the shorter context on new tasks, but no reason
+to raise the rating or switch the default. The rows carry `dev_probe: true`;
+the qualified trial cannot count them toward its release gate.
 
 Dogfooding note: recorded agent decisions surface through `trace events`,
 `trace search`, `trace context --task`, and the session-start context path
@@ -212,4 +225,4 @@ all 21 historical decisions with evidence, returned empty context on all
 three no-history controls, and reduced the median history-bearing block
 from 1,077 to 820 characters.
 
-The code and installed wheel passed [CI on all three platforms](https://github.com/PruvCode/Trace/actions/runs/43625497754).
+The code and installed wheel passed [CI on all three platforms](https://github.com/PruvCode/Trace/actions/runs/43635845241).

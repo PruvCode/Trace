@@ -3,6 +3,8 @@
 from pathlib import Path
 import sys
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from research.preview.editor import extract_function, retry_feedback, render_excerpt  # noqa: E402
@@ -58,3 +60,22 @@ def test_excerpt_is_empty_without_verified_history():
         {"kind": "message", "role": "assistant", "text": "hello", "session": "s1"},
         {"kind": "finding", "text": "no evidence", "role": "decision (verified)", "evidence": []},
     ]) == ""
+
+
+def test_development_replay_cannot_count_as_a_qualified_matrix(monkeypatch):
+    from research.preview import notes_trial
+
+    case = notes_trial.CASES[0]
+    monkeypatch.setattr(notes_trial, "CASES", (case,))
+    monkeypatch.setattr(notes_trial, "MODELS", {"local-model": "digest"})
+    monkeypatch.setattr(notes_trial, "SEEDS", (1,))
+    rows = [
+        dict(type="scored", task=notes_trial.key(case), model="local-model", seed=1,
+             arm=arm, passed=True, candidate="edit", regression=False, elapsed_ms=1, input_tokens=1)
+        for arm in notes_trial.ARMS
+    ]
+    assert notes_trial.summarize(rows)["complete_matrix"]
+    summary = notes_trial.summarize([dict(row, dev_probe=True) for row in rows])
+    assert summary["dev_probe"] and not summary["complete_matrix"]
+    with pytest.raises(ValueError, match="must stay separate"):
+        notes_trial.summarize([dict(rows[0], dev_probe=True), *rows[1:]])

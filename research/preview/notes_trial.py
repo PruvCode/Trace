@@ -58,7 +58,7 @@ def key(case):
 
 
 def protocol_digest():
-    files = (Path(__file__), Path(__file__).with_name("notes_cases.py"))
+    files = (Path(__file__), Path(__file__).with_name("notes_cases.py"), Path(editor.__file__))
     return sha256(b"".join(path.read_bytes().replace(b"\r\n", b"\n") for path in files)).hexdigest()
 
 
@@ -242,6 +242,9 @@ def proposal(grader, case, original, model, seed, arm, context, *, fenced_editor
 
 def summarize(rows, arms=None):
     scored = [row for row in rows if row["type"] == "scored"]
+    dev_probe = any(row.get("dev_probe") for row in scored)
+    if dev_probe and not all(row.get("dev_probe") for row in scored):
+        raise ValueError("development results must stay separate from qualified scores")
     grouped = {(r["task"], r["model"], r["seed"], r["arm"]): r for r in scored}
     assert len(grouped) == len(scored)
     arms = ARMS if arms is None else arms
@@ -270,7 +273,7 @@ def summarize(rows, arms=None):
     expected = {(key(case), model, seed, arm) for case in CASES
                 for model in MODELS for seed in SEEDS for arm in arms}
     return dict(arms=stats, paired_tasks=len(means), paired_runs=sum(map(len, differences.values())),
-                complete_matrix=set(grouped) == expected,
+                dev_probe=dev_probe, complete_matrix=not dev_probe and set(grouped) == expected,
                 lift=sum(means.values()) / len(means) if means else None,
                 paired_bootstrap_95=[draws[250], draws[9749]] if draws else None)
 
@@ -294,8 +297,11 @@ def record_row(path, payload):
 
 def run(args, root):
     output_path = getattr(args, "output", None)
+    dev_probe = args.mode == "devprobe"
 
     def emit_tee(kind, **row):
+        if dev_probe:
+            row["dev_probe"] = True
         emit(kind, **row)
         record_row(output_path, {"type": kind, **row})
 
@@ -356,17 +362,18 @@ def run(args, root):
             emit_tee("qualification", **row)
         emit_tee("qualification_summary", model=args.model, passed=sum(r["passed"] for r in rows), required=len(rows))
         return
-    qualified = read_rows(args.input)
-    assert any(r["type"] == "environment" and r["model_digest"] == tags[args.model]
-               and r.get("protocol_sha256") == protocol_digest() and r.get("fenced_editor", False) == fenced_editor
-               and bool(r.get("editor_v2", False)) == editor_v2
-               for r in qualified)
-    qualification = [r for r in qualified if r["type"] == "qualification" and r["model"] == args.model]
-    assert len(qualification) == len(qualification_cases) and all(
-        any(row["task"] == key(case) and row["passed"]
-            and grade(grader, case, row["candidate"]) == (True, True) for row in qualification)
-        for case in qualification_cases
-    )
+    if not dev_probe:
+        qualified = read_rows(args.input)
+        assert any(r["type"] == "environment" and r["model_digest"] == tags[args.model]
+                   and r.get("protocol_sha256") == protocol_digest() and r.get("fenced_editor", False) == fenced_editor
+                   and bool(r.get("editor_v2", False)) == editor_v2
+                   for r in qualified)
+        qualification = [r for r in qualified if r["type"] == "qualification" and r["model"] == args.model]
+        assert len(qualification) == len(qualification_cases) and all(
+            any(row["task"] == key(case) and row["passed"]
+                and grade(grader, case, row["candidate"]) == (True, True) for row in qualification)
+            for case in qualification_cases
+        )
     memory = root / "memory"
     memory.mkdir()
     blocks = contexts(memory, repos, excerpts=editor_v2)
@@ -375,7 +382,7 @@ def run(args, root):
     # Shards preserve identical per-task arm order and allow independent repeats.
     cases = CASES if args.repo is None else [case for case in CASES if case.repo == args.repo]
     rows = []
-    for repeat in args.repeat or range(3):
+    for repeat in args.repeat or (range(1) if dev_probe else range(3)):
         seed = SEEDS[repeat]
         for case in cases:
             order = random_order(seed, key(case), arms_all)
@@ -390,7 +397,7 @@ def run(args, root):
                     context = ""
                 row = proposal(grader, case, originals[key(case)], args.model, seed, arm, context,
                                fenced_editor=fenced_editor, repair=editor_v2)
-                rows.append({"type": "scored", **row})
+                rows.append({"type": "scored", "dev_probe": dev_probe, **row})
                 emit_tee("scored", **row)
     emit_tee("summary", **summarize(rows, arms_all))
 
@@ -404,7 +411,7 @@ def random_order(seed, task, arms=None):
 def main():
     sys.stdout.reconfigure(encoding="utf-8", write_through=True)
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("preflight", "recall", "qualify", "score", "regrade"))
+    parser.add_argument("mode", choices=("preflight", "recall", "qualify", "score", "regrade", "devprobe"))
     for name in REPOS:
         parser.add_argument(f"--{name}", type=Path, required=True)
     parser.add_argument("--scratch", type=Path, required=True)
@@ -419,12 +426,14 @@ def main():
     parser.add_argument("--output", type=Path, help="append every emitted row to this JSONL file durably")
     args = parser.parse_args()
     if (not __debug__ or (args.mode != "recall" and args.wasi is None)
-            or (args.mode in ("qualify", "score") and args.model is None)
+            or (args.mode in ("qualify", "score", "devprobe") and args.model is None)
             or (args.mode in ("score", "regrade") and args.input is None)
             or (args.repeat and len(set(args.repeat)) != len(args.repeat))
             or (args.editor_v2 and not args.fenced_editor)):
         parser.error("use assertions, provide WASI/model/input when required, select unique repeats, "
                      "and run editor v2 with the fenced editor")
+    if args.mode == "devprobe" and (not args.editor_v2 or args.output is None or args.output.exists()):
+        parser.error("devprobe requires editor v2 and a new output file")
     with TemporaryDirectory(prefix="trace-notes-", dir=args.scratch) as directory:
         run(args, Path(directory))
 
