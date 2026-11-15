@@ -143,3 +143,36 @@ It runs the first repeat by default and marks all rows as development
 results. To recheck saved edits, use `regrade --fenced-editor --editor-v2
 --input NEW_JSONL`. Development results cannot be mixed with qualified
 score rows or used to complete the release matrix.
+
+## OpenAI Evals verification pilot
+
+`research.preview.verification_pilot` runs three previously scored tasks with
+TRACE, maintained notes, and no memory. Two tasks exercise the fractional
+float and ragged row failures. The third is a self-contained request for
+which TRACE supplies no history. All three arms use the same pinned model,
+source, prompt template, and budget.
+
+The agent drafts a replacement and up to two checks expressed as JSON
+arguments and expected return values. The runner executes those checks in
+WASI and allows one repair when the draft or checks fail. The model sees
+only the outcomes of its own checks. The runner then grades the initial
+and final edits with the same hidden behavioral and preservation checks.
+OpenAI Evals schedules the samples and writes each verdict, token counts,
+and the final aggregate to a local JSONL file.
+
+Use a scratch environment from the TRACE checkout. Fetch [OpenAI Evals at
+the tested revision](https://github.com/openai/evals/tree/8eac7a7de5215c907fbddc30efdaf316913eccdd)
+and add its checkout directory to `PYTHONPATH`. Install TRACE and the
+dependencies used by this local runner in the scratch environment:
+
+```text
+python -m pip install -c constraints.txt -e . wasmtime==45.0.0 blobfile requests lz4 zstandard backoff tiktoken tqdm
+python -m research.preview.verification_pilot --trace TRACE --click CLICK --packaging PACKAGING --scratch SCRATCH --wasi WASI --output NEW_JSONL
+```
+
+The repository paths point to local Git checkouts with the revisions listed
+in the maintained-notes trial. Use the same WASI Python fixture and start
+Ollama with the pinned Qwen 2.5 Coder 7B model. The default run sends prompts
+to loopback only and needs no API key. Treat the scores as development
+evidence from one local model. This pilot grades single-function edits and
+does not cover full repository test suites or hosted agent sessions.
