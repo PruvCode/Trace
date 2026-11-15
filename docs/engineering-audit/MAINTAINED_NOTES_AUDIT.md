@@ -231,3 +231,34 @@ three no-history controls, and reduced the median history-bearing block
 from 1,077 to 820 characters.
 
 The code and installed wheel passed [CI on all three platforms](https://github.com/PruvCode/Trace/actions/runs/43635845241).
+
+## Decision-first context replay
+
+The [tested renderer](https://github.com/PruvCode/Trace/commit/5f683be4a5bcfee294dbdb5fd66d9db20b22b7f2)
+put the quoted decision at the start of the recovered records. It moved
+compact evidence references and code locations to the next line and
+retained redaction, a trust notice, and the existing boundary. The code
+passed [CI on all three platforms](https://github.com/PruvCode/Trace/actions/runs/43686868466).
+
+All 24 TRACE edits were generated again with Qwen 2.5 Coder 7B, the same
+seed, pinned source, editor, and behavioral checks. The comparison reused
+the 24 saved maintained-notes edits and the 24 saved no-memory edits. Their
+context hashes matched the inputs for this replay. Regrading reproduced
+all 72 verdicts.
+
+| Context | Passed / 24 | Preservation failures | Median input tokens |
+| --- | ---: | ---: | ---: |
+| Maintained notes | 11 | 1 | 208 |
+| Previous TRACE block | 10 | 1 | 450 |
+| Decision-first TRACE block | 9 | 1 | 348 |
+| No memory | 2 | 0 | 182 |
+
+The replay recovered all 21 decisions with evidence and left all three
+no-history contexts empty. The median history-bearing block dropped from
+1,104 to 640 characters. The fractional-float task still failed. The only
+change in pass status was Click's `iter_rows`. The generated edit padded
+short rows but omitted truncation, which the previous TRACE edit applied.
+
+The draft PR restores the previous renderer. The shorter context reduced
+prompt size and cost one passing task in this replay. The result covers one
+model on previously seen tasks.
