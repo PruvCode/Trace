@@ -1,0 +1,1899 @@
+[
+ {
+  "sha": "26d7d652218757828b64cfe7914660d529ab21e3",
+  "checks": [
+   "tests/test_regressions.py::test_alter_table_row_format_issue773"
+  ],
+  "clean_pass": true,
+  "mutants": []
+ },
+ {
+  "sha": "e378aaf45c5fad96d69daac25f53ff7469cb2878",
+  "checks": [
+   "tests/test_unit.py::Test02_WithoutPackrat::testCommonExpressions"
+  ],
+  "clean_pass": true,
+  "mutants": [
+   {
+    "path": "pyparsing/common.py",
+    "index": 0,
+    "kind": "drop",
+    "line": 410,
+    "outcomes": [
+     "pass"
+    ],
+    "killed": false
+   }
+  ]
+ },
+ {
+  "sha": "a5e080704e9f266f960a71aaaffc3b00d2e72d20",
+  "checks": [
+   "tests/test_unit.py::Test02_WithoutPackrat::testSetDebugWithControlCharInLine"
+  ],
+  "clean_pass": true,
+  "mutants": [
+   {
+    "path": "pyparsing/core.py",
+    "index": 0,
+    "kind": "value",
+    "line": 359,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "pyparsing/core.py",
+    "index": 1,
+    "kind": "value",
+    "line": 359,
+    "outcomes": [
+     "pass"
+    ],
+    "killed": false
+   },
+   {
+    "path": "pyparsing/core.py",
+    "index": 2,
+    "kind": "drop",
+    "line": 366,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "pyparsing/core.py",
+    "index": 3,
+    "kind": "drop",
+    "line": 367,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "pyparsing/core.py",
+    "index": 4,
+    "kind": "value",
+    "line": 371,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "pyparsing/core.py",
+    "index": 5,
+    "kind": "drop",
+    "line": 368,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "pyparsing/core.py",
+    "index": 6,
+    "kind": "value",
+    "line": 359,
+    "outcomes": [
+     "pass"
+    ],
+    "killed": false
+   },
+   {
+    "path": "pyparsing/core.py",
+    "index": 7,
+    "kind": "drop",
+    "line": 370,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "pyparsing/core.py",
+    "index": 8,
+    "kind": "drop",
+    "line": 359,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "pyparsing/core.py",
+    "index": 9,
+    "kind": "value",
+    "line": 371,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "pyparsing/core.py",
+    "index": 10,
+    "kind": "value",
+    "line": 359,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   }
+  ]
+ },
+ {
+  "sha": "d992be0de9383ddcaae3a24866a2d96b52132b07",
+  "checks": [
+   "tests/test_more.py::TestRunningMin::test_stability",
+   "tests/test_more.py::TestRunningMax::test_stability"
+  ],
+  "clean_pass": true,
+  "mutants": [
+   {
+    "path": "more_itertools/recipes.py",
+    "index": 0,
+    "kind": "drop",
+    "line": 1477,
+    "outcomes": [
+     "fail",
+     "pass"
+    ],
+    "killed": true
+   },
+   {
+    "path": "more_itertools/recipes.py",
+    "index": 1,
+    "kind": "not",
+    "line": 1485,
+    "outcomes": [
+     "fail",
+     "pass"
+    ],
+    "killed": true
+   },
+   {
+    "path": "more_itertools/recipes.py",
+    "index": 2,
+    "kind": "op",
+    "line": 1533,
+    "outcomes": [
+     "pass",
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "more_itertools/recipes.py",
+    "index": 3,
+    "kind": "not",
+    "line": 1537,
+    "outcomes": [
+     "pass",
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "more_itertools/recipes.py",
+    "index": 4,
+    "kind": "ops",
+    "line": 1485,
+    "outcomes": [
+     "fail",
+     "pass"
+    ],
+    "killed": true
+   },
+   {
+    "path": "more_itertools/recipes.py",
+    "index": 5,
+    "kind": "drop",
+    "line": 1538,
+    "outcomes": [
+     "pass",
+     "pass"
+    ],
+    "killed": false
+   },
+   {
+    "path": "more_itertools/recipes.py",
+    "index": 6,
+    "kind": "value",
+    "line": 1537,
+    "outcomes": [
+     "pass",
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "more_itertools/recipes.py",
+    "index": 7,
+    "kind": "value",
+    "line": 1481,
+    "outcomes": [
+     "fail",
+     "pass"
+    ],
+    "killed": true
+   },
+   {
+    "path": "more_itertools/recipes.py",
+    "index": 8,
+    "kind": "drop",
+    "line": 1537,
+    "outcomes": [
+     "pass",
+     "pass"
+    ],
+    "killed": false
+   },
+   {
+    "path": "more_itertools/recipes.py",
+    "index": 9,
+    "kind": "drop",
+    "line": 1492,
+    "outcomes": [
+     "fail",
+     "pass"
+    ],
+    "killed": true
+   },
+   {
+    "path": "more_itertools/recipes.py",
+    "index": 10,
+    "kind": "op",
+    "line": 1481,
+    "outcomes": [
+     "fail",
+     "pass"
+    ],
+    "killed": true
+   },
+   {
+    "path": "more_itertools/recipes.py",
+    "index": 11,
+    "kind": "drop",
+    "line": 1486,
+    "outcomes": [
+     "pass",
+     "pass"
+    ],
+    "killed": false
+   }
+  ]
+ },
+ {
+  "sha": "b2821370ca8a7ead712287d7ec856b36165aaef7",
+  "checks": [
+   "tests/test_toml_document.py::test_replace_super_table_preserves_whitespace"
+  ],
+  "clean_pass": true,
+  "mutants": [
+   {
+    "path": "tomlkit/container.py",
+    "index": 0,
+    "kind": "drop",
+    "line": 1223,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "tomlkit/container.py",
+    "index": 1,
+    "kind": "ops",
+    "line": 1225,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "tomlkit/container.py",
+    "index": 2,
+    "kind": "ops",
+    "line": 1226,
+    "outcomes": [
+     "pass"
+    ],
+    "killed": false
+   },
+   {
+    "path": "tomlkit/container.py",
+    "index": 3,
+    "kind": "drop",
+    "line": 1225,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "tomlkit/container.py",
+    "index": 4,
+    "kind": "value",
+    "line": 1226,
+    "outcomes": [
+     "pass"
+    ],
+    "killed": false
+   },
+   {
+    "path": "tomlkit/container.py",
+    "index": 5,
+    "kind": "drop",
+    "line": 1226,
+    "outcomes": [
+     "pass"
+    ],
+    "killed": false
+   },
+   {
+    "path": "tomlkit/container.py",
+    "index": 6,
+    "kind": "drop",
+    "line": 1222,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "tomlkit/container.py",
+    "index": 7,
+    "kind": "value",
+    "line": 1222,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "tomlkit/container.py",
+    "index": 8,
+    "kind": "op",
+    "line": 1225,
+    "outcomes": [
+     "pass"
+    ],
+    "killed": false
+   },
+   {
+    "path": "tomlkit/container.py",
+    "index": 9,
+    "kind": "drop",
+    "line": 1224,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "tomlkit/container.py",
+    "index": 10,
+    "kind": "drop",
+    "line": 1221,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "tomlkit/container.py",
+    "index": 11,
+    "kind": "value",
+    "line": 1226,
+    "outcomes": [
+     "pass"
+    ],
+    "killed": false
+   }
+  ]
+ },
+ {
+  "sha": "49069361a41d2050086b7ec0f69a38a548802867",
+  "checks": [
+   "tests/test_toml_document.py::test_replace_table_with_itself_preserves_display_name"
+  ],
+  "clean_pass": true,
+  "mutants": [
+   {
+    "path": "tomlkit/container.py",
+    "index": 0,
+    "kind": "drop",
+    "line": 931,
+    "outcomes": [
+     "pass"
+    ],
+    "killed": false
+   },
+   {
+    "path": "tomlkit/container.py",
+    "index": 1,
+    "kind": "ops",
+    "line": 931,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "tomlkit/container.py",
+    "index": 2,
+    "kind": "op",
+    "line": 931,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   }
+  ]
+ },
+ {
+  "sha": "cc05afa962244b3d1c781a7fc54f66b7f29ef8b7",
+  "checks": [
+   "tests/test_toml_document.py::test_repr_out_of_order_table_proxy"
+  ],
+  "clean_pass": true,
+  "mutants": [
+   {
+    "path": "tomlkit/container.py",
+    "index": 0,
+    "kind": "drop",
+    "line": 1127,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "tomlkit/container.py",
+    "index": 1,
+    "kind": "drop",
+    "line": 1130,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   }
+  ]
+ },
+ {
+  "sha": "b48c094775fba4cb3c16dea4c302ae5e371ac4e9",
+  "checks": [
+   "tests/test_parser.py::test_parser_rejects_overlong_decimal_integer"
+  ],
+  "clean_pass": true,
+  "mutants": [
+   {
+    "path": "tomlkit/parser.py",
+    "index": 0,
+    "kind": "ops",
+    "line": 792,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "tomlkit/parser.py",
+    "index": 1,
+    "kind": "value",
+    "line": 792,
+    "outcomes": [
+     "pass"
+    ],
+    "killed": false
+   },
+   {
+    "path": "tomlkit/parser.py",
+    "index": 2,
+    "kind": "drop",
+    "line": 798,
+    "outcomes": [
+     "pass"
+    ],
+    "killed": false
+   },
+   {
+    "path": "tomlkit/parser.py",
+    "index": 3,
+    "kind": "ops",
+    "line": 792,
+    "outcomes": [
+     "pass"
+    ],
+    "killed": false
+   },
+   {
+    "path": "tomlkit/parser.py",
+    "index": 4,
+    "kind": "op",
+    "line": 792,
+    "outcomes": [
+     "pass"
+    ],
+    "killed": false
+   },
+   {
+    "path": "tomlkit/parser.py",
+    "index": 5,
+    "kind": "op",
+    "line": 792,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "tomlkit/parser.py",
+    "index": 6,
+    "kind": "drop",
+    "line": 792,
+    "outcomes": [
+     "pass"
+    ],
+    "killed": false
+   },
+   {
+    "path": "tomlkit/parser.py",
+    "index": 7,
+    "kind": "ops",
+    "line": 792,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "tomlkit/parser.py",
+    "index": 8,
+    "kind": "ops",
+    "line": 792,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   }
+  ]
+ },
+ {
+  "sha": "e23a25438c6cc9b8cc28b6dcf76dc52f9c7a33e3",
+  "checks": [
+   "tests/test_toml_document.py::test_set_value_on_out_of_order_table_with_empty_concrete_part"
+  ],
+  "clean_pass": true,
+  "mutants": [
+   {
+    "path": "tomlkit/container.py",
+    "index": 0,
+    "kind": "drop",
+    "line": 1185,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "tomlkit/container.py",
+    "index": 1,
+    "kind": "drop",
+    "line": 1188,
+    "outcomes": [
+     "pass"
+    ],
+    "killed": false
+   },
+   {
+    "path": "tomlkit/container.py",
+    "index": 2,
+    "kind": "drop",
+    "line": 1184,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "tomlkit/container.py",
+    "index": 3,
+    "kind": "drop",
+    "line": 1183,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "tomlkit/container.py",
+    "index": 4,
+    "kind": "drop",
+    "line": 1186,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "tomlkit/container.py",
+    "index": 5,
+    "kind": "not",
+    "line": 1184,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "tomlkit/container.py",
+    "index": 6,
+    "kind": "value",
+    "line": 1188,
+    "outcomes": [
+     "pass"
+    ],
+    "killed": false
+   }
+  ]
+ },
+ {
+  "sha": "67d3e86502706df2a9ed67114ab67e25bcdcbbb7",
+  "checks": [
+   "tests/test_toml_document.py::test_replace_dotted_key_with_aot_keeps_following_sibling"
+  ],
+  "clean_pass": true,
+  "mutants": [
+   {
+    "path": "tomlkit/container.py",
+    "index": 0,
+    "kind": "op",
+    "line": 868,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "tomlkit/container.py",
+    "index": 1,
+    "kind": "op",
+    "line": 867,
+    "outcomes": [
+     "pass"
+    ],
+    "killed": false
+   },
+   {
+    "path": "tomlkit/container.py",
+    "index": 2,
+    "kind": "drop",
+    "line": 867,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "tomlkit/container.py",
+    "index": 3,
+    "kind": "not",
+    "line": 869,
+    "outcomes": [
+     "pass"
+    ],
+    "killed": false
+   },
+   {
+    "path": "tomlkit/container.py",
+    "index": 4,
+    "kind": "op",
+    "line": 869,
+    "outcomes": [
+     "pass"
+    ],
+    "killed": false
+   }
+  ]
+ },
+ {
+  "sha": "8cd44f58b499da3c80a29bc877a512665a15e0bb",
+  "checks": [
+   "tests/test_api.py::test_create_multiline_string_with_leading_newline_round_trips"
+  ],
+  "clean_pass": true,
+  "mutants": [
+   {
+    "path": "tomlkit/items.py",
+    "index": 0,
+    "kind": "drop",
+    "line": 2259,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "tomlkit/items.py",
+    "index": 1,
+    "kind": "op",
+    "line": 2254,
+    "outcomes": [
+     "pass"
+    ],
+    "killed": false
+   },
+   {
+    "path": "tomlkit/items.py",
+    "index": 2,
+    "kind": "drop",
+    "line": 2254,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "tomlkit/items.py",
+    "index": 3,
+    "kind": "value",
+    "line": 2254,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "tomlkit/items.py",
+    "index": 4,
+    "kind": "ops",
+    "line": 2254,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   }
+  ]
+ },
+ {
+  "sha": "21a4942ed31e773061c9fc047d55b1bb3c637ee3",
+  "checks": [
+   "tests/test_items.py::test_array_add_line_multiline_comment_is_rejected",
+   "tests/test_items.py::test_comment_method_multiline_comment_is_rejected"
+  ],
+  "clean_pass": true,
+  "mutants": [
+   {
+    "path": "tomlkit/items.py",
+    "index": 0,
+    "kind": "op",
+    "line": 1526,
+    "outcomes": [
+     "fail",
+     "pass"
+    ],
+    "killed": true
+   },
+   {
+    "path": "tomlkit/items.py",
+    "index": 1,
+    "kind": "ops",
+    "line": 1526,
+    "outcomes": [
+     "fail",
+     "pass"
+    ],
+    "killed": true
+   },
+   {
+    "path": "tomlkit/items.py",
+    "index": 2,
+    "kind": "drop",
+    "line": 1526,
+    "outcomes": [
+     "fail",
+     "pass"
+    ],
+    "killed": true
+   },
+   {
+    "path": "tomlkit/items.py",
+    "index": 3,
+    "kind": "op",
+    "line": 503,
+    "outcomes": [
+     "pass",
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "tomlkit/items.py",
+    "index": 4,
+    "kind": "drop",
+    "line": 1527,
+    "outcomes": [
+     "fail",
+     "pass"
+    ],
+    "killed": true
+   },
+   {
+    "path": "tomlkit/items.py",
+    "index": 5,
+    "kind": "drop",
+    "line": 504,
+    "outcomes": [
+     "pass",
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "tomlkit/items.py",
+    "index": 6,
+    "kind": "ops",
+    "line": 503,
+    "outcomes": [
+     "pass",
+     "pass"
+    ],
+    "killed": false
+   },
+   {
+    "path": "tomlkit/items.py",
+    "index": 7,
+    "kind": "op",
+    "line": 1526,
+    "outcomes": [
+     "pass",
+     "pass"
+    ],
+    "killed": false
+   },
+   {
+    "path": "tomlkit/items.py",
+    "index": 8,
+    "kind": "drop",
+    "line": 503,
+    "outcomes": [
+     "pass",
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "tomlkit/items.py",
+    "index": 9,
+    "kind": "ops",
+    "line": 1526,
+    "outcomes": [
+     "pass",
+     "pass"
+    ],
+    "killed": false
+   },
+   {
+    "path": "tomlkit/items.py",
+    "index": 10,
+    "kind": "ops",
+    "line": 503,
+    "outcomes": [
+     "pass",
+     "fail"
+    ],
+    "killed": true
+   }
+  ]
+ },
+ {
+  "sha": "92f52e2c3b3ffb24215e966c0c349ca5678a7f86",
+  "checks": [
+   "tests/test_unit.py::Test02_WithoutPackrat::testParseResultsDeepcopy4"
+  ],
+  "clean_pass": true,
+  "mutants": [
+   {
+    "path": "pyparsing/results.py",
+    "index": 0,
+    "kind": "drop",
+    "line": 710,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "pyparsing/results.py",
+    "index": 1,
+    "kind": "drop",
+    "line": 716,
+    "outcomes": [
+     "pass"
+    ],
+    "killed": false
+   },
+   {
+    "path": "pyparsing/results.py",
+    "index": 2,
+    "kind": "drop",
+    "line": 714,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "pyparsing/results.py",
+    "index": 3,
+    "kind": "drop",
+    "line": 715,
+    "outcomes": [
+     "pass"
+    ],
+    "killed": false
+   },
+   {
+    "path": "pyparsing/results.py",
+    "index": 4,
+    "kind": "drop",
+    "line": 717,
+    "outcomes": [
+     "pass"
+    ],
+    "killed": false
+   },
+   {
+    "path": "pyparsing/results.py",
+    "index": 5,
+    "kind": "drop",
+    "line": 706,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "pyparsing/results.py",
+    "index": 6,
+    "kind": "drop",
+    "line": 720,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "pyparsing/results.py",
+    "index": 7,
+    "kind": "drop",
+    "line": 695,
+    "outcomes": [
+     "pass"
+    ],
+    "killed": false
+   },
+   {
+    "path": "pyparsing/results.py",
+    "index": 8,
+    "kind": "ops",
+    "line": 713,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "pyparsing/results.py",
+    "index": 9,
+    "kind": "drop",
+    "line": 713,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "pyparsing/results.py",
+    "index": 10,
+    "kind": "drop",
+    "line": 689,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "pyparsing/results.py",
+    "index": 11,
+    "kind": "drop",
+    "line": 705,
+    "outcomes": [
+     "pass"
+    ],
+    "killed": false
+   }
+  ]
+ },
+ {
+  "sha": "609cabe932a1ea1423b24568644945abb1b8bb84",
+  "checks": [
+   "tests/test_setutils.py::test_iset_slice_after_removal",
+   "tests/test_setutils.py::test_iset_slice_agreement"
+  ],
+  "clean_pass": true,
+  "mutants": [
+   {
+    "path": "boltons/setutils.py",
+    "index": 0,
+    "kind": "drop",
+    "line": 403,
+    "outcomes": [
+     "fail",
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "boltons/setutils.py",
+    "index": 1,
+    "kind": "value",
+    "line": 401,
+    "outcomes": [
+     "pass",
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "boltons/setutils.py",
+    "index": 2,
+    "kind": "ops",
+    "line": 403,
+    "outcomes": [
+     "pass",
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "boltons/setutils.py",
+    "index": 3,
+    "kind": "drop",
+    "line": 404,
+    "outcomes": [
+     "fail",
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "boltons/setutils.py",
+    "index": 4,
+    "kind": "value",
+    "line": 402,
+    "outcomes": [
+     "pass",
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "boltons/setutils.py",
+    "index": 5,
+    "kind": "op",
+    "line": 401,
+    "outcomes": [
+     "fail",
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "boltons/setutils.py",
+    "index": 6,
+    "kind": "drop",
+    "line": 402,
+    "outcomes": [
+     "fail",
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "boltons/setutils.py",
+    "index": 7,
+    "kind": "ops",
+    "line": 401,
+    "outcomes": [
+     "pass",
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "boltons/setutils.py",
+    "index": 8,
+    "kind": "ops",
+    "line": 403,
+    "outcomes": [
+     "fail",
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "boltons/setutils.py",
+    "index": 9,
+    "kind": "op",
+    "line": 403,
+    "outcomes": [
+     "fail",
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "boltons/setutils.py",
+    "index": 10,
+    "kind": "drop",
+    "line": 401,
+    "outcomes": [
+     "fail",
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "boltons/setutils.py",
+    "index": 11,
+    "kind": "value",
+    "line": 403,
+    "outcomes": [
+     "pass",
+     "fail"
+    ],
+    "killed": true
+   }
+  ]
+ },
+ {
+  "sha": "d0a284fc7ef1aebceb54798600d73be4eeb76ed8",
+  "checks": [
+   "tests/test_setutils.py::test_iset_scalar_index_bounds",
+   "tests/test_setutils.py::test_iset_scalar_index_multiple_dead_intervals"
+  ],
+  "clean_pass": true,
+  "mutants": [
+   {
+    "path": "boltons/setutils.py",
+    "index": 0,
+    "kind": "ops",
+    "line": 161,
+    "outcomes": [
+     "fail",
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "boltons/setutils.py",
+    "index": 1,
+    "kind": "op",
+    "line": 161,
+    "outcomes": [
+     "fail",
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "boltons/setutils.py",
+    "index": 2,
+    "kind": "drop",
+    "line": 422,
+    "outcomes": [
+     "fail",
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "boltons/setutils.py",
+    "index": 3,
+    "kind": "drop",
+    "line": 161,
+    "outcomes": [
+     "fail",
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "boltons/setutils.py",
+    "index": 4,
+    "kind": "ops",
+    "line": 161,
+    "outcomes": [
+     "pass",
+     "pass"
+    ],
+    "killed": false
+   },
+   {
+    "path": "boltons/setutils.py",
+    "index": 5,
+    "kind": "drop",
+    "line": 162,
+    "outcomes": [
+     "fail",
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "boltons/setutils.py",
+    "index": 6,
+    "kind": "value",
+    "line": 161,
+    "outcomes": [
+     "fail",
+     "fail"
+    ],
+    "killed": true
+   }
+  ]
+ },
+ {
+  "sha": "ebc7a8f776debfa33f0b380b57a444bca75a251b",
+  "checks": [
+   "tests/test_dictutils.py::test_omd_copy_module"
+  ],
+  "clean_pass": true,
+  "mutants": [
+   {
+    "path": "boltons/dictutils.py",
+    "index": 0,
+    "kind": "drop",
+    "line": 189,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   }
+  ]
+ },
+ {
+  "sha": "55dfe5077bcb5fa76611b5f2a557ea6c442ad87c",
+  "checks": [
+   "tests/test_fileutils.py::test_atomicsaver_pathlike",
+   "tests/test_fileutils.py::test_iter_find_files_pathlike"
+  ],
+  "clean_pass": true,
+  "mutants": [
+   {
+    "path": "boltons/fileutils.py",
+    "index": 0,
+    "kind": "drop",
+    "line": 533,
+    "outcomes": [
+     "pass",
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "boltons/fileutils.py",
+    "index": 1,
+    "kind": "drop",
+    "line": 403,
+    "outcomes": [
+     "fail",
+     "pass"
+    ],
+    "killed": true
+   },
+   {
+    "path": "boltons/fileutils.py",
+    "index": 2,
+    "kind": "drop",
+    "line": 389,
+    "outcomes": [
+     "fail",
+     "pass"
+    ],
+    "killed": true
+   }
+  ]
+ },
+ {
+  "sha": "1e61524a798ea73632029a013a7686036d5c126f",
+  "checks": [
+   "tests/test_strutils.py::test_singularize_double_s"
+  ],
+  "clean_pass": true,
+  "mutants": [
+   {
+    "path": "boltons/strutils.py",
+    "index": 0,
+    "kind": "drop",
+    "line": 230,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "boltons/strutils.py",
+    "index": 1,
+    "kind": "drop",
+    "line": 236,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   }
+  ]
+ },
+ {
+  "sha": "ead236e278ca0466bf468de746b5960fb12d7e5b",
+  "checks": [
+   "tests/test_iterutils.py::test_backoff_constant_factor"
+  ],
+  "clean_pass": true,
+  "mutants": [
+   {
+    "path": "boltons/iterutils.py",
+    "index": 0,
+    "kind": "value",
+    "line": 655,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "boltons/iterutils.py",
+    "index": 1,
+    "kind": "value",
+    "line": 657,
+    "outcomes": [
+     "pass"
+    ],
+    "killed": false
+   },
+   {
+    "path": "boltons/iterutils.py",
+    "index": 2,
+    "kind": "ops",
+    "line": 651,
+    "outcomes": [
+     "pass"
+    ],
+    "killed": false
+   },
+   {
+    "path": "boltons/iterutils.py",
+    "index": 3,
+    "kind": "drop",
+    "line": 652,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "boltons/iterutils.py",
+    "index": 4,
+    "kind": "drop",
+    "line": 658,
+    "outcomes": [
+     "pass"
+    ],
+    "killed": false
+   },
+   {
+    "path": "boltons/iterutils.py",
+    "index": 5,
+    "kind": "drop",
+    "line": 655,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "boltons/iterutils.py",
+    "index": 6,
+    "kind": "drop",
+    "line": 653,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "boltons/iterutils.py",
+    "index": 7,
+    "kind": "drop",
+    "line": 657,
+    "outcomes": [
+     "pass"
+    ],
+    "killed": false
+   },
+   {
+    "path": "boltons/iterutils.py",
+    "index": 8,
+    "kind": "drop",
+    "line": 651,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "boltons/iterutils.py",
+    "index": 9,
+    "kind": "value",
+    "line": 658,
+    "outcomes": [
+     "pass"
+    ],
+    "killed": false
+   },
+   {
+    "path": "boltons/iterutils.py",
+    "index": 10,
+    "kind": "ops",
+    "line": 652,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   }
+  ]
+ },
+ {
+  "sha": "8c3fc2850693eacd2f2f8c95e7581adbb65b1269",
+  "checks": [
+   "tests/test_strutils.py::test_pluralize_x"
+  ],
+  "clean_pass": true,
+  "mutants": [
+   {
+    "path": "boltons/strutils.py",
+    "index": 0,
+    "kind": "ops",
+    "line": 261,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "boltons/strutils.py",
+    "index": 1,
+    "kind": "drop",
+    "line": 261,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "boltons/strutils.py",
+    "index": 2,
+    "kind": "op",
+    "line": 261,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "boltons/strutils.py",
+    "index": 3,
+    "kind": "value",
+    "line": 261,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   }
+  ]
+ },
+ {
+  "sha": "7b577b0f3cc7adc2418733ce5c7dcdf6af82187d",
+  "checks": [
+   "tests/test_tbutils_parsed_exc.py::test_parsed_exc_with_anchor"
+  ],
+  "clean_pass": true,
+  "mutants": [
+   {
+    "path": "boltons/tbutils.py",
+    "index": 0,
+    "kind": "drop",
+    "line": 813,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "boltons/tbutils.py",
+    "index": 1,
+    "kind": "drop",
+    "line": 734,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "boltons/tbutils.py",
+    "index": 2,
+    "kind": "drop",
+    "line": 814,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "boltons/tbutils.py",
+    "index": 3,
+    "kind": "drop",
+    "line": 735,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "boltons/tbutils.py",
+    "index": 4,
+    "kind": "drop",
+    "line": 733,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "boltons/tbutils.py",
+    "index": 5,
+    "kind": "drop",
+    "line": 812,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "boltons/tbutils.py",
+    "index": 6,
+    "kind": "value",
+    "line": 813,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "boltons/tbutils.py",
+    "index": 7,
+    "kind": "drop",
+    "line": 815,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   }
+  ]
+ },
+ {
+  "sha": "d3388aaf5c60d1069b7294a743ccd0e7c87a1d1d",
+  "checks": [
+   "tests/test_unit.py::Test02_WithoutPackrat::testCommonExpressions"
+  ],
+  "clean_pass": true,
+  "mutants": [
+   {
+    "path": "pyparsing/common.py",
+    "index": 0,
+    "kind": "value",
+    "line": 432,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "pyparsing/common.py",
+    "index": 1,
+    "kind": "drop",
+    "line": 4,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "pyparsing/common.py",
+    "index": 2,
+    "kind": "drop",
+    "line": 431,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "pyparsing/common.py",
+    "index": 3,
+    "kind": "value",
+    "line": 432,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   }
+  ]
+ },
+ {
+  "sha": "111b35cffcfe44b16fbdd27507f165bafd52a2a1",
+  "checks": [
+   "tests/test_grouping.py::test_grouping_alias_ctas_lowercase_as"
+  ],
+  "clean_pass": true,
+  "mutants": [
+   {
+    "path": "sqlparse/engine/grouping.py",
+    "index": 0,
+    "kind": "drop",
+    "line": 384,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "sqlparse/engine/grouping.py",
+    "index": 1,
+    "kind": "ops",
+    "line": 384,
+    "outcomes": [
+     "pass"
+    ],
+    "killed": false
+   }
+  ]
+ },
+ {
+  "sha": "ac3b9e0b25627feb42a7053074b6549df81dcfaf",
+  "checks": [
+   "tests/test_regressions.py::test_materialized_view_issue752"
+  ],
+  "clean_pass": true,
+  "mutants": []
+ },
+ {
+  "sha": "f66d12c245412f28c58f045b646eb53c0e691b8b",
+  "checks": [
+   "tests/test_parse.py::test_get_real_name_multi_part_dotted"
+  ],
+  "clean_pass": true,
+  "mutants": [
+   {
+    "path": "sqlparse/sql.py",
+    "index": 0,
+    "kind": "drop",
+    "line": 24,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "sqlparse/sql.py",
+    "index": 1,
+    "kind": "drop",
+    "line": 22,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "sqlparse/sql.py",
+    "index": 2,
+    "kind": "drop",
+    "line": 23,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "sqlparse/sql.py",
+    "index": 3,
+    "kind": "drop",
+    "line": 25,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   }
+  ]
+ },
+ {
+  "sha": "a194d3187b04b0aed7a935c3401f068236fb6264",
+  "checks": [
+   "tests/test_regressions.py::test_between_leading_dot_float_issue601"
+  ],
+  "clean_pass": true,
+  "mutants": []
+ },
+ {
+  "sha": "59b167db1ba364422e1505e8e112f8447764cd22",
+  "checks": [
+   "tests/test_unit.py::Test02_WithoutPackrat::testQuotedStringWithWhitespaceInQuoteChars"
+  ],
+  "clean_pass": true,
+  "mutants": [
+   {
+    "path": "pyparsing/core.py",
+    "index": 0,
+    "kind": "drop",
+    "line": 3726,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "pyparsing/core.py",
+    "index": 1,
+    "kind": "not",
+    "line": 3721,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "pyparsing/core.py",
+    "index": 2,
+    "kind": "drop",
+    "line": 3721,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "pyparsing/core.py",
+    "index": 3,
+    "kind": "drop",
+    "line": 3727,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "pyparsing/core.py",
+    "index": 4,
+    "kind": "not",
+    "line": 3726,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   }
+  ]
+ },
+ {
+  "sha": "b0e277721f36ccc701ac0e4d3693f0ec00baf4c1",
+  "checks": [
+   "tests/test_unit.py::Test02_WithoutPackrat::testParseResultsArithmeticContract"
+  ],
+  "clean_pass": true,
+  "mutants": [
+   {
+    "path": "pyparsing/results.py",
+    "index": 0,
+    "kind": "drop",
+    "line": 522,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "pyparsing/results.py",
+    "index": 1,
+    "kind": "drop",
+    "line": 523,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   },
+   {
+    "path": "pyparsing/results.py",
+    "index": 2,
+    "kind": "not",
+    "line": 522,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   }
+  ]
+ },
+ {
+  "sha": "4fb4aa06af713749beebc5e38c14c0768c38575c",
+  "checks": [
+   "tests/test_unit.py::Test02_WithoutPackrat::testWordMaxIndependentOfWhitespaceInCharset"
+  ],
+  "clean_pass": true,
+  "mutants": [
+   {
+    "path": "pyparsing/__init__.py",
+    "index": 0,
+    "kind": "drop",
+    "line": 139,
+    "outcomes": [
+     "error"
+    ],
+    "killed": true
+   }
+  ]
+ },
+ {
+  "sha": "94842d07f1cb80ad0644ca93b814e59d73fec836",
+  "checks": [
+   "tests/test_unit.py::Test02_WithoutPackrat::testParseResultsCopyResultsNamesAreIndependent"
+  ],
+  "clean_pass": true,
+  "mutants": [
+   {
+    "path": "pyparsing/results.py",
+    "index": 0,
+    "kind": "drop",
+    "line": 683,
+    "outcomes": [
+     "fail"
+    ],
+    "killed": true
+   }
+  ]
+ }
+]
