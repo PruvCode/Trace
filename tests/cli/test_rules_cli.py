@@ -84,3 +84,40 @@ def test_proposed_checks_are_never_executed(repo, tmp_path, capsys):
 def test_cli_entry_point_is_wired():
     done = subprocess.run([sys.executable, "-m", "trace_memory.cli", "rules", "--help"], capture_output=True, text=True)
     assert done.returncode == 0 and "check" in done.stdout
+
+
+def test_repeated_identical_failure_is_reported_and_cleared(repo, capsys):
+    (repo / ".agent-memory").mkdir()
+    broken = SOURCE.replace("        return DEFAULT_LIMIT\n", "        pass\n")
+    (repo / "pkg" / "limits.py").write_text(broken, encoding="utf-8")
+    results = []
+    for _ in range(2):
+        assert cli.main(["rules", "check", str(repo), "--json"]) == 1
+        results.append(json.loads(capsys.readouterr().out)["results"][0])
+    assert [r["repeated"] for r in results] == [False, True]
+    assert "already failed" in results[1]["next_step"] and "Fix the code" in results[0]["next_step"]
+    (repo / "pkg" / "limits.py").write_text(broken + "# different attempt\n", encoding="utf-8")
+    cli.main(["rules", "check", str(repo), "--json"])
+    assert json.loads(capsys.readouterr().out)["results"][0]["repeated"] is False
+    (repo / "pkg" / "limits.py").write_text(SOURCE + "\n", encoding="utf-8")
+    assert cli.main(["rules", "check", str(repo)]) == 0
+    capsys.readouterr()
+    assert json.loads((repo / ".agent-memory" / "rule-checks.json").read_text(encoding="utf-8")) == {}
+
+
+def test_check_reports_approved_rules_without_checks(repo, capsys):
+    (repo / "pkg" / "limits.py").write_text(SOURCE + "\n", encoding="utf-8")
+    cli.main(["rules", "check", str(repo), "--json"])
+    assert json.loads(capsys.readouterr().out)["uncovered"] == ["pkg/limits.py"]
+    cli.main(["rules", "check", str(repo)])
+    assert "approved rules with no checks (not verified): pkg/limits.py" in capsys.readouterr().out
+
+
+def test_a_working_tree_edit_to_an_approved_check_is_never_executed(repo, tmp_path, capsys):
+    marker = tmp_path / "ran"
+    edited = RULES.replace("clamp_limit(8.5) == DEFAULT_LIMIT", f"open({str(marker)!r}, 'w') is None")
+    (repo / ".trace" / "RULES.md").write_text(edited, encoding="utf-8")
+    assert cli.main(["rules", "check", str(repo), "--all", "--json"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert not marker.exists()
+    assert [r["check"] for r in out["results"]] == ["clamp_limit(8.5) == DEFAULT_LIMIT"]  # the approved version ran

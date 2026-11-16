@@ -29,6 +29,7 @@ Recency policy:
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import json
 import sqlite3
@@ -43,6 +44,7 @@ from memory import episodic as episodic_mod
 from memory import evidence as evidence_mod
 from memory import redact as redact_mod
 from memory import relevance
+from memory import rules as rules_mod
 from memory import store as store_mod
 from memory import synthetic as synthetic_mod
 from memory import task_library
@@ -524,6 +526,22 @@ def format_block(items: list[dict]) -> str:
     return "\n".join(["<TRACE MEMORY>", *synthetic_mod.render_records(items), "</TRACE MEMORY>"])
 
 
+def approved_notes(project_root: Path | None, query: str | None) -> str:
+    """Approved rules the request names, as plain notes; "" when none or on any error.
+
+    Disabled with ``TRACE_NOTES_FIRST=0``. Proposed (unapproved) rules are never returned.
+    """
+    if os.environ.get("TRACE_NOTES_FIRST") == "0" or not query or project_root is None:
+        return ""
+    root = Path(project_root)
+    if not (root / rules_mod.RULES_PATH).is_file():
+        return ""
+    try:
+        return rules_mod.render_notes(rules_mod.mentioned(rules_mod.load(root).approved, query))
+    except Exception:  # noqa: BLE001 - session start is fail-open
+        return ""
+
+
 def get_session_start_context(
     trace_db_path: str | Path,
     *,
@@ -535,8 +553,13 @@ def get_session_start_context(
     use_bound_task: bool = True,
     project_root: Path | None = None,
     file: str | None = None,
+    notes_first: bool = False,
 ) -> dict[str, Any]:
     """Assemble bounded prior-session context. Never raises for DB problems.
+
+    With ``notes_first`` (automatic injection only), approved rules that the
+    request names replace the recall block: the result has ``notes`` set and no
+    items. Deeper memory stays available through explicit pulls.
 
     With ``query`` (the new session's task prompt), prior messages that match
     it are kept ahead of the plain recency tail.
@@ -551,6 +574,14 @@ def get_session_start_context(
         "finding_items": 0,
         "latency_ms": 0,
     }
+    if notes_first:
+        db_guess = Path(trace_db_path)
+        notes = approved_notes(project_root or (db_guess.resolve().parent.parent
+                                                if db_guess.parent.name == ".agent-memory" else None), query)
+        if notes:
+            stats["notes"] = True
+            stats["latency_ms"] = round((time.perf_counter() - started) * 1000, 1)
+            return {"items": [], "text": notes, "notes": notes, "truncated": False, "stats": stats}
     try:
         db_path = Path(trace_db_path)
         if not db_path.exists():

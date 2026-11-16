@@ -220,9 +220,9 @@ def preview_context(project: Path, session_id: str | None, query: str | None) ->
     task_aware = os.environ.get("TRACE_TASK_AWARE") != "0"
     result = session_context_mod.get_session_start_context(
         database, project_root=project, exclude_session_id=session_id,
-        query=query if task_aware else None, use_bound_task=task_aware,
+        query=query if task_aware else None, use_bound_task=task_aware, notes_first=True,
     )
-    return synthetic.render_user_block(result["items"])
+    return result.get("notes") or synthetic.render_user_block(result["items"])
 
 
 def status_info(project: Path) -> dict:

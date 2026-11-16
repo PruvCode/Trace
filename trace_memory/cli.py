@@ -658,19 +658,42 @@ def cmd_rules(args) -> int:
             print(f"note: approved rule removed only in the working tree, still enforced: {rule.scope}")
         return EXIT_OK
     files = None if args.all else (args.file or _changed_files(project))
-    selected = [rule for rule in rules_mod.scoped(loaded.approved, files) if rule.checks] if files != [] else []
+    in_scope = rules_mod.scoped(loaded.approved, files) if files != [] else []
+    selected = [rule for rule in in_scope if rule.checks]
     results = rule_checks.run(project, selected, rule_checks.subprocess_executor(project, args.python))
     blocking = rule_checks.blocking(results)
+    # Last failing file digest per check, for uncommitted work only: the same content failing again is a repeat.
+    state_file = project_mod.memory_dir(project) / "rule-checks.json"
+    try:
+        previous = json.loads(state_file.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        previous = {}
+    state = {key: value for key, value in previous.items() if key not in {r.identity for r in results}}
+    report = []
+    for result in results:
+        repeated = (result.classification == "regression_in_progress" and result.digest is not None
+                    and previous.get(result.identity) == result.digest)
+        if result.classification == "regression_in_progress" and result.digest:
+            state[result.identity] = result.digest
+        changes = (rule_checks.changes_since(project, loaded.ref, result.rule.path)
+                   if result.classification in rule_checks.BLOCKING else [])
+        report.append((result, repeated, changes, rule_checks.next_step(result, repeated=repeated, changes=changes)))
+    if state_file.parent.is_dir() and (state or previous):
+        state_file.write_text(json.dumps(state, indent=1, sort_keys=True), encoding="utf-8")
+    uncovered = [rule.scope for rule in in_scope if not rule.checks]
     if args.json:
-        print(json.dumps({"ref": loaded.ref, "commit": loaded.commit, "results": [r.as_record() for r in results],
-                          "blocking": len(blocking)}, indent=2))
+        print(json.dumps({"ref": loaded.ref, "commit": loaded.commit, "blocking": len(blocking), "uncovered": uncovered,
+                          "results": [{**r.as_record(), "repeated": repeated, "changes_since_approval": changes,
+                                       "next_step": step} for r, repeated, changes, step in report]}, indent=2))
     else:
         passed = sum(r.outcome == "pass" for r in results)
         print(f"{len(results)} checks from {len(selected)} approved rules: {passed} passed, {len(results) - passed} not passed")
-        for result in results:
+        for result, repeated, _, step in report:
             if result.outcome != "pass":
-                print(f"[{result.classification}] {result.rule.scope}: {result.rule.text}\n"
-                      f"    {result.check.kind}: {result.check.value}\n    {result.output}")
+                print(f"[{result.classification}{', repeated' if repeated else ''}] {result.rule.scope}: {result.rule.text}\n"
+                      f"    {result.check.kind}: {result.check.value}\n    {result.output}\n    next: {step}")
+        if uncovered:
+            print(f"approved rules with no checks (not verified): {', '.join(uncovered)}")
         skipped = [rule.scope for rule in rules_mod.scoped(loaded.proposed, files)] if files != [] else []
         if skipped:
             print(f"not run (proposed, not approved): {', '.join(skipped)}")

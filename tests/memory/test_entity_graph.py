@@ -246,3 +246,23 @@ def test_upgrade_and_failed_publication_preserve_memory_and_old_graph(tmp_path, 
         assert store.find_definition(conn, "first") and not store.find_definition(conn, "second")
         assert store.search_symbols(conn, "first") and not store.search_symbols(conn, "second")
         assert store.get_structural_fingerprint(conn) == marker
+
+
+def test_module_alias_calls_resolve_to_the_defining_file(tmp_path):
+    root = tmp_path / "repo"
+    write(root, "pkg/__init__.py", "")
+    write(root, "pkg/service.py", "def helper():\n    return 1\n")
+    write(root, "pkg/consumer.py", (
+        "from pkg import service as svc\n"
+        "from . import service\n"
+        "def absolute():\n    return svc.helper()\n"
+        "def relative():\n    return service.helper()\n"
+        "def missing():\n    return svc.not_defined()\n"))
+    project.init_project(root)
+    with closing(store.connect(project.db_path(root))) as conn:
+        helper = only(conn, "helper", "pkg/service.py")
+        for caller in ("absolute", "relative"):
+            assert any(e["kind"] == "CALLS" and e["target_id"] == helper["id"]
+                       for e in outgoing(conn, only(conn, caller, "pkg/consumer.py"))), caller
+        unknown, = [e for e in outgoing(conn, only(conn, "missing", "pkg/consumer.py")) if e["label"] == "not_defined"]
+        assert unknown["target_id"] is None
