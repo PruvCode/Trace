@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -163,3 +164,90 @@ def test_mcp_get_rules_renders_scoped_rules(repo, monkeypatch):
     assert mcp_server.get_rules("elsewhere.py") == "No approved or proposed rules for this scope."
     with pytest.raises(ValueError):
         mcp_server.get_rules("../outside.py")
+
+
+def test_mentioned_prefers_the_named_function_then_the_named_file():
+    parsed, _ = rules.parse(RULES + "\n## pkg/limits.py :: parse_limit\n- Strip whitespace first.\n"
+                            "\n## other/limits.py :: clamp_limit\n- Other file's rule.\n")
+    texts = lambda request: [rule.text.split(".")[0] for rule in rules.mentioned(parsed, request)]
+    assert texts("Fix clamp_limit.\nFile: pkg/limits.py") == ["Reject fractional floats by returning DEFAULT_LIMIT",
+                                                              "Keep every public function free of I/O"]
+    assert texts("Tidy pkg/limits.py") == ["Keep every public function free of I/O"]  # file rules only
+    assert texts("Fix parse_quota in pkg/limits.py") == ["Keep every public function free of I/O"]  # no rule for it
+    assert texts("clamp_limit is wrong") == ["Reject fractional floats by returning DEFAULT_LIMIT", "Other file's rule"]
+    assert texts("my_clamp_limit2 and clamp_limits") == []  # whole words only
+    assert texts("unrelated request") == []
+
+
+def test_render_notes_is_the_bare_sentence():
+    parsed, _ = rules.parse(RULES)
+    assert rules.render_notes(parsed[:1]) == "Reject fractional floats by returning DEFAULT_LIMIT. Integral floats still clamp."
+    assert rules.render_notes(parsed) == ("- Reject fractional floats by returning DEFAULT_LIMIT. Integral floats still clamp.\n"
+                                          "- Keep every public function free of I/O.")
+    assert rules.render_notes([]) == ""
+    hidden = rules.Rule("a.py", None, "Use​ ascii")
+    assert "​" not in rules.render_notes([hidden])
+
+
+def test_local_branch_approval_is_flagged(repo):
+    assert any("local branch refs/heads/main" in error for error in rules.load(repo).errors)
+
+
+def test_next_step_follows_the_diagnosis(repo):
+    rule = rules.Rule("pkg/limits.py", "clamp_limit", "r", (rules.Check("py", "False"),), provenance="trace:event=42")
+    result = rule_checks.CheckResult(rule, rule.checks[0], "fail", "False", "regression_in_progress", "d")
+    step = rule_checks.next_step(result, repeated=True, changes=["abc123 edit"])
+    assert "Fix the code" in step and "already failed" in step and "abc123 edit" in step and "trace:event=42" in step
+    assert "do not change code" in rule_checks.next_step(rule_checks.CheckResult(rule, rule.checks[0], "error", "", "environment"))
+    assert rule_checks.next_step(rule_checks.CheckResult(rule, rule.checks[0], "pass", "")) == ""
+
+
+def test_changes_since_lists_commits_not_on_the_approval_ref(repo):
+    git(repo, "checkout", "-q", "-b", "work")
+    (repo / "pkg" / "limits.py").write_text(SOURCE + "\n# edit\n", encoding="utf-8")
+    git(repo, "commit", "-qam", "loosen limits")
+    assert [line.split(" ", 1)[1] for line in rule_checks.changes_since(repo, "refs/heads/main", "pkg/limits.py")] == ["loosen limits"]
+    assert rule_checks.changes_since(repo, "refs/heads/main", "pkg/other.py") == []
+    assert rule_checks.changes_since(repo, None, "pkg/limits.py") == []
+
+
+def test_results_carry_the_file_digest(repo):
+    result = rule_checks.run(repo, [_rule("True")], lambda r, c: ("pass", ""))[0]
+    import hashlib
+    assert result.digest == hashlib.sha256((repo / "pkg" / "limits.py").read_bytes()).hexdigest()
+
+
+def test_py_checks_import_package_modules_with_relative_imports(tmp_path):
+    (tmp_path / "src" / "pkg").mkdir(parents=True)
+    (tmp_path / "src" / "pkg" / "__init__.py").write_text("", encoding="utf-8")
+    (tmp_path / "src" / "pkg" / "base.py").write_text("DEFAULT = 10\n", encoding="utf-8")
+    (tmp_path / "src" / "pkg" / "limits.py").write_text("from .base import DEFAULT\n\ndef clamp(x):\n    return x if x > 0 else DEFAULT\n",
+                                                        encoding="utf-8")
+    rule = rules.Rule("src/pkg/limits.py", "clamp", "r", (rules.Check("py", "clamp(-1) == DEFAULT"),))
+    assert rule_checks.subprocess_executor(tmp_path)(rule, rule.checks[0]) == ("pass", "")
+
+
+def test_checks_resolving_outside_the_repository_are_not_run(tmp_path):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "target.py").write_text("X = 1\n", encoding="utf-8")
+    root = tmp_path / "repo"
+    root.mkdir()
+    try:
+        (root / "link").symlink_to(outside, target_is_directory=True)
+    except OSError:
+        if sys.platform != "win32":
+            raise
+        subprocess.run(["cmd", "/c", "mklink", "/J", str(root / "link"), str(outside)], check=True, capture_output=True)
+    rule = rules.Rule("link/target.py", None, "r", (rules.Check("py", "X == 1"),))
+    outcome, output = rule_checks.subprocess_executor(root)(rule, rule.checks[0])
+    assert outcome == "error" and "outside the repository" in output
+
+
+def test_pythonpath_puts_the_tree_first(tmp_path):
+    (tmp_path / "src" / "tracefixturelib").mkdir(parents=True)
+    (tmp_path / "src" / "tracefixturelib" / "__init__.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (tmp_path / "probe.py").write_text("import tracefixturelib\n", encoding="utf-8")
+    rule = rules.Rule("probe.py", None, "r", (rules.Check("py", "tracefixturelib.VALUE == 1"),))
+    assert rule_checks.subprocess_executor(tmp_path)(rule, rule.checks[0])[0] == "error"  # src not on the path
+    assert rule_checks.subprocess_executor(tmp_path, pythonpath=("src",))(rule, rule.checks[0]) == ("pass", "")

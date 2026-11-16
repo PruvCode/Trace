@@ -303,6 +303,58 @@ untested clients should be treated as experimental.
 - Inspect with `trace status` / `trace report`, or open the SQLite file
   with any SQLite browser.
 
+## Project rules (approved engineering notes)
+
+Approved rules live in `.trace/RULES.md`, in Git, next to the code they govern:
+
+```markdown
+## memory/store.py :: clamp_limit
+- Reject fractional floats in clamp_limit by returning DEFAULT_LIMIT.
+  checks:
+    - py: clamp_limit(8.5) == DEFAULT_LIMIT
+    - pytest: tests/memory/test_store.py::test_clamp_limit
+  <!-- why: trace:event=42 -->
+```
+
+- **Approval.** A rule is approved when the same rule (scope, text, checks)
+  is in `.trace/RULES.md` on the default branch (`origin/HEAD`, else local
+  `main`/`master`; override with `TRACE_RULES_REF`). Anything else is
+  *proposed*: listed, never injected, never executed. TRACE cannot see branch
+  protection, so approval is only as strong as the review policy on that
+  branch. With no remote, any local commit counts, and `trace rules` warns.
+  Even with a remote, `origin/HEAD` and `origin/main` are local refs that any
+  process with a shell can rewrite (`git update-ref`), so on a developer
+  machine approved rules carry the same trust as `CLAUDE.md`. The trust anchor
+  is `trace rules check --all` in CI on a fresh checkout of the protected
+  branch. Agent findings and transcripts never become rules automatically.
+- **What the agent sees.** When a request names a rule's function (or a
+  file-level rule's file), the session-start hook injects the bare approved
+  sentence, exactly as a maintained notes file would give it, instead of the
+  recall block. One rule is one sentence; several are a bullet list. No title,
+  scope or check lines are added: on TRACE's development tasks every such
+  addition cost the agent tasks. With no matching rule, recall is unchanged.
+  Deeper memory (task context, evidence, events, graph, transcripts) stays
+  available through the MCP tools and CLI. MCP `get_rules` shows scope,
+  checks and proposed rules.
+- **What checks verify.** `trace rules check` runs the checks of approved
+  rules for files changed since `HEAD` (`--all` in CI) with the project's
+  interpreter, in a subprocess with a timeout and a minimal environment.
+  Approved checks are reviewed code, like the test suite. Each failure is
+  rerun once and classified: `flaky`, `environment` (could not run),
+  `regression_in_progress` (uncommitted change breaks the rule) or
+  `stale_or_regression` (committed code fails; a person decides whether
+  rule or code is wrong). Only the last two fail the command. Each failure
+  carries a `next:` step, commits touching the file since approval, the
+  rule's provenance, and `repeated` when the same file content already failed
+  the same check (state in `.agent-memory/rule-checks.json`). Rules with no
+  checks are listed as not verified. Write one bullet per requirement so each
+  clause has its own checks.
+- **Inspect.** `trace rules list [--file PATH] [--json]`,
+  `trace rules check [--all] [--json]`, `trace preview --query-stdin` (what would be
+  injected).
+- **Disable.** `TRACE_NOTES_FIRST=0` restores the previous session-start
+  output exactly. Deleting `.trace/RULES.md` turns rules off.
+
 ## Task library
 
 Give an investigation a stable ID and optionally group it by subsystem. The

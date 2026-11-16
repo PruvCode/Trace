@@ -38,6 +38,6 @@ def recall(db: Path, session: str, query: str) -> str:
         return ""
     result = session_context.get_session_start_context(
         db, exclude_session_id=session, query=redact.redact_text(query)[:2_000],
-        max_items=4, max_chars=MAX_CONTEXT_CHARS, project_root=db.parent.parent,
+        max_items=4, max_chars=MAX_CONTEXT_CHARS, project_root=db.parent.parent, notes_first=True,
     )
-    return synthetic.render_user_block(result["items"])
+    return result.get("notes") or synthetic.render_user_block(result["items"])

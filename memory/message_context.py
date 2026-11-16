@@ -139,13 +139,14 @@ def get_message_start_context(
         query=query,
         use_bound_task=use_bound_task,
         project_root=Path(project_dir).resolve(),
+        notes_first=True,
     )
     stats["message_items"] = sum(1 for i in result["items"] if i.get("kind") == "message")
     stats["finding_items"] = sum(1 for i in result["items"] if i.get("kind") == "finding")
     stats["latency_ms"] = round((time.perf_counter() - started) * 1000, 1)
     return {
         "items": result["items"],
-        "text": synthetic_mod.render_user_block(result["items"]),
+        "text": result.get("notes") or synthetic_mod.render_user_block(result["items"]),
         "truncated": result["truncated"],
         "stats": stats,
     }

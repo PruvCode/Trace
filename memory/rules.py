@@ -225,6 +225,9 @@ def load(root: Path, *, ref: str | None = None) -> RuleSet:
         if approved_text is not None:
             result.approved, errors = parse(approved_text)
             result.errors += [f"{result.ref}:{RULES_PATH} {error}" for error in errors]
+        if result.ref.startswith("refs/heads/"):
+            result.errors.append(f"approval ref is the local branch {result.ref}: any local commit counts as approval; "
+                                 "set origin/HEAD or TRACE_RULES_REF to a protected remote branch")
     else:
         result.errors.append("no approval ref found (default branch); every rule is treated as proposed")
     local_file = root / RULES_PATH
@@ -247,6 +250,36 @@ def scoped(rules: list[Rule], paths: list[str] | None = None, symbols: list[str]
     names = set(symbols or ())
     return [rule for rule in rules if rule.path in wanted
             and (rule.symbol is None or not names or rule.symbol in names or rule.symbol.split(".")[-1] in names)]
+
+
+def mentioned(rules: list[Rule], text: str) -> list[Rule]:
+    """Rules whose function or file the request names.
+
+    A symbol-scoped rule matches only when its function name appears as a word
+    and its file is named (or no rule's file is); naming a file does not pull in
+    rules for other functions in it. File-scoped rules match on their file.
+    """
+    text = text.replace("\\", "/")
+    paths = {rule.path for rule in rules if rule.path in text}
+
+    def named(rule: Rule) -> bool:
+        word = re.escape(rule.symbol.split(".")[-1])
+        return re.search(rf"(?<!\w){word}(?!\w)", text) is not None and (not paths or rule.path in paths)
+
+    return [rule for rule in rules if (named(rule) if rule.symbol else rule.path in paths)]
+
+
+def render_notes(rules: list[Rule]) -> str:
+    """Approved rules as a maintained notes file gives them: the sentences alone.
+
+    No title, scope or check lines: on the frozen dev tasks every addition to
+    the bare sentence cost the small model at least one task. Scope, checks and
+    provenance stay available through ``trace rules list`` and ``get_rules``.
+    """
+    lines = [_line(rule.text) for rule in rules]
+    if len(lines) <= 1:
+        return "".join(lines)
+    return "\n".join(f"- {line}" for line in lines)
 
 
 def _line(text: str) -> str:

@@ -21,6 +21,7 @@ and classified:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from hashlib import sha256
 import json
 import os
 from pathlib import Path
@@ -35,6 +36,7 @@ from memory.rules import Check, Rule
 TIMEOUT = 120
 MAX_OUTPUT = 2000
 OUTCOMES = ("pass", "fail", "error")
+BLOCKING = ("regression_in_progress", "stale_or_regression")
 
 # An executor runs one check and returns (outcome, output); outcome is one of OUTCOMES.
 Executor = Callable[[Rule, Check], tuple[str, str]]
@@ -47,10 +49,16 @@ class CheckResult:
     outcome: str
     output: str
     classification: str | None = None  # set for failures only
+    digest: str | None = None  # SHA-256 of the governed file when the check ran
+
+    @property
+    def identity(self) -> str:
+        return f"{self.rule.key}:{self.check.kind}:{self.check.value}"
 
     def as_record(self) -> dict:
         return {"scope": self.rule.scope, "rule": self.rule.text, "kind": self.check.kind, "check": self.check.value,
-                "outcome": self.outcome, "classification": self.classification, "output": self.output}
+                "outcome": self.outcome, "classification": self.classification, "output": self.output,
+                "digest": self.digest}
 
 
 def _environment() -> dict:
@@ -64,13 +72,23 @@ def _tail(text: str) -> str:
 
 
 _PY_PROBE = r"""
-import importlib.util, json, sys
+import importlib, importlib.util, json, sys
+from pathlib import Path
 root, path, expression = sys.argv[1:4]
-sys.path.insert(0, root)
+target = Path(root, path)
 try:
-    spec = importlib.util.spec_from_file_location("_trace_rule_target", f"{root}/{path}")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    # Inside a package, import by dotted name so relative imports work; otherwise load the file.
+    parts, base = ([] if target.name == "__init__.py" else [target.stem]), target.parent
+    while (base / "__init__.py").is_file():
+        parts.insert(0, base.name)
+        base = base.parent
+    sys.path[:0] = [str(base), root]
+    if parts and base != target.parent:
+        module = importlib.import_module(".".join(parts))
+    else:
+        spec = importlib.util.spec_from_file_location("_trace_rule_target", target)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
 except BaseException as exc:
     print(json.dumps({"outcome": "error", "output": f"could not import {path}: {type(exc).__name__}: {exc}"}))
     raise SystemExit(0)
@@ -82,17 +100,28 @@ except BaseException as exc:
 """
 
 
-def subprocess_executor(root: Path, python: str | None = None) -> Executor:
-    """Run ``py:`` checks against the governed file and ``pytest:`` checks with the project's runner."""
+def subprocess_executor(root: Path, python: str | None = None, *, pythonpath: tuple[str, ...] = ()) -> Executor:
+    """Run ``py:`` checks against the governed file and ``pytest:`` checks with the project's runner.
+
+    ``pythonpath`` lists repository-relative source roots (e.g. ``src``) to put first on
+    ``PYTHONPATH``, so a src-layout project is tested from this tree, not an installed copy.
+    """
     interpreter = python or os.environ.get("TRACE_RULES_PYTHON") or sys.executable
+    environment = _environment()
+    if pythonpath:
+        environment["PYTHONPATH"] = os.pathsep.join(str(root / entry) for entry in pythonpath)
+    inside = root.resolve()
 
     def run(rule: Rule, check: Check) -> tuple[str, str]:
+        target = check.value.split("::")[0] if check.kind == "pytest" else rule.path
+        if not (root / target).resolve().is_relative_to(inside):
+            return "error", f"{target} resolves outside the repository; not run"
         if check.kind == "py":
             command = [interpreter, "-c", _PY_PROBE, str(root), rule.path, check.value]
         else:
             command = [interpreter, "-m", "pytest", "-q", "-p", "no:cacheprovider", check.value]
         try:
-            done = subprocess.run(command, cwd=root, env=_environment(), capture_output=True, text=True,
+            done = subprocess.run(command, cwd=root, env=environment, capture_output=True, text=True,
                                   timeout=TIMEOUT, encoding="utf-8", errors="replace")
         except subprocess.TimeoutExpired:
             return "error", f"timed out after {TIMEOUT} s"
@@ -120,10 +149,18 @@ def _uncommitted(root: Path, path: str) -> bool:
         return True
 
 
+def _digest(root: Path, path: str) -> str | None:
+    try:
+        return sha256((root / path).read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
 def run(root: Path, rules: list[Rule], executor: Executor) -> list[CheckResult]:
     """Execute every check of the given (approved) rules and classify failures."""
     results = []
     for rule in rules:
+        digest = _digest(root, rule.path)
         for check in rule.checks:
             outcome, output = executor(rule, check)
             if outcome not in OUTCOMES:
@@ -140,10 +177,47 @@ def run(root: Path, rules: list[Rule], executor: Executor) -> list[CheckResult]:
                     classification = "regression_in_progress"
                 else:
                     classification = "stale_or_regression"
-            results.append(CheckResult(rule, check, outcome, output, classification))
+            results.append(CheckResult(rule, check, outcome, output, classification, digest))
     return results
 
 
 def blocking(results: list[CheckResult]) -> list[CheckResult]:
     """Failures someone has to act on: code changes that break a rule, or rules that may be stale."""
-    return [r for r in results if r.classification in ("regression_in_progress", "stale_or_regression")]
+    return [r for r in results if r.classification in BLOCKING]
+
+
+def changes_since(root: Path, ref: str | None, path: str, limit: int = 5) -> list[str]:
+    """Commits touching ``path`` that are on HEAD but not on the approval ref (newest first)."""
+    if not ref:
+        return []
+    try:
+        log = task_library.local_git(root, "log", "--oneline", f"-{limit}", f"{ref}..HEAD", "--", path)
+    except ValueError:
+        return []
+    return [line for line in log.decode("utf-8", "replace").splitlines() if line.strip()]
+
+
+_NEXT = {
+    "flaky": "Passed on rerun. Do not change code for it; report the flaky check.",
+    "environment": "The check could not run, so it says nothing about the rule. Fix the environment and rerun; "
+                   "do not change code for it.",
+    "regression_in_progress": "Your uncommitted change does not satisfy this approved rule. Fix the code, or "
+                              "propose a rule change in .trace/RULES.md for review.",
+    "stale_or_regression": "Committed code fails an approved rule. A person must decide whether the code or the "
+                           "rule is wrong.",
+}
+
+
+def next_step(result: CheckResult, *, repeated: bool = False, changes: list[str] | None = None) -> str:
+    """Deterministic guidance for a failed check: what to do next and where deeper evidence is."""
+    if result.classification is None:
+        return ""
+    steps = [_NEXT[result.classification]]
+    if repeated:
+        steps.append("The same file content already failed this check. Change the approach or ask a person; "
+                     "resubmitting it will not help.")
+    if changes:
+        steps.append("Commits touching this file since approval: " + "; ".join(changes))
+    if result.rule.provenance and result.classification in BLOCKING:
+        steps.append(f"Why the rule exists: {result.rule.provenance} (open with `trace evidence` or MCP get_evidence).")
+    return " ".join(steps)
