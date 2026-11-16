@@ -1,0 +1,961 @@
+[
+ {
+  "repo": "sqlparse",
+  "sha": "ac3b9e0b25627feb42a7053074b6549df81dcfaf",
+  "date": "2026-07-25T11:27:52+02:00",
+  "subject": "Recognize MATERIALIZED as a keyword (issue752)",
+  "stratum": "A"
+ },
+ {
+  "repo": "sqlparse",
+  "sha": "f66d12c245412f28c58f045b646eb53c0e691b8b",
+  "date": "2026-07-25T11:44:58+02:00",
+  "subject": "Fix get_real_name for names with more than two dotted parts (#332)",
+  "stratum": "A"
+ },
+ {
+  "repo": "sqlparse",
+  "sha": "a194d3187b04b0aed7a935c3401f068236fb6264",
+  "date": "2026-07-25T17:08:09+02:00",
+  "subject": "Keep keyword before leading-dot float literal (issue601)",
+  "stratum": "A"
+ },
+ {
+  "repo": "sqlparse",
+  "sha": "53ff44b53e27cff78259acc1af015506fea60f63",
+  "date": "2026-08-10T06:34:07+02:00",
+  "subject": "Escape backslashes in output formatters.",
+  "stratum": "A"
+ },
+ {
+  "repo": "sqlparse",
+  "sha": "ef2012a5eeb491e604dea2b00d516904a3830c87",
+  "date": "2026-08-10T07:41:56+02:00",
+  "subject": "Fix quadratic DoS in group_comments (GHSA-f2ff-p2ww-7p4p)",
+  "stratum": "B"
+ },
+ {
+  "repo": "sqlparse",
+  "sha": "d1d80602741f77ec78e5a04ce4719244cf32352e",
+  "date": "2026-08-13T07:29:00+02:00",
+  "subject": "Fix uncontrolled CPU consumption (ReDoS) in the lexer's handling of dollar-quoted literals and multiline comments.",
+  "stratum": "B"
+ },
+ {
+  "repo": "sqlparse",
+  "sha": "519e41698a172add8aa7b54ab4e94daad0af213e",
+  "date": "2026-08-13T14:46:22+02:00",
+  "subject": "Pair comment/dollar-quote delimiters at the lexer position",
+  "stratum": "A"
+ },
+ {
+  "repo": "sqlparse",
+  "sha": "3512a9d86912720ae67181ad2e9fd9cc28a73408",
+  "date": "2026-11-01T12:54:06+01:00",
+  "subject": "Fix formatter crashes on malformed grouped input",
+  "stratum": "A"
+ },
+ {
+  "repo": "boltons",
+  "sha": "609cabe932a1ea1423b24568644945abb1b8bb84",
+  "date": "2026-07-16T23:36:33-07:00",
+  "subject": "fix IndexedSet slicing after removals: keep iter_slice bounds in apparent index space (#423)",
+  "stratum": "A"
+ },
+ {
+  "repo": "boltons",
+  "sha": "d0a284fc7ef1aebceb54798600d73be4eeb76ed8",
+  "date": "2026-07-16T23:36:33-07:00",
+  "subject": "fix IndexedSet out-of-range negative indexing wrapping around (x[-n-k], pop(-n-k))",
+  "stratum": "A"
+ },
+ {
+  "repo": "boltons",
+  "sha": "ebc7a8f776debfa33f0b380b57a444bca75a251b",
+  "date": "2026-07-17T01:11:06-07:00",
+  "subject": "Fix copy.copy/copy.deepcopy collapsing OrderedMultiDict values",
+  "stratum": "A"
+ },
+ {
+  "repo": "boltons",
+  "sha": "55dfe5077bcb5fa76611b5f2a557ea6c442ad87c",
+  "date": "2026-07-17T01:11:18-07:00",
+  "subject": "fix(fileutils): accept os.PathLike in AtomicSaver",
+  "stratum": "A"
+ },
+ {
+  "repo": "boltons",
+  "sha": "1e61524a798ea73632029a013a7686036d5c126f",
+  "date": "2026-07-17T01:11:29-07:00",
+  "subject": "fix(strutils): stop singularize() mangling words ending in 'ss'",
+  "stratum": "A"
+ },
+ {
+  "repo": "boltons",
+  "sha": "ead236e278ca0466bf468de746b5960fb12d7e5b",
+  "date": "2026-07-17T17:43:22-07:00",
+  "subject": "fix: backoff_iter with factor=1.0 and no count raised ZeroDivisionError",
+  "stratum": "A"
+ },
+ {
+  "repo": "boltons",
+  "sha": "8c3fc2850693eacd2f2f8c95e7581adbb65b1269",
+  "date": "2026-07-17T17:43:38-07:00",
+  "subject": "Pluralize words ending in \"x\" with \"-es\" (box -> boxes)",
+  "stratum": "A"
+ },
+ {
+  "repo": "boltons",
+  "sha": "7b577b0f3cc7adc2418733ce5c7dcdf6af82187d",
+  "date": "2026-07-17T17:44:24-07:00",
+  "subject": "tbutils: round-trip traceback anchor lines in ParsedException (#333)",
+  "stratum": "A"
+ },
+ {
+  "repo": "boltons",
+  "sha": "289edfcd20474b92850ec0f982032c4e79e72432",
+  "date": "2026-07-17T17:44:24-07:00",
+  "subject": "funcutils: forward defaulted and kw-only args as keywords in wraps invocations (#343)",
+  "stratum": "A"
+ },
+ {
+  "repo": "boltons",
+  "sha": "c1c25da365cf14878cf5317147e7a09b5d124df5",
+  "date": "2026-08-06T13:35:47-07:00",
+  "subject": "Fix off-by-one in Bits length check",
+  "stratum": "A"
+ },
+ {
+  "repo": "boltons",
+  "sha": "b5c495bec206741ec25cd82ecc869e0b59bb0d10",
+  "date": "2026-08-07T14:10:06-07:00",
+  "subject": "funcutils: forward target-keyword-only args as keywords in wraps invocations (#445)",
+  "stratum": "A"
+ },
+ {
+  "repo": "boltons",
+  "sha": "580a9c2d12755d472e534ca3e277e8f7e3ada49e",
+  "date": "2026-08-07T15:06:31-07:00",
+  "subject": "setutils: cover _ComplementSet __ge__'s double-complement branch, drop duplicated NotImplemented checks (#446)",
+  "stratum": "A"
+ },
+ {
+  "repo": "boltons",
+  "sha": "673e010d0afabc2f530e8d1f67f0a47c37afa7f4",
+  "date": "2026-08-17T08:58:16-07:00",
+  "subject": "strutils: add ellipsize for word-boundary-aware truncation",
+  "stratum": "A"
+ },
+ {
+  "repo": "boltons",
+  "sha": "5df26592c29b9561d122640868ba0522cbc1e20d",
+  "date": "2026-08-19T01:12:12-07:00",
+  "subject": "Use the sep argument in args2sh and args2cmd (#454)",
+  "stratum": "A"
+ },
+ {
+  "repo": "boltons",
+  "sha": "967864f89791509f9eb36b22b4579d36b72a6df2",
+  "date": "2026-08-19T02:01:44-07:00",
+  "subject": "statsutils: add mode() for most-common value, incl. categorical data (#453)",
+  "stratum": "A"
+ },
+ {
+  "repo": "boltons",
+  "sha": "d45cc414e33aa4e08a73e0993574df4397e2e9db",
+  "date": "2026-09-07T01:40:44-07:00",
+  "subject": "urlutils: honor parse_qsl encoding (#455)",
+  "stratum": "A"
+ },
+ {
+  "repo": "boltons",
+  "sha": "a1ea1030ed85137e999c0bd9b11d16368d3ab241",
+  "date": "2026-09-07T01:41:34-07:00",
+  "subject": "dictutils: preserve iterator values in addlist (#458)",
+  "stratum": "A"
+ },
+ {
+  "repo": "boltons",
+  "sha": "9decba3e5736f61180eec274420ced0e572e30e6",
+  "date": "2026-09-07T01:42:03-07:00",
+  "subject": "ecoutils: skip identifying lookups when scrubbing (#461)",
+  "stratum": "A"
+ },
+ {
+  "repo": "boltons",
+  "sha": "970051b66474ac37383c5d990c169c794e20eb88",
+  "date": "2026-09-07T01:42:27-07:00",
+  "subject": "namedutils: reject empty type and field names (#462)",
+  "stratum": "A"
+ },
+ {
+  "repo": "boltons",
+  "sha": "f5f5cd867ee98f15def2b6a19bfba203de29b961",
+  "date": "2026-09-07T01:42:58-07:00",
+  "subject": "iterutils: correct inclusive GUIDerator size message (#451)",
+  "stratum": "A"
+ },
+ {
+  "repo": "boltons",
+  "sha": "8789df2cc35a4d9ddfebfa59c14f3e80e34234e1",
+  "date": "2026-09-07T01:43:42-07:00",
+  "subject": "timeutils: match timezone for default relative time (#469)",
+  "stratum": "A"
+ },
+ {
+  "repo": "boltons",
+  "sha": "5eb6cc045560abf320712f262346ae95fb66d448",
+  "date": "2026-09-07T02:00:01-07:00",
+  "subject": "mathutils: resolve negative Bits indices (#450)",
+  "stratum": "A"
+ },
+ {
+  "repo": "boltons",
+  "sha": "efff866a3b66fdafc817894390742e1d8bc025e5",
+  "date": "2026-09-07T02:00:24-07:00",
+  "subject": "mathutils: preserve empty Bits through conversions (#468)",
+  "stratum": "A"
+ },
+ {
+  "repo": "boltons",
+  "sha": "e00c10a809525027b8167fbb7ac233cfc25a01f5",
+  "date": "2026-09-07T02:01:01-07:00",
+  "subject": "setutils, listutils: streamline bulk removal and fix list bounds (#440)",
+  "stratum": "A"
+ },
+ {
+  "repo": "boltons",
+  "sha": "a180020c760b532e8889f161d97d05647adfee8c",
+  "date": "2026-09-07T02:01:25-07:00",
+  "subject": "setutils: flatten inputs to IndexedSet.update (#474)",
+  "stratum": "A"
+ },
+ {
+  "repo": "boltons",
+  "sha": "5150802911edbf8ade1e7d1bfb346fed52c88d05",
+  "date": "2026-09-07T02:33:26-07:00",
+  "subject": "jsonutils: accept explicit end-of-file relative seek (#465)",
+  "stratum": "A"
+ },
+ {
+  "repo": "boltons",
+  "sha": "1cdc0e9d36f3eb32608f3b34885717697643e9b8",
+  "date": "2026-09-07T02:50:04-07:00",
+  "subject": "statsutils: handle zero interquartile range in histograms (#467)",
+  "stratum": "A"
+ },
+ {
+  "repo": "boltons",
+  "sha": "1216b467c10b852d08aa6895c80b6b9ec8f990d8",
+  "date": "2026-09-07T03:37:10-07:00",
+  "subject": "Complete September PR sweep for 26.2.0 (#481)",
+  "stratum": "A"
+ },
+ {
+  "repo": "boltons",
+  "sha": "4e5faa3d7e4008d89e0d8bf1ea87b6d9a061a16d",
+  "date": "2026-09-23T16:55:31-07:00",
+  "subject": "Fix spooled stream write compatibility and backwards text seeks (#513)",
+  "stratum": "A"
+ },
+ {
+  "repo": "cachetools",
+  "sha": "ffe21c44d3f7de9c7a89870c8cf1fd7aa583a2ae",
+  "date": "2026-10-05T15:46:16+02:00",
+  "subject": "Fix #430: Honor falsey getsizeof callables (#431)",
+  "stratum": "B"
+ },
+ {
+  "repo": "cachetools",
+  "sha": "8c953ab8cabb147c6921b5d08d262078e22891ec",
+  "date": "2026-11-02T20:27:45+01:00",
+  "subject": "Fix #451: Forward self keyword arguments in cached methods",
+  "stratum": "B"
+ },
+ {
+  "repo": "pyparsing",
+  "sha": "e378aaf45c5fad96d69daac25f53ff7469cb2878",
+  "date": "2026-07-04T16:01:40-05:00",
+  "subject": "fix: as_datetime passes ParseResults instead of input string to ParseException",
+  "stratum": "A"
+ },
+ {
+  "repo": "pyparsing",
+  "sha": "9b728b8835aeef5974f0ee2be8df204b642ba008",
+  "date": "2026-07-04T16:01:40-05:00",
+  "subject": "fix: revert unrelated as_datetime formatting changes",
+  "stratum": "A"
+ },
+ {
+  "repo": "pyparsing",
+  "sha": "a5e080704e9f266f960a71aaaffc3b00d2e72d20",
+  "date": "2026-07-04T17:00:44-05:00",
+  "subject": "Escape control characters in set_debug() debug output",
+  "stratum": "A"
+ },
+ {
+  "repo": "pyparsing",
+  "sha": "92f52e2c3b3ffb24215e966c0c349ca5678a7f86",
+  "date": "2026-07-14T22:19:44-05:00",
+  "subject": "fix: deepcopy results names referencing nested ParseResults",
+  "stratum": "A"
+ },
+ {
+  "repo": "pyparsing",
+  "sha": "b4175cf2ef1baab65ed51ecadd954c6657110887",
+  "date": "2026-07-15T19:39:25-05:00",
+  "subject": "Simplified ParseResults.deepcopy, replaced calls to copy_value with memo.get",
+  "stratum": "A"
+ },
+ {
+  "repo": "pyparsing",
+  "sha": "181babf38170a8dc8c78659c0ecf5270b12b59b6",
+  "date": "2026-07-15T19:41:22-05:00",
+  "subject": "Fix detection of free-threaded Python in conftest.py; update tox.ini to use env vars to disable GIL",
+  "stratum": "B"
+ },
+ {
+  "repo": "pyparsing",
+  "sha": "d3388aaf5c60d1069b7294a743ccd0e7c87a1d1d",
+  "date": "2026-07-19T17:19:09-05:00",
+  "subject": "Carry a rounded-up fractional second in as_datetime instead of overflowing",
+  "stratum": "A"
+ },
+ {
+  "repo": "pyparsing",
+  "sha": "59b167db1ba364422e1505e8e112f8447764cd22",
+  "date": "2026-07-25T17:56:54+05:30",
+  "subject": "Preserve whitespace in QuotedString multi-char delimiters (fixes #492)",
+  "stratum": "A"
+ },
+ {
+  "repo": "pyparsing",
+  "sha": "4fb4aa06af713749beebc5e38c14c0768c38575c",
+  "date": "2026-08-08T12:00:51-05:00",
+  "subject": "Remove exception raised when a Word(max) match is followed by more body chars, makes regex and non-regex matching in Word consistent",
+  "stratum": "A"
+ },
+ {
+  "repo": "pyparsing",
+  "sha": "7232ce013b6d917d8283786c0a3fc81852ed6d0c",
+  "date": "2026-08-08T14:21:16-05:00",
+  "subject": "Fix _tokdict type annotation",
+  "stratum": "B"
+ },
+ {
+  "repo": "pyparsing",
+  "sha": "94842d07f1cb80ad0644ca93b814e59d73fec836",
+  "date": "2026-08-09T01:06:17-05:00",
+  "subject": "Give ParseResults.copy() its own results-name bookkeeping",
+  "stratum": "A"
+ },
+ {
+  "repo": "pyparsing",
+  "sha": "6f2fbcbd359fcf0e66038fa7f57470a30d597c59",
+  "date": "2026-08-09T01:06:17-05:00",
+  "subject": "Copy the occurrence lists when renumbering, not when copying",
+  "stratum": "A"
+ },
+ {
+  "repo": "pyparsing",
+  "sha": "a6ae98ba59b993d0b6d0475e7cb3b0a33c853f22",
+  "date": "2026-08-09T16:51:44-05:00",
+  "subject": "Fix Dict returning an empty nested ParseResults.as_dict() as [] instead of {}; remove vestigial ParseResults._modal attribute; fix incidental bug when Dict tries to create a dict with a ParseResults value for a key (not hashable); incorporated partial solution submitted in PR #635",
+  "stratum": "A"
+ },
+ {
+  "repo": "pyparsing",
+  "sha": "51560caba558d87349f4f497b82acef1de9ec8f8",
+  "date": "2026-08-12T00:31:05-05:00",
+  "subject": "Fix RecursionError for bounded repetition with large upper bound (issue #332) (#652)",
+  "stratum": "A"
+ },
+ {
+  "repo": "pyparsing",
+  "sha": "efd56db4e59f36b1673ce0eb0823e3afaa9d1201",
+  "date": "2026-08-17T23:25:14-05:00",
+  "subject": "Fix match_previous_expr to match nested and repeated expressions (#653)",
+  "stratum": "A"
+ },
+ {
+  "repo": "pyparsing",
+  "sha": "65d503517d146f83ce3f2ef804ee9448e6a16957",
+  "date": "2026-08-19T23:05:25-05:00",
+  "subject": "When a parse action returns a non-ParseResults, non-list value (e.g. a tuple, set, or defaultdict), the named result was being set to only the first element (tokens[0]) instead of the full return value. This happened because the value was passed directly to ParseResults(), which indexes into it with 'toklist[0]' for the named result.",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "b2821370ca8a7ead712287d7ec856b36165aaef7",
+  "date": "2026-07-13T15:51:35+08:00",
+  "subject": "Preserve whitespace when replacing super tables (#534)",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "49069361a41d2050086b7ec0f69a38a548802867",
+  "date": "2026-07-14T08:23:47+08:00",
+  "subject": "Preserve table display names on self assignment (#537)",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "cc05afa962244b3d1c781a7fc54f66b7f29ef8b7",
+  "date": "2026-07-14T08:26:12+08:00",
+  "subject": "Represent out-of-order table proxies with merged values (#536)",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "b48c094775fba4cb3c16dea4c302ae5e371ac4e9",
+  "date": "2026-07-14T08:28:54+08:00",
+  "subject": "reject overlong decimal integer instead of coercing to inf (#538)",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "e23a25438c6cc9b8cc28b6dcf76dc52f9c7a33e3",
+  "date": "2026-07-14T08:52:08+08:00",
+  "subject": "fix: avoid duplicate table header when adding a key to an out-of-order table (#545)",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "67d3e86502706df2a9ed67114ab67e25bcdcbbb7",
+  "date": "2026-07-14T08:59:45+08:00",
+  "subject": "Fix array of tables replacing a dotted key swallowing the next sibling (#542) (#549)",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "8cd44f58b499da3c80a29bc877a512665a15e0bb",
+  "date": "2026-07-14T15:28:48+08:00",
+  "subject": "fix: preserve leading newline of multiline string built with string() (#551)",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "21a4942ed31e773061c9fc047d55b1bb3c637ee3",
+  "date": "2026-07-14T16:36:37+08:00",
+  "subject": "reject a comment containing line breaks in Item.comment and add_line (#544)",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "495a42ecc9119eaaeb895def0fd025a71cd1cf60",
+  "date": "2026-07-15T08:36:12+08:00",
+  "subject": "Fix top-level scalar captured by a table rendered from a dotted key (#550)",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "94e62fbef9d16093dec86728888474197f4a5cc7",
+  "date": "2026-07-16T15:39:11+08:00",
+  "subject": "Float is not a sequence  (#563)",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "7ab7469addd60e03ca3bfbb1287642e8d771e1c0",
+  "date": "2026-08-18T16:55:10+08:00",
+  "subject": "Accept uppercase E exponent after a leading-zero mantissa (#586)",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "4b38becd75405e0f38ef3e47e9839eb407591c8a",
+  "date": "2026-09-11T11:19:17+08:00",
+  "subject": "fix: reject array slice assignment before mutation (#600)",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "8c959b51c7da2734662af759a7c9f95e9a78060a",
+  "date": "2026-09-18T18:31:08+08:00",
+  "subject": "chore: Define project metadata via [project] table (PEP 621) (#607)",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "49d6efa980fedb321f16371a4b05abd2a449f775",
+  "date": "2026-09-30T08:38:53+08:00",
+  "subject": "fix: add the stdlib `fold` argument to Time and DateTime (#619) (#620)",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "ac3b04efe9b2e49186a0cdcb69f1fa254d2f0f10",
+  "date": "2026-09-30T08:49:41+08:00",
+  "subject": "Keep unwrap() key order after a value is replaced (#591)",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "61941deb3c7155e88d5f038148b33a599c04a530",
+  "date": "2026-09-30T09:07:47+08:00",
+  "subject": "Escape content appended to a String via __add__ (#612)",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "ce8f8ee982411c4afef5cfb90df7313cc5f7d779",
+  "date": "2026-09-30T12:13:30+08:00",
+  "subject": "Render tz-aware times as local times without an offset (#613)",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "40dd59cfdc5b724a8d1256f39f89534265ec1f99",
+  "date": "2026-09-30T18:08:13+08:00",
+  "subject": "Preserve fold in datetime subtraction (#623)",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "f466807e253b7479a3dbd9621f8b0782384ade9e",
+  "date": "2026-10-07T20:13:31+08:00",
+  "subject": "fix: preserve underscores when creating integers from strings (#610)",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "1e7053158092a588d1fa744d7d5620a45895bb13",
+  "date": "2026-10-12T17:46:58+08:00",
+  "subject": "Use \", \" separator when appending to a spaced inline table (#595)",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "90365ea1d67cee7aa3bc62e03ba817a6ddb6f67d",
+  "date": "2026-10-12T18:31:34+08:00",
+  "subject": "Reject trailing characters in key_value() (#594)",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "01b0f45cd43ca6d250e733b2db3a2ac84426c055",
+  "date": "2026-10-12T18:45:07+08:00",
+  "subject": "fix: write ESC as \\u001b instead of TOML 1.1-only \\e (#641)",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "76d4714da0402bb76c73b9dc2f04a0eb48852aee",
+  "date": "2026-10-12T18:45:14+08:00",
+  "subject": "Do not add a plus sign to a negative zero float result (#629)",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "88aa4b1c1128587b8c8ee92d0db11db7bfbdc0ed",
+  "date": "2026-10-12T18:45:21+08:00",
+  "subject": "Keep single-line array bracket off a trailing comment line (#581)",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "8c30fc17d91aee7469c0287e509300e78aa15227",
+  "date": "2026-10-12T18:45:29+08:00",
+  "subject": "Fix Array.__delitem__ corrupting rendered output on slice deletion (#599)",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "c07c0c15c49a893bb8a4c9f63401822d31e08942",
+  "date": "2026-10-12T18:45:36+08:00",
+  "subject": "fix: report the right line and column for CRLF and mixed line endings (#642)",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "89cdcc7845da111e5d6b7eb0c1823684a274711a",
+  "date": "2026-10-12T18:45:43+08:00",
+  "subject": "Keep fold when unwrapping a datetime or time. (#626)",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "446d6fab132ef38a2ec052a5b2124e04b427dea6",
+  "date": "2026-10-12T18:45:49+08:00",
+  "subject": "Reject non-lowercase special float literals (#628)",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "a963fe16d67afaa5293a2c21cfaf9bba666d5647",
+  "date": "2026-10-12T18:45:57+08:00",
+  "subject": "Preserve inline table key order in item() (#546) (#552)",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "5fe4329fee7943d2376104e5977f3e3baa6d6abd",
+  "date": "2026-10-12T19:13:34+08:00",
+  "subject": "test: add coverage for tomlkit._types wrapper operators (#570)",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "229ee8660872df482a56c93c83b14ac98fedf864",
+  "date": "2026-10-12T19:45:14+08:00",
+  "subject": "fix: don't reject an out-of-order super-table extended by a dotted key (#565)",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "6b5f079099d4bd77b442f4fae96a10790ba3d55c",
+  "date": "2026-10-13T08:31:38+08:00",
+  "subject": "Render an emptied array of tables as an empty array (#567)",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "18e7f98252f18db5c973435453cd25e1c7bd4c61",
+  "date": "2026-10-16T10:37:35+08:00",
+  "subject": "Compare Bool items by value (#660)",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "10fbd373f4ce2916ba08d7a2c4421a77f68a2ca2",
+  "date": "2026-10-27T08:56:53+08:00",
+  "subject": "Fix regression in String.from_raw and improve documentation (#658)",
+  "stratum": "B"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "e781ee0418c3713a47807b041887d76f8afcf755",
+  "date": "2026-10-27T08:59:16+08:00",
+  "subject": "Copy trivia in _new so arithmetic results cannot mutate the original item (#683)",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "004fce630d2537542a03fa8d4d6d62dae418b422",
+  "date": "2026-10-27T09:04:56+08:00",
+  "subject": "Reject datetime strings in date factory (#673)",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "d7def7dbcc59b3b2d11cc73114c31d1f616523a8",
+  "date": "2026-10-29T16:52:22+08:00",
+  "subject": "Speed up array appends (#666)",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "e67098d549788d7383064102ec38d82aaddfb09a",
+  "date": "2026-11-03T11:28:10+08:00",
+  "subject": "Preserve literal quotes when replacing table strings (#627)",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "85d391e1ba90fcf1fd15f6f14fecc774c1e500eb",
+  "date": "2026-11-03T11:30:55+08:00",
+  "subject": "Keep an emptied dotted key inside an inline table (#664)",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "398c53e84c08859d9a1f75bb1668e32b251ec8b1",
+  "date": "2026-11-05T15:59:24+08:00",
+  "subject": "Fix AttributeError on an out-of-order table under an indented header (#663)",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "bb7cdd58acee26a95b647294e1b51e862014eb91",
+  "date": "2026-11-05T16:10:39+08:00",
+  "subject": "Track new keys in out-of-order table proxies (#699)",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "dee4dccd45309ff68f7675edbcfb909c259a5318",
+  "date": "2026-11-05T16:12:08+08:00",
+  "subject": "Fix integral results when rounding Float without digits (#695)",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "2510cccbb44d56e05eb3f6ba1921091b0720b4ac",
+  "date": "2026-11-05T16:23:44+08:00",
+  "subject": "Pass only supported context to custom encoders (#698)",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "4d1c5ab0ffa022b5a9a13d3d670c1c39b340ff24",
+  "date": "2026-11-05T16:43:06+08:00",
+  "subject": "Preserve split arrays of tables in document values (#697)",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "6746dc7dc41a54c3998fcd7701ef7ddfe3fb6c02",
+  "date": "2026-11-05T18:44:39+08:00",
+  "subject": "Use local timezone by default in DateTime.astimezone (#651)",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "0666206d5267779966390f4ebfa22a45cdd3745a",
+  "date": "2026-11-05T19:50:21+08:00",
+  "subject": "Write datetimes with sub-minute UTC offsets as valid TOML (#701)",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "55d07680cabf023885d511d2bf2000963e4e3dc7",
+  "date": "2026-11-06T16:43:42+08:00",
+  "subject": "fix: preserve siblings when updating out-of-order tables (#677)",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "669d4d625168998312f733a34bcb93d870a39d5a",
+  "date": "2026-11-07T08:16:06+08:00",
+  "subject": "Reject forbidden control characters in generated comments (#705)",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "29c31d2d08f6e6070345e07c8e0a0b9bb8a2ed85",
+  "date": "2026-11-07T08:16:52+08:00",
+  "subject": "Fix out-of-order super-table ordering when separated by AoT (#702)",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "d41d237103c368c28a760bf57ed5b3d5e6b0c504",
+  "date": "2026-11-07T09:36:58+08:00",
+  "subject": "Fix array-of-tables slice assignment serialization (#631)",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "73078ea2b86cd7a89ee27d5be9232ae1b3e85409",
+  "date": "2026-11-10T17:57:31+08:00",
+  "subject": "Speed up escaping strings and keys when writing TOML (#709)",
+  "stratum": "A"
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "7bf7284dbd622557d9909f8fee017a4cb169a139",
+  "date": "2026-11-13T08:47:31+08:00",
+  "subject": "Keep sorted TOML arrays in sync with serialized values (#644)",
+  "stratum": "A"
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "79287df2e3c228bb259572eb1165e7f529e4f124",
+  "date": "2026-07-26T19:05:54-04:00",
+  "subject": "Fix hang wrapping OSC-8 hyperlinks with wide graphemes (#232)",
+  "stratum": "A"
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "8364c236f1d84b0212b8a948d745ddcdc545726f",
+  "date": "2026-08-28T13:27:28-04:00",
+  "subject": "bugfix: clip() should behave like propagate_sgr() (#235)",
+  "stratum": "A"
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "c0dc90b25e8eab30fe1285484bb8b71a1007460e",
+  "date": "2026-09-15T01:13:04-04:00",
+  "subject": "Fix VS15 applying more than once to the same base character (#244)",
+  "stratum": "A"
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "d11cbea58ae5a6f8f928522e7a75e6c1da44d64f",
+  "date": "2026-09-15T06:47:32-04:00",
+  "subject": "Small fixes and refactor document structure/length (#246)",
+  "stratum": "A"
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "f7b9df5f487fb09edd50611e188d089451e1e9b5",
+  "date": "2026-09-15T15:52:30-04:00",
+  "subject": "clip(): end=-1 default signifies 'to end of line' (#250)",
+  "stratum": "A"
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "adac690cc8428782d23c03514681541478d51807",
+  "date": "2026-09-16T15:33:35-04:00",
+  "subject": "Unicode 18.0.0 support, releases soonish (#238)",
+  "stratum": "A"
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "a29c0e1810a062eec7dbd2b518bb9fd26ad129d8",
+  "date": "2026-09-16T20:18:38-04:00",
+  "subject": "Bugfix clip() can hang on OSC 8 hyperlinks (#252)",
+  "stratum": "A"
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "69d5c1efccfed42c6620694b1a102efe3678ee6f",
+  "date": "2026-09-17T13:48:04-04:00",
+  "subject": "Packaging and libwcwidth fixes (#253)",
+  "stratum": "A"
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "b088450fca01476718c8aeed625905862b7a7dcb",
+  "date": "2026-09-17T16:40:23-04:00",
+  "subject": "bugfix clip() painter's algo and charset designator (#259)",
+  "stratum": "A"
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "e16d354206d2f98804927aa8d36f5e2afe7348a1",
+  "date": "2026-09-17T19:19:50-04:00",
+  "subject": "Prepare for Unicode 18.0 (w/correction tables) (#260)",
+  "stratum": "A"
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "b7a3098bd087c6d04776c44c00fe4298299cd793",
+  "date": "2026-09-23T10:17:43-04:00",
+  "subject": "Use Python extension with libwcwidth (#248)",
+  "stratum": "A"
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "8cda5e608f0f107a18011074ccc7d25775be1cb8",
+  "date": "2026-09-23T14:07:33-04:00",
+  "subject": "bugfix width() value for very-long CSI sequences (#272)",
+  "stratum": "A"
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "f607d76a785a07a893b353d999e5fd8054989ebb",
+  "date": "2026-09-28T13:59:41-04:00",
+  "subject": "Documentation about Tamil, Kannada and Sinhala (#278)",
+  "stratum": "A"
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "2d521638879f14963925afcd0f73987826e36950",
+  "date": "2026-10-02T10:22:23-04:00",
+  "subject": "bugfix correction table use for flag emojis (#284)",
+  "stratum": "A"
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "36d0c36a575ab20f2f69893ee0963abad70c99f1",
+  "date": "2026-10-02T11:58:14-04:00",
+  "subject": "bugfix clip() w/tabsize=0 (#288)",
+  "stratum": "A"
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "f1793abb4ebace173e307294fc15d8eb0d8fdb88",
+  "date": "2026-10-04T19:47:28-04:00",
+  "subject": "wrap() should omit an empty line as output (#292)",
+  "stratum": "A"
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "346fd3358195107dec8348e29f9d9c5b223ca059",
+  "date": "2026-10-12T11:28:00-04:00",
+  "subject": "Reject trailing content in hyperlink parameters (#296)",
+  "stratum": "A"
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "ffb4a747e12e45094d702a4e3662011ed525e879",
+  "date": "2026-10-24T09:54:29-04:00",
+  "subject": "Various performance gains, shortcuts and bitsets (#303)",
+  "stratum": "A"
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "723e83b4dce2fef39622d21936ac3c9389b07ddf",
+  "date": "2026-10-24T17:18:12-04:00",
+  "subject": "Small performance improvement of flags (RI) (#304)",
+  "stratum": "A"
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "b68195374dad114a4c3d0b0fa2d29728cee4efa8",
+  "date": "2026-11-09T14:06:30-05:00",
+  "subject": "kinder python fallback (#313)",
+  "stratum": "A"
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "0e30e300dad21e2cca30ef7487c075c10f769567",
+  "date": "2026-11-09T14:31:48-05:00",
+  "subject": "easier python fallback (#314)",
+  "stratum": "A"
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "45c4002e1239639e32777d5887356627a4b04a87",
+  "date": "2026-11-09T15:20:14-05:00",
+  "subject": "Preserve cell styles when clipping overtyped text+perf (#315)",
+  "stratum": "A"
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "cd6b5fb588eaa13a853d7d2c052d8ae92f19bf8c",
+  "date": "2026-11-09T16:08:00-05:00",
+  "subject": "Preserve terminal styles when dropping whitespace-only wrapped lines+perf (#316)",
+  "stratum": "A"
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "6fd6039ed838dfb606d70fd094d379c32d4c668b",
+  "date": "2026-11-10T13:32:10-05:00",
+  "subject": "fix control character processing after an errant OSC 8 close (#319)",
+  "stratum": "A"
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "c290e10dc3638059958cf6a124d119333c2289de",
+  "date": "2026-11-10T14:01:18-05:00",
+  "subject": "Preserve Prepend graphemes in backward boundary scans (#320)",
+  "stratum": "A"
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "6cb47aa86ff158a619dde06e3e1db69c52df5225",
+  "date": "2026-11-13T08:55:04-05:00",
+  "subject": "Introduce UAX #14 Line breaking into wrap() (#322)",
+  "stratum": "A"
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "5a43d772d2eadf2006ba3b5408608120a2e681b8",
+  "date": "2026-11-13T09:31:44-05:00",
+  "subject": "Reword comments and documentation prose (#323)",
+  "stratum": "A"
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "7eceab9162c71fe64f6fc10308e24588fd3358bd",
+  "date": "2026-11-13T09:34:13-05:00",
+  "subject": "Assert unreachable paths instead of returning errors (#324)",
+  "stratum": "A"
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "1585e45490ed41102584012c0c0b99068de6dd9f",
+  "date": "2026-11-13T12:12:11-05:00",
+  "subject": "Support for \"Hybrid\" semi-/colon SGR parameters (#327)",
+  "stratum": "A"
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "e49e7fabb77534efbfaf87e7cd6bc036be8af976",
+  "date": "2026-11-13T17:57:10-05:00",
+  "subject": "Update correction tables (iterm2, kitty, mlterm) (#329)",
+  "stratum": "A"
+ }
+]

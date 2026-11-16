@@ -1,0 +1,10 @@
+distinct runs 216; identical duplicate rows collapsed 0
+
+== run sampled
+arm               n  first  final  ever  regr  valid  calls  repairs  med_s  med_in  med_out
+notes_repair     72     31     34    34     6     72     91       19     23     224       98
+rules_text       72     29     30    30     8     72     86       14     22     305       98
+rules_checks     72     29     34    34     5     72    140       68     38     642      142
+  rules_checks vs notes_repair: final +5 ['_identifier', '_posixify', '_text', '_version_join', 'iter_rows']  -6 ['_identifier', '_normalize_opt', '_normalize_string', '_posixify', '_validate_epoch', 'is_commit']
+  rules_checks vs rules_text: final +4 ['_posixify', '_text', 'clamp_limit', 'iter_rows']  -1 ['_normalize_string']
+  rules_text vs notes_repair: final +2 ['_identifier', '_version_join']  -7 ['_identifier', '_normalize_opt', '_posixify', '_validate_epoch', 'clamp_limit', 'is_commit', 'iter_rows']

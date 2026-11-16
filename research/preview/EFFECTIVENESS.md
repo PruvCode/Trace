@@ -83,3 +83,140 @@ isolated `quickjs-emscripten@0.32.0` install. Each runner has `--preflight-only`
 and `--regrade RESULTS` modes. These are repository-source function tests.
 Application builds, browser flows, normal agent tool use and the wider release
 gate are additional evidence.
+
+## Maintained-notes repository-function trial
+
+`research.preview.notes_trial` uses 24 previously unscored, single-function
+tasks on pinned TRACE, Click and Packaging source. There are eight tasks per
+repository and three separate qualification tasks. The changes and historical
+decisions are authored fixtures. The trial exercises real repository source
+but does not run full applications or agent tool loops.
+
+The three arms use the same request, source, one-edit budget, response schema,
+context limit, and executable grader. The notes arm gets the complete
+approved note, TRACE gets its ordinary automatic recall after indexing the
+project, and the no-memory arm gets the source and request only. Three tasks
+require no historical context. The recall fixtures mix each note with newer
+updates, an explicitly superseded note, and another task's decision. The
+approved note is never taken from a test assertion or a model response.
+
+Choose the model before scoring and require all three qualification tasks to
+pass. Use the pinned loopback models, the fixed order seed per task and repeat,
+and bounded WASI for unchanged definitions, reference changes, and all
+generated edits. Score the requested changes and preserved behavior
+independently. Preserve invalid edits and timeouts as failures. The summary
+pairs the same task, model and repeat and bootstraps over tasks.
+
+```text
+python -m research.preview.notes_trial preflight --trace TRACE --click CLICK --packaging PACKAGING --scratch SCRATCH --wasi WASI
+python -m research.preview.notes_trial recall --trace TRACE --click CLICK --packaging PACKAGING --scratch SCRATCH
+python -m research.preview.notes_trial qualify --model MODEL --trace TRACE --click CLICK --packaging PACKAGING --scratch SCRATCH --wasi WASI
+python -m research.preview.notes_trial score --model MODEL --input QUALIFICATION_JSONL --trace TRACE --click CLICK --packaging PACKAGING --scratch SCRATCH --wasi WASI
+python -m research.preview.notes_trial regrade --input SCORED_JSONL --trace TRACE --click CLICK --packaging PACKAGING --scratch SCRATCH --wasi WASI
+```
+
+The same checkout can supply the TRACE source revision and the code under
+evaluation. To repeat the recall comparison on an earlier TRACE revision,
+copy just `notes_trial.py` and `notes_cases.py` into that revision's disposable
+tracked export and run `recall` there, using the original Git checkout for
+`--trace`. Keep pilot qualification attempts and any partial scoring separate
+from the release result.
+
+### Diagnostic replay with a Python code-block editor
+
+Use `--fenced-editor` on both `qualify` and `score`. The request asks the
+model for a complete Python function in a code block. The runner checks the
+original signature with the existing validator and uses the same 400-token
+generation limit for each arm. The fixture rules, executable grader, seeds,
+and context window remain the same. The model still gets one edit with no
+access to tests or reference code.
+
+The 24 tasks have already been evaluated with the original editor. This
+replay measures the combined changes to recall and editing on known tasks.
+Run it as a separate result and qualify again before scoring it.
+
+Editor v2 adds one format-only retry and a fourth arm that shows only an
+evidence-linked decision excerpt. For a development replay on the already
+scored fixtures, run `devprobe --fenced-editor --editor-v2 --model MODEL
+--output NEW_JSONL` with the same repository, scratch and WASI arguments.
+It runs the first repeat by default and marks all rows as development
+results. To recheck saved edits, use `regrade --fenced-editor --editor-v2
+--input NEW_JSONL`. Development results cannot be mixed with qualified
+score rows or used to complete the release matrix.
+
+## OpenAI Evals verification pilot
+
+`research.preview.verification_pilot` runs three previously scored tasks with
+TRACE, maintained notes, and no memory. Two tasks exercise the fractional
+float and ragged row failures. The third is a self-contained request for
+which TRACE supplies no history. All three arms use the same pinned model,
+source, prompt template, and budget.
+
+The agent drafts a replacement and up to two checks expressed as JSON
+arguments and expected return values. The runner executes those checks in
+WASI and allows one repair when the draft or checks fail. The model sees
+only the outcomes of its own checks. The runner then grades the initial
+and final edits with the same hidden behavioral and preservation checks.
+OpenAI Evals schedules the samples and writes each verdict, token counts,
+and the final aggregate to a local JSONL file.
+
+Use a scratch environment from the TRACE checkout. Fetch [OpenAI Evals at
+the tested revision](https://github.com/openai/evals/tree/8eac7a7de5215c907fbddc30efdaf316913eccdd)
+and add its checkout directory to `PYTHONPATH`. Install TRACE and the
+dependencies used by this local runner in the scratch environment:
+
+```text
+python -m pip install -c constraints.txt -e . wasmtime==45.0.0 blobfile requests lz4 zstandard backoff tiktoken tqdm
+python -m research.preview.verification_pilot --trace TRACE --click CLICK --packaging PACKAGING --scratch SCRATCH --wasi WASI --output NEW_JSONL
+```
+
+The repository paths point to local Git checkouts with the revisions listed
+in the maintained-notes trial. Use the same WASI Python fixture and start
+Ollama with the pinned Qwen 2.5 Coder 7B model. The default run sends prompts
+to loopback only and needs no API key. Treat the scores as development
+evidence from one local model. This pilot grades single-function edits and
+does not cover full repository test suites or hosted agent sessions.
+
+## Fresh repository two-file pilot
+
+`research.preview.fresh_multifile` freezes two new behavioral changes in
+pinned Click and Packaging snapshots. The runner imports both edited
+modules and their repository dependencies in WASI. The only writable
+parts of the candidate are the two selected function definitions.
+Preflight verifies that the reference passes, that the original still
+passes the preservation checks, and that changing either file alone
+cannot satisfy the requested behavior.
+
+The TRACE arm retrieves the current verified decision and approved
+examples from a disposable, task-bound project with superseded and
+unrelated decisions. The maintained-notes arm gets the same current
+decision and approved examples from a prepared note. Both arms use the
+same source and two generation seeds. Each draft requests one numbered
+body-range edit per file, with both definitions visible. The runner
+preserves the original signature and applies the replacement locally.
+One repair based on the public checks is allowed, for a maximum of four
+model calls. Hidden behavior and preservation checks run after both files
+are edited. Reports list preservation failures alongside task passes.
+
+Use the local Evals environment described above. Run each stage with
+`--click CLICK --packaging PACKAGING --wasi WASI --scratch SCRATCH`.
+
+```text
+python -m research.preview.fresh_multifile preflight COMMON_ARGS
+python -m research.preview.fresh_multifile qualify COMMON_ARGS --model MODEL --output QUALIFICATION_JSONL
+python -m research.preview.fresh_multifile score COMMON_ARGS --model MODEL --input QUALIFICATION_JSONL --output SCORES_JSONL
+python -m research.preview.fresh_multifile regrade COMMON_ARGS --input SCORES_JSONL
+```
+
+The score stage requires a 3/3 executable result on two calibration tasks
+and the Click table-width task from the first batch. That repository task
+now serves as calibration. The two fresh scoring tasks are Click's default
+color policy and Packaging's outer spacing policy for project names.
+Qualification supplies approved examples and can report which failed
+after a first draft. Look for a paired gain at each seed without an increase
+in preservation failures. Two tasks across two repositories are a starter
+batch. The representative release comparison requires a larger task set
+and qualified models.
+
+The first scoring batch and its whole-function editor can be rerun from
+[commit 928cd97](https://github.com/PruvCode/Trace/tree/928cd97d4b1149b059458d76f21beff004804294).

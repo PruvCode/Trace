@@ -39,6 +39,7 @@ _INVISIBLE = re.compile(
     "[\u0080-\u009f\u00ad\u061c\u180e\u200b-\u200f\u2028-\u202e\u2060-\u206f\ud800-\udfff"
     "\ufe00-\ufe0f\ufeff\ufff9-\ufffb\U000e0000-\U000e0fff]"
 )
+CHECK_CALL = re.compile(r"\b([A-Za-z_]\w*)\s*\(")
 
 
 def _record(**fields: object) -> str:
@@ -57,6 +58,33 @@ def is_synthetic_memory_text(content: object) -> bool:
     return isinstance(content, str) and content.startswith(SYNTHETIC_LABEL)
 
 
+def _decision_record(item: dict) -> str:
+    raw_targets = item.get("code_targets") or []
+    excerpts = [target.get("decision_excerpt") for target in raw_targets]
+    targets = []
+    for target in raw_targets:
+        compact = dict(target)
+        excerpt = compact.get("decision_excerpt")
+        if excerpt == item.get("text") or excerpts.count(excerpt) > 1:
+            compact.pop("decision_excerpt", None)
+        if compact.get("qualified") == f"{compact.get('path')}.{compact.get('symbol')}":
+            compact.pop("qualified")
+        targets.append(compact)
+    shared = []
+    for check in item.get("acceptance") or []:
+        names = set(CHECK_CALL.findall(check))
+        matching = [target for target in targets if target.get("symbol") in names]
+        if len(matching) == 1:
+            matching[0]["acceptance"] = [*matching[0].get("acceptance", ()), check]
+        else:
+            shared.append(check)
+    return _record(
+        text=item.get("text"), acceptance=shared or None, finding=item.get("role"),
+        evidence=item.get("evidence"), event_id=item.get("event_id"), code=item.get("code"),
+        freshness=item.get("freshness"), code_targets=targets or None,
+    )
+
+
 def render_lines(items: list[dict]) -> list[str]:
     """One JSON record per line, shared by every memory block.
 
@@ -65,6 +93,7 @@ def render_lines(items: list[dict]) -> list[str]:
     time when known.
     """
     lines: list[str] = []
+    decisions: list[str] = []
     messages = [i for i in items if i.get("kind") == "message"]
     findings = [i for i in items if i.get("kind") == "finding"]
     groups: list[list[dict]] = []
@@ -81,12 +110,7 @@ def render_lines(items: list[dict]) -> list[str]:
     for item in findings:
         if ((item.get("code") or item.get("acceptance") or item.get("code_targets")) and item.get("evidence")
                 and item["role"].startswith("decision (verified)") and not item.get("uncertain")):
-            lines.append(_record(
-                text=item.get("text"), acceptance=item.get("acceptance"),
-                finding=item.get("role"), evidence=item.get("evidence"),
-                event_id=item.get("event_id"), code=item.get("code"), freshness=item.get("freshness"),
-                code_targets=item.get("code_targets"),
-            ))
+            decisions.append(_decision_record(item))
             continue
         lines.append(_record(
             finding=item.get("role"), text=item.get("text"), event_id=item.get("event_id"),
@@ -95,14 +119,14 @@ def render_lines(items: list[dict]) -> list[str]:
             source_evidence=item.get("source_evidence"),
             previously_failed_checks=item.get("previously_failed_checks"),
         ))
-    return lines
+    return decisions + lines
 
 
 def render_records(items: list[dict]) -> list[str]:
     """The notice and records, framed so the block's end cannot be forged."""
     records = _frame(render_lines(items))
     if any(item.get("acceptance") for item in items):
-        records.insert(1, "For a code change, confirm which recorded acceptance checks still apply. Verify each applicable check against the patch before reporting success.")
+        records.insert(1, "Verify each applicable check against the patch. For a code change, also run relevant existing tests and report any checks you could not run.")
     if any(item.get("code_targets") for item in items):
         records.insert(1, "Inspect the listed definitions before editing. Fix each applicable rule in the function responsible for it, then verify that function and its callers.")
     return records

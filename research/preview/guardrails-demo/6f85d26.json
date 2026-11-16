@@ -1,0 +1,71 @@
+{
+  "correction": {
+    "sha": "6f85d26dcd50c1745e81040ed4f2b61f8bf293cf",
+    "parent": "df2e5ed8c4e89f51ff4eddb9600d913083613e62",
+    "subject": "Do not trigger a `BytesWarning` under `python -bb`",
+    "source_files": [
+      "src/click/types.py"
+    ],
+    "test_files": [
+      "tests/test_types.py"
+    ]
+  },
+  "rule": {
+    "path": "src/click/types.py",
+    "symbol": "Path.convert",
+    "text": "Do not trigger a `BytesWarning` under `python -bb`.",
+    "checks": [
+      "tests/test_types.py::test_path_dash_no_byteswarning"
+    ],
+    "provenance": "trace:correction=6f85d26dcd50"
+  },
+  "kept": [
+    "tests/test_types.py::test_path_dash_no_byteswarning"
+  ],
+  "dropped": {},
+  "runs": [
+    {
+      "revision": "df2e5ed8c4e89f51ff4eddb9600d913083613e62",
+      "role": "before",
+      "check": "tests/test_types.py::test_path_dash_no_byteswarning",
+      "outcome": "fail",
+      "output": "^^^^^^^^^^^^\nE         BytesWarning: Comparison between bytes and string\nE         \nE       assert 1 == 0\nE        +  where 1 = CompletedProcess(args=['C:\\\\Users\\\\pruth\\\\Documents\\\\Codex\\\\2026-11-14\\\\referenced-chatgpt-conversation-this-is-an\\\\wo...                                               ^^^^^^^^^^^^^^^^^\\nBytesWarning: Comparison between bytes and string\\n').returncode\n\ntests\\test_types.py:149: AssertionError\n=========================== short test summary info ===========================\nFAILED tests/test_types.py::test_path_dash_no_byteswarning - AssertionError: ...\n1 failed in 0.70s\n"
+    },
+    {
+      "revision": "6f85d26dcd50c1745e81040ed4f2b61f8bf293cf",
+      "role": "after",
+      "check": "tests/test_types.py::test_path_dash_no_byteswarning",
+      "outcome": "pass",
+      "output": ".                                                                        [100%]\n1 passed in 0.35s\n"
+    },
+    {
+      "revision": "7a0a3447f6ddd2c15438c5d098e289323f9f9556",
+      "role": "later",
+      "check": "tests/test_types.py::test_path_dash_no_byteswarning",
+      "outcome": "pass",
+      "output": ".                                                                        [100%]\n1 passed in 0.37s\n"
+    },
+    {
+      "revision": "333c28d79cd982990ee98eef61ec20ab1a4f38ba",
+      "role": "later",
+      "check": "tests/test_types.py::test_path_dash_no_byteswarning",
+      "outcome": "pass",
+      "output": ".                                                                        [100%]\n1 passed in 1.03s\n"
+    },
+    {
+      "revision": "0585f456baa6eeb2edbaab7c85fa796a004aef86",
+      "role": "later",
+      "check": "tests/test_types.py::test_path_dash_no_byteswarning",
+      "outcome": "pass",
+      "output": ".                                                                        [100%]\n1 passed in 0.34s\n"
+    }
+  ],
+  "later_revisions": [
+    "7a0a3447f6ddd2c15438c5d098e289323f9f9556",
+    "333c28d79cd982990ee98eef61ec20ab1a4f38ba",
+    "0585f456baa6eeb2edbaab7c85fa796a004aef86"
+  ],
+  "later_failures": [],
+  "supporting_events": [],
+  "proposal": "## src/click/types.py :: Path.convert\n- Do not trigger a `BytesWarning` under `python -bb`.\n  checks:\n    - pytest: tests/test_types.py::test_path_dash_no_byteswarning\n  <!-- trace:correction=6f85d26dcd50 fails-before=df2e5ed8c4e8 passes-after=6f85d26dcd50 later-clean=3/3 -->\n"
+}

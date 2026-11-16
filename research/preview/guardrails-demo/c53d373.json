@@ -1,0 +1,108 @@
+{
+  "correction": {
+    "sha": "c53d3732b98c764932e146c007146ad402acb229",
+    "parent": "bb695aaecdef95832d167fc1d508921745aa824e",
+    "subject": "Fix `show_envvar` output for a sequence or an empty `envvar`",
+    "source_files": [
+      "src/click/core.py"
+    ],
+    "test_files": [
+      "tests/test_options.py"
+    ]
+  },
+  "rule": {
+    "path": "src/click/core.py",
+    "symbol": null,
+    "text": "Fix `show_envvar` output for a sequence or an empty `envvar`.",
+    "checks": [
+      "tests/test_options.py::test_show_envvar_empty",
+      "tests/test_options.py::test_missing_envvar_sequence"
+    ],
+    "provenance": "trace:correction=c53d3732b98c"
+  },
+  "kept": [
+    "tests/test_options.py::test_show_envvar_empty",
+    "tests/test_options.py::test_missing_envvar_sequence"
+  ],
+  "dropped": {},
+  "runs": [
+    {
+      "revision": "bb695aaecdef95832d167fc1d508921745aa824e",
+      "role": "before",
+      "check": "tests/test_options.py::test_show_envvar_empty",
+      "outcome": "fail",
+      "output": " --help        Show this message and exit.\\n' = <Result okay>.output\n\ntests\\test_options.py:892: AssertionError\n=========================== short test summary info ===========================\nFAILED tests/test_options.py::test_show_envvar_empty[None-  --units TEXT\\n-envvar1]\nFAILED tests/test_options.py::test_show_envvar_empty[None-  --units TEXT\\n-]\nFAILED tests/test_options.py::test_show_envvar_empty[WEATHER-  --units TEXT  [env var: WEATHER_UNITS]\\n-envvar1]\nFAILED tests/test_options.py::test_show_envvar_empty[WEATHER-  --units TEXT  [env var: WEATHER_UNITS]\\n-]\n4 failed, 2 passed in 2.14s\n"
+    },
+    {
+      "revision": "bb695aaecdef95832d167fc1d508921745aa824e",
+      "role": "before",
+      "check": "tests/test_options.py::test_missing_envvar_sequence",
+      "outcome": "fail",
+      "output": "onError\n=========================== short test summary info ===========================\nFAILED tests/test_options.py::test_missing_envvar_sequence[envvar1-'--units' (env var: 'UNITS')]\nFAILED tests/test_options.py::test_missing_envvar_sequence[envvar2-'--units' (env var: 'WEATHER_UNITS', 'UNITS')]\nFAILED tests/test_options.py::test_missing_envvar_sequence[envvar3-'--units' (env var: 'WEATHER_UNITS', 'UNITS')]\nFAILED tests/test_options.py::test_missing_envvar_sequence[envvar4-'--units']\nFAILED tests/test_options.py::test_missing_envvar_sequence[-'--units'] - asse...\n5 failed, 1 passed in 1.56s\n"
+    },
+    {
+      "revision": "c53d3732b98c764932e146c007146ad402acb229",
+      "role": "after",
+      "check": "tests/test_options.py::test_show_envvar_empty",
+      "outcome": "pass",
+      "output": "......                                                                   [100%]\n6 passed in 1.04s\n"
+    },
+    {
+      "revision": "c53d3732b98c764932e146c007146ad402acb229",
+      "role": "after",
+      "check": "tests/test_options.py::test_missing_envvar_sequence",
+      "outcome": "pass",
+      "output": "......                                                                   [100%]\n6 passed in 0.14s\n"
+    },
+    {
+      "revision": "c4dd0cd968f61d0ee7a163af810bd695ed893ec3",
+      "role": "later",
+      "check": "tests/test_options.py::test_show_envvar_empty",
+      "outcome": "pass",
+      "output": "......                                                                   [100%]\n6 passed in 0.47s\n"
+    },
+    {
+      "revision": "c4dd0cd968f61d0ee7a163af810bd695ed893ec3",
+      "role": "later",
+      "check": "tests/test_options.py::test_missing_envvar_sequence",
+      "outcome": "pass",
+      "output": "......                                                                   [100%]\n6 passed in 0.24s\n"
+    },
+    {
+      "revision": "5125851aaa19840c82b9811193b2c2d6cf245326",
+      "role": "later",
+      "check": "tests/test_options.py::test_show_envvar_empty",
+      "outcome": "pass",
+      "output": "......                                                                   [100%]\n6 passed in 0.40s\n"
+    },
+    {
+      "revision": "5125851aaa19840c82b9811193b2c2d6cf245326",
+      "role": "later",
+      "check": "tests/test_options.py::test_missing_envvar_sequence",
+      "outcome": "pass",
+      "output": "......                                                                   [100%]\n6 passed in 0.19s\n"
+    },
+    {
+      "revision": "df7fe0b97297d07748dc2f88008e2bd136e0cf43",
+      "role": "later",
+      "check": "tests/test_options.py::test_show_envvar_empty",
+      "outcome": "pass",
+      "output": "......                                                                   [100%]\n6 passed in 0.34s\n"
+    },
+    {
+      "revision": "df7fe0b97297d07748dc2f88008e2bd136e0cf43",
+      "role": "later",
+      "check": "tests/test_options.py::test_missing_envvar_sequence",
+      "outcome": "pass",
+      "output": "......                                                                   [100%]\n6 passed in 0.11s\n"
+    }
+  ],
+  "later_revisions": [
+    "c4dd0cd968f61d0ee7a163af810bd695ed893ec3",
+    "5125851aaa19840c82b9811193b2c2d6cf245326",
+    "df7fe0b97297d07748dc2f88008e2bd136e0cf43"
+  ],
+  "later_failures": [],
+  "supporting_events": [],
+  "proposal": "## src/click/core.py\n- Fix `show_envvar` output for a sequence or an empty `envvar`.\n  checks:\n    - pytest: tests/test_options.py::test_show_envvar_empty\n    - pytest: tests/test_options.py::test_missing_envvar_sequence\n  <!-- trace:correction=c53d3732b98c fails-before=bb695aaecdef passes-after=c53d3732b98c later-clean=3/3 -->\n"
+}

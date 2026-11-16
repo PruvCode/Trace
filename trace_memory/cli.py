@@ -194,6 +194,32 @@ def build_parser() -> argparse.ArgumentParser:
                    help="link a file at a full local commit hash (repeatable)")
     p.set_defaults(func=cmd_record)
 
+    rules_parser = sub.add_parser("rules", help="list and check approved project rules (.trace/RULES.md)")
+    rule_actions = rules_parser.add_subparsers(dest="rules_action", required=True)
+    for name, help_text in (("list", "show approved and proposed rules"),
+                            ("check", "run the checks of approved rules for changed files")):
+        action = rule_actions.add_parser(name, help=help_text)
+        _project_arg(action)
+        action.add_argument("--file", action="append", default=None, metavar="PATH",
+                            help="repository-relative file to scope to (repeatable; check defaults to files changed since HEAD)")
+        action.add_argument("--ref", default=None, help="approval ref (default: the repository's default branch)")
+        action.add_argument("--json", action="store_true", help="machine-readable output")
+        if name == "check":
+            action.add_argument("--all", action="store_true", help="check every approved rule (for CI)")
+            action.add_argument("--python", default=None, help="interpreter for checks (default: TRACE_RULES_PYTHON or this Python)")
+        action.set_defaults(func=cmd_rules)
+    propose = rule_actions.add_parser("propose", help="draft a rule from a fix commit and validate its checks against history")
+    propose.add_argument("commit", help="the fix commit (must change code and tests)")
+    _project_arg(propose)
+    propose.add_argument("--later", type=int, default=5, help="later commits touching the file to check for false alarms")
+    propose.add_argument("--pythonpath", action="append", default=[], metavar="DIR",
+                         help="repository-relative source root to put on PYTHONPATH (repeatable, e.g. src)")
+    propose.add_argument("--python", default=None, help="interpreter for checks (default: TRACE_RULES_PYTHON or this Python)")
+    propose.add_argument("--write", action="store_true",
+                         help="append the proposed rule to .trace/RULES.md and keep the report in .agent-memory/guardrails/")
+    propose.add_argument("--json", action="store_true", help="print the full validation report")
+    propose.set_defaults(func=cmd_rules_propose)
+
     task = sub.add_parser("task", help="browse and organize project investigations")
     actions = task.add_subparsers(dest="task_action", required=True)
     create = actions.add_parser("create", help="create a task with a stable local ID")
@@ -606,6 +632,122 @@ def cmd_search(args) -> int:
         project_mod.search_project_symbols(project, args.query, args.limit),
         f"no symbols matching {args.query!r}",
     )
+
+
+def _changed_files(project: Path) -> list[str]:
+    tracked = task_library.local_git(project, "diff", "--name-only", "HEAD").decode("utf-8", "replace").split("\n")
+    untracked = task_library.local_git(project, "ls-files", "--others", "--exclude-standard").decode("utf-8", "replace").split("\n")
+    return sorted({path for path in tracked + untracked if path})
+
+
+def cmd_rules(args) -> int:
+    from memory import rule_checks
+    from memory import rules as rules_mod
+
+    project = _resolve(args)
+    loaded = rules_mod.load(project, ref=args.ref)
+    for error in loaded.errors:
+        print(f"warning: {error}", file=sys.stderr)
+    if args.rules_action == "list":
+        approved = rules_mod.scoped(loaded.approved, args.file)
+        proposed = rules_mod.scoped(loaded.proposed, args.file)
+        if args.json:
+            row = lambda rule, state: {"state": state, "scope": rule.scope, "text": rule.text,
+                                       "checks": [f"{c.kind}: {c.value}" for c in rule.checks]}
+            print(json.dumps({"ref": loaded.ref, "commit": loaded.commit,
+                              "rules": [row(r, "approved") for r in approved] + [row(r, "proposed") for r in proposed],
+                              "removed_locally": [r.scope for r in loaded.removed_locally]}, indent=2))
+            return EXIT_OK
+        where = f"{loaded.ref} at {loaded.commit[:12]}" if loaded.commit else "no approval ref"
+        print(f"approved ({len(approved)}), from {where}:")
+        for rule in approved:
+            print(f"  {rule.scope}: {rule.text}" + (f"  [{len(rule.checks)} checks]" if rule.checks else "  [advisory: no checks]"))
+        print(f"proposed ({len(proposed)}), not approved, never executed:")
+        for rule in proposed:
+            print(f"  {rule.scope}: {rule.text}")
+        for rule in loaded.removed_locally:
+            print(f"note: approved rule removed only in the working tree, still enforced: {rule.scope}")
+        return EXIT_OK
+    files = None if args.all else (args.file or _changed_files(project))
+    in_scope = rules_mod.scoped(loaded.approved, files) if files != [] else []
+    selected = [rule for rule in in_scope if rule.checks]
+    results = rule_checks.run(project, selected, rule_checks.subprocess_executor(project, args.python))
+    blocking = rule_checks.blocking(results)
+    # Last failing file digest per check, for uncommitted work only: the same content failing again is a repeat.
+    state_file = project_mod.memory_dir(project) / "rule-checks.json"
+    try:
+        previous = json.loads(state_file.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        previous = {}
+    state = {key: value for key, value in previous.items() if key not in {r.identity for r in results}}
+    report = []
+    for result in results:
+        repeated = (result.classification == "regression_in_progress" and result.digest is not None
+                    and previous.get(result.identity) == result.digest)
+        if result.classification == "regression_in_progress" and result.digest:
+            state[result.identity] = result.digest
+        changes = (rule_checks.changes_since(project, loaded.ref, result.rule.path)
+                   if result.classification in rule_checks.BLOCKING else [])
+        report.append((result, repeated, changes, rule_checks.next_step(result, repeated=repeated, changes=changes)))
+    if state_file.parent.is_dir() and (state or previous):
+        state_file.write_text(json.dumps(state, indent=1, sort_keys=True), encoding="utf-8")
+    uncovered = [rule.scope for rule in in_scope if not rule.checks]
+    if args.json:
+        print(json.dumps({"ref": loaded.ref, "commit": loaded.commit, "blocking": len(blocking), "uncovered": uncovered,
+                          "results": [{**r.as_record(), "repeated": repeated, "changes_since_approval": changes,
+                                       "next_step": step} for r, repeated, changes, step in report]}, indent=2))
+    else:
+        passed = sum(r.outcome == "pass" for r in results)
+        print(f"{len(results)} checks from {len(selected)} approved rules: {passed} passed, {len(results) - passed} not passed")
+        for result, repeated, _, step in report:
+            if result.outcome != "pass":
+                print(f"[{result.classification}{', repeated' if repeated else ''}] {result.rule.scope}: {result.rule.text}\n"
+                      f"    {result.check.kind}: {result.check.value}\n    {result.output}\n    next: {step}")
+        if uncovered:
+            print(f"approved rules with no checks (not verified): {', '.join(uncovered)}")
+        skipped = [rule.scope for rule in rules_mod.scoped(loaded.proposed, files)] if files != [] else []
+        if skipped:
+            print(f"not run (proposed, not approved): {', '.join(skipped)}")
+    return EXIT_ERROR if blocking else EXIT_OK
+
+
+def cmd_rules_propose(args) -> int:
+    from dataclasses import asdict
+
+    from memory import guardrails
+    from memory import rules as rules_mod
+
+    project = _resolve(args)
+    try:
+        item = guardrails.correction(project, args.commit)
+        rule = guardrails.draft(project, item)
+    except ValueError as exc:
+        raise project_mod.TraceUserError("no rule can be proposed from this commit", str(exc),
+                                         "Pick a fix commit that changes code and adds or changes a test.") from exc
+    report = guardrails.validate(project, item, rule, python=args.python, pythonpath=tuple(args.pythonpath), later=args.later)
+    report.supporting_events = guardrails.supporting_events(project, rule)
+    block = guardrails.render(rule, report) if report.valid else ""
+    if args.json:
+        print(json.dumps({**asdict(report), "proposal": block}, indent=2))
+    else:
+        for check, reason in report.dropped.items():
+            print(f"dropped {check}: {reason}")
+        for failure in report.later_failures:
+            print(f"later {failure['revision'][:12]}: {failure['check']} {failure['outcome']} (false alarm or deliberate change?)")
+        if not report.valid:
+            print("no check fails before the fix and passes after it; nothing to propose")
+            return EXIT_ERROR
+        print(f"proposed rule (reword the sentence before approving; source files changed: {', '.join(item.source_files)}):\n")
+        print(block)
+    if report.valid and args.write:
+        rules_file = project / rules_mod.RULES_PATH
+        rules_file.parent.mkdir(exist_ok=True)
+        existing = rules_file.read_text(encoding="utf-8") if rules_file.exists() else ""
+        rules_file.write_text(existing + ("\n" if existing and not existing.endswith("\n\n") else "") + block, encoding="utf-8")
+        saved = guardrails.save(project, report)
+        print(f"appended to {rules_file.relative_to(project)} as a proposed rule; approve it by merging to the default branch"
+              + (f"; report: {saved.relative_to(project)}" if saved else ""), file=sys.stderr)
+    return EXIT_OK if report.valid else EXIT_ERROR
 
 
 def cmd_events(args) -> int:

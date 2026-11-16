@@ -1,0 +1,41 @@
+distinct runs 120; identical duplicate rows collapsed 0
+arm                  pass   hist   ctrl  regr  valid  med_in  max_in  med_ctx
+no_memory            2/24   0/21   2/3     0     24     182     908        0
+notes               11/24   9/21   2/3     1     24     208     289      167
+trace               10/24   8/21   2/3     1     24     442     523     1046
+graphify_code        2/24   0/21   2/3     2     24    1078    1214     3002
+graphify_history     2/24   0/21   2/3     1     24    1090    1208     3008
+
+task                          no_memory            notes            trace    graphify_code graphify_history
+_apply_budgets                        F                F                F                F                F
+_identifier                           F                P                P                F                F
+_is_binary_reader                     F                P                P                F                F
+_new_side_ranges                      F                P                P                F                F
+_normalize_opt                        F                F                F                F                F
+_normalize_string                     F                F                F                F                F
+_parse_keywords                       F                P                P                F                F
+_parse_project_urls                   F                F                F                F                F
+_posixify                             F                F                F                F                F
+_text                                 F                F                F                F                F
+_truncate                             F                R                R                F                F
+_validate_epoch                       F                F                F                F                F
+_validate_post                        P                P                P                P                P
+_validate_release                     F                F                F                F                F
+_version_join                         F                F                F                F                F
+clamp_limit                           F                P                F                F                F
+get_best_encoding                     F                F                F                F                F
+is_commit                             F                P                P                F                F
+is_git_path                           F                P                P                R                F
+is_valid_pylock_path                  F                F                F                R                R
+isatty                                P                P                P                P                P
+iter_rows                             F                P                P                F                F
+join_options                          F                F                F                F                F
+make_str                              F                P                P                F                F
+  graphify_code vs notes: +0 []  -9 ['_identifier', '_is_binary_reader', '_new_side_ranges', '_parse_keywords', 'clamp_limit', 'is_commit', 'is_git_path', 'iter_rows', 'make_str']
+  graphify_code vs no_memory: +0 []  -0 []
+  graphify_code vs trace: +0 []  -8 ['_identifier', '_is_binary_reader', '_new_side_ranges', '_parse_keywords', 'is_commit', 'is_git_path', 'iter_rows', 'make_str']
+  graphify_history vs notes: +0 []  -9 ['_identifier', '_is_binary_reader', '_new_side_ranges', '_parse_keywords', 'clamp_limit', 'is_commit', 'is_git_path', 'iter_rows', 'make_str']
+  graphify_history vs no_memory: +0 []  -0 []
+  graphify_history vs trace: +0 []  -8 ['_identifier', '_is_binary_reader', '_new_side_ranges', '_parse_keywords', 'is_commit', 'is_git_path', 'iter_rows', 'make_str']
+  trace vs notes: +0 []  -1 ['clamp_limit']
+  trace vs no_memory: +8 ['_identifier', '_is_binary_reader', '_new_side_ranges', '_parse_keywords', 'is_commit', 'is_git_path', 'iter_rows', 'make_str']  -0 []

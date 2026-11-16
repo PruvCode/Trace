@@ -6,7 +6,8 @@ session's first prompt matches earlier messages, those matches lead the
 block and only a short tail of the last session stays, within a smaller
 budget, because the block repeats on every model request. Otherwise
 retrieval falls back to recency: the newest conversation of prior sessions
-plus recent recorded findings.
+plus recent recorded findings. An unbound query naming a source file and
+indexed definition uses matching history and can return empty.
 
 Recency policy:
 - the newest 10 user/assistant messages, taken from the most recent prior
@@ -28,6 +29,7 @@ Recency policy:
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import json
 import sqlite3
@@ -42,6 +44,7 @@ from memory import episodic as episodic_mod
 from memory import evidence as evidence_mod
 from memory import redact as redact_mod
 from memory import relevance
+from memory import rules as rules_mod
 from memory import store as store_mod
 from memory import synthetic as synthetic_mod
 from memory import task_library
@@ -82,6 +85,8 @@ def _tail_messages(
     conn: sqlite3.Connection,
     exclude_session_id: str | None,
     limit: int = MAX_TAIL_MESSAGES,
+    *,
+    retired: list[int] | None = None,
 ) -> tuple[list[dict], list[str]]:
     """Newest conversational messages across prior sessions, oldest first.
 
@@ -108,7 +113,7 @@ def _tail_messages(
         try:
             if transcript_mod.session_parent(conn, session_id):
                 continue  # subagent transcript, not a user-facing session
-            messages = transcript_mod.get_recent_conversation(conn, session_id, remaining)
+            messages = transcript_mod.get_recent_conversation(conn, session_id, remaining, exclude_superseded=retired)
         except (sqlite3.Error, ValueError):
             continue
         group: list[dict] = []
@@ -151,21 +156,21 @@ def _query_terms(text: str, limit: int = 16) -> list[str]:
 
 
 def _relevant_messages(conn: sqlite3.Connection, query: str, exclude_session_id: str | None,
-                       limit: int = MAX_RELEVANT, *, task_id: str | None = None) -> list[dict]:
+                       limit: int = MAX_RELEVANT, *, task_id: str | None = None,
+                       retired: list[int] | None = None, symbols: tuple[str, ...] = ()) -> list[dict]:
     """Prior-session messages ranked by match with the current task (best first).
 
     Messages sharing more of the task's terms come first, a stated constraint
     or specific value counts as one more, and BM25 breaks ties.
     """
-    terms = _query_terms(query)
+    terms = list(symbols) if symbols else _query_terms(query)
     if not terms:
         return []
-    prefixes = [f"{term}*" for term in terms]
+    prefixes = terms if symbols else [f"{term}*" for term in terms]
+    named = set(symbols)
     scope = {"unassigned_only": task_id is None, "task_id": task_id, "exclude_session_id": exclude_session_id}
-    if task_id is not None:
-        retired = episodic_mod.superseded_map(conn, task_id)
-        if retired:
-            scope["exclude_superseded"] = list(retired)
+    if retired:
+        scope["exclude_superseded"] = retired
     try:
         hits = transcript_mod.search_messages(conn, query=" OR ".join(prefixes), limit=store_mod.MAX_LIMIT, **scope)
         if len(prefixes) > 1 and len(hits) == store_mod.MAX_LIMIT:
@@ -193,6 +198,9 @@ def _relevant_messages(conn: sqlite3.Connection, query: str, exclude_session_id:
                 or msg.metadata.get("part_type") in transcript_mod.NON_CONVERSATIONAL_PART_TYPES
                 or synthetic_mod.is_synthetic_memory_text(content)
                 or transcript_mod.session_parent(conn, msg.session_id)):
+            continue
+        if named and (not named.intersection(re.findall(r"[a-z0-9_]+", content.lower()))
+                      or (msg.role != "user" and not _DECISION.search(content))):
             continue
         cap = MAX_ASSISTANT_ITEM_CHARS if msg.role == "assistant" and task_id is None else MAX_ITEM_CHARS
         out.append({"kind": "message", "role": msg.role, "text": _truncate(redact_mod.redact_text(content), cap)[0],
@@ -251,7 +259,7 @@ def _staleness(project_root: Path | None, file: str | None, recorded: str | None
     return None
 
 
-def _recent_findings(conn: sqlite3.Connection, project_root: Path | None = None) -> list[dict]:
+def _recent_findings(conn: sqlite3.Connection, project_root: Path | None = None, *, retired=()) -> list[dict]:
     """The most recent current findings (agent/person/git), chronological.
 
     Superseded findings are left out (they stay searchable with
@@ -259,13 +267,12 @@ def _recent_findings(conn: sqlite3.Connection, project_root: Path | None = None)
     finding whose linked file changed since it was recorded is flagged.
     """
     try:
-        superseded = episodic_mod.superseded_map(conn)
         # Unbound sessions only receive general findings.
         scope = " AND task_id IS NULL" if store_mod.has_task_schema(conn) else ""
         rows = conn.execute(
             "SELECT id, type, payload, file, timestamp FROM events WHERE source <> 'capture'"
-            f"{scope} ORDER BY id DESC LIMIT ?",
-            (MAX_FINDINGS * 5 + len(superseded),),
+            f"{scope} AND id NOT IN (SELECT value FROM json_each(?)) ORDER BY id DESC LIMIT ?",
+            (json.dumps(list(retired)), MAX_FINDINGS * 5),
         ).fetchall()
     except sqlite3.Error:
         return []
@@ -274,8 +281,6 @@ def _recent_findings(conn: sqlite3.Connection, project_root: Path | None = None)
         if len(items) >= MAX_FINDINGS:
             break
         try:
-            if row[0] in superseded:
-                continue
             event_type = row[1] or "event"
             payload = row[2] or ""
             try:
@@ -308,16 +313,73 @@ def _recent_findings(conn: sqlite3.Connection, project_root: Path | None = None)
     return items
 
 
-def _scoped_findings(conn, project, task_id, query, *, exact_only=False, file=None) -> list[dict]:
+def _decision_targets(conn, project, event, text, hashes):
+    indexed = relevance.decision_targets(conn, project, text, event.file, event.symbol, hashes)
+    requirements = relevance.target_requirements(text, indexed)
+    primary = (event.file or "").replace("\\", "/")
+    targets = []
+    for target in indexed:
+        if rule := requirements.get(target["symbol"]):
+            targets.append({**target, "decision_excerpt": rule})
+        elif target["path"] == primary and event.symbol in (target["symbol"], target["qualified"]):
+            targets.append(target)
+    return targets
+
+
+def _source_matches(conn, project, task_id, query, retired, file=None):
+    query = " ".join(part for part in (query, file) if part)
+    exact, definitions = relevance.graph_matches(
+        conn, query, task_id, unassigned_only=task_id is None, exclude=retired,
+    )
+    if file is not None:
+        normalized = file.replace("\\", "/")
+        exact = {event_id: code for event_id, code in exact.items() if code["path"] == normalized}
+        definitions = tuple(pair for pair in definitions if pair[0] == normalized)
+    symbols = tuple(dict.fromkeys(name.lower() for _, name in definitions))
+    if project is None or not definitions:
+        return exact, symbols
+    terms = list(dict.fromkeys(name for _, name in definitions if name.isidentifier()
+                              and name not in {"AND", "OR", "NOT"}))
+    if not terms:
+        return exact, symbols
+    # Older records have a single primary location. Resolve explicitly named
+    # secondary definitions against the current snapshot before adding a match.
+    try:
+        decisions = episodic_mod.search_events(
+            conn, type="decision", query=" OR ".join(terms), task_id=task_id,
+            unassigned_only=task_id is None, limit=16,
+        )
+    except store_mod.SearchQueryError:
+        return exact, symbols
+    focus = set(definitions)
+    hashes = {}
+    excluded = set(retired)
+    for event in decisions:
+        if (event.id in exact or event.id in excluded or event.superseded_by is not None
+                or event.source == "capture" or not any(event.evidence_refs)
+                or not isinstance(event.payload, dict) or event.payload.get("status") != "verified"):
+            continue
+        text = _truncate(redact_mod.redact_text(_finding_text(event.payload).strip()), MAX_ITEM_CHARS)[0]
+        for target in _decision_targets(conn, project, event, text, hashes):
+            path, name = target["path"], target["symbol"]
+            if (path, name) in focus and "decision_excerpt" in target:
+                exact[event.id] = {"path": path, "name": name}
+                break
+    return exact, symbols
+
+
+def _scoped_findings(conn, project, task_id, query, *, exact=None, file=None, retired=()) -> list[dict]:
     terms = _query_terms(query or "")
     match = " OR ".join(f"{term}*" for term in terms)
-    exact = relevance.graph_matches(conn, query, task_id, unassigned_only=task_id is None)
+    exact_only = exact is not None
+    if exact is None:
+        exact, _ = _source_matches(conn, project, task_id, query, retired, file)
     if task_id is None and not match and not exact:
         return []
     options = {"task_id": task_id, "unassigned_only": task_id is None, "limit": 25, "file": file, "normalize_file": True}
     hits = episodic_mod.search_events(conn, query=match, **options) if match and not exact_only else []
     matched = {event.id for event in hits}
-    candidates = episodic_mod.search_events(conn, ids=list(exact), **{**options, "limit": 30}) if exact else []
+    candidates = episodic_mod.search_events(conn, ids=list(exact), **{**options, "file": None, "limit": 30}) if exact else []
     if match and not exact_only:
         candidates += episodic_mod.search_events(conn, query=match, decision_only=True, **options)
         candidates += hits
@@ -370,8 +432,7 @@ def _scoped_findings(conn, project, task_id, query, *, exact_only=False, file=No
         status = event.payload.get("status")
         text = _truncate(redact_mod.redact_text(_finding_text(event.payload).strip()), MAX_ITEM_CHARS)[0]
         checks = []
-        supported_decision = (task_id is not None and event.type == "decision" and status == "verified"
-                              and refs and freshness != "stale")
+        supported_decision = (event.type == "decision" and status == "verified" and refs and freshness != "stale")
         if supported_decision:
             try:
                 checks = episodic_mod.acceptance_checks(event.payload)
@@ -400,7 +461,7 @@ def _scoped_findings(conn, project, task_id, query, *, exact_only=False, file=No
             item["source_evidence"] = "unavailable"
         if checks:
             item["acceptance"] = checks
-        if supported_decision:
+        if supported_decision and (task_id is not None or event.id in exact):
             supported_decisions.add(event.id)
         if failed:
             item["previously_failed_checks"] = failed
@@ -410,9 +471,9 @@ def _scoped_findings(conn, project, task_id, query, *, exact_only=False, file=No
     items.sort(key=lambda item: priorities[item["event_id"]])
     # Once exact source evidence answers the task, generic status updates add
     # noise. Keep linked attempts, contradictory history and other sourced work.
-    if any(item.get("code") and item["evidence"] and item["role"].startswith("decision (verified)")
-           and not item["uncertain"] for item in items):
-        items = [item for item in items if item.get("code") or item["evidence"]]
+    if any(item.get("code") and item["event_id"] in supported_decisions for item in items):
+        items = [item for item in items
+                 if item["evidence"] or (item.get("code") and selected[item["event_id"]].type != "observation")]
     shortlisted = items[:MAX_FINDINGS]
     if not any(item.get("previously_failed_checks") for item in shortlisted):
         failure = next((item for item in items[MAX_FINDINGS:] if item.get("previously_failed_checks")), None)
@@ -423,12 +484,8 @@ def _scoped_findings(conn, project, task_id, query, *, exact_only=False, file=No
         if item["event_id"] not in supported_decisions:
             continue
         event = selected[item["event_id"]]
-        targets = relevance.decision_targets(conn, project, item["text"], event.file, event.symbol, verified_files)
+        targets = _decision_targets(conn, project, event, item["text"], verified_files)
         if targets:
-            requirements = relevance.target_requirements(item["text"], targets)
-            for target in targets:
-                if rule := requirements.get(target["symbol"]):
-                    target["decision_excerpt"] = rule
             item["code_targets"] = targets
     return shortlisted
 
@@ -469,6 +526,22 @@ def format_block(items: list[dict]) -> str:
     return "\n".join(["<TRACE MEMORY>", *synthetic_mod.render_records(items), "</TRACE MEMORY>"])
 
 
+def approved_notes(project_root: Path | None, query: str | None) -> str:
+    """Approved rules the request names, as plain notes; "" when none or on any error.
+
+    Disabled with ``TRACE_NOTES_FIRST=0``. Proposed (unapproved) rules are never returned.
+    """
+    if os.environ.get("TRACE_NOTES_FIRST") == "0" or not query or project_root is None:
+        return ""
+    root = Path(project_root)
+    if not (root / rules_mod.RULES_PATH).is_file():
+        return ""
+    try:
+        return rules_mod.render_notes(rules_mod.mentioned(rules_mod.load(root).approved, query))
+    except Exception:  # noqa: BLE001 - session start is fail-open
+        return ""
+
+
 def get_session_start_context(
     trace_db_path: str | Path,
     *,
@@ -480,8 +553,13 @@ def get_session_start_context(
     use_bound_task: bool = True,
     project_root: Path | None = None,
     file: str | None = None,
+    notes_first: bool = False,
 ) -> dict[str, Any]:
     """Assemble bounded prior-session context. Never raises for DB problems.
+
+    With ``notes_first`` (automatic injection only), approved rules that the
+    request names replace the recall block: the result has ``notes`` set and no
+    items. Deeper memory stays available through explicit pulls.
 
     With ``query`` (the new session's task prompt), prior messages that match
     it are kept ahead of the plain recency tail.
@@ -496,6 +574,14 @@ def get_session_start_context(
         "finding_items": 0,
         "latency_ms": 0,
     }
+    if notes_first:
+        db_guess = Path(trace_db_path)
+        notes = approved_notes(project_root or (db_guess.resolve().parent.parent
+                                                if db_guess.parent.name == ".agent-memory" else None), query)
+        if notes:
+            stats["notes"] = True
+            stats["latency_ms"] = round((time.perf_counter() - started) * 1000, 1)
+            return {"items": [], "text": notes, "notes": notes, "truncated": False, "stats": stats}
     try:
         db_path = Path(trace_db_path)
         if not db_path.exists():
@@ -505,38 +591,47 @@ def get_session_start_context(
             # Staleness checks need the project tree: <project>/.agent-memory/memory.db
             root = project_root or (db_path.resolve().parent.parent if db_path.parent.name == ".agent-memory" else None)
             task_id = task_id or (task_library.bound_task_id(conn, exclude_session_id) if use_bound_task else None)
+            retired = list(episodic_mod.superseded_map(conn))
             if file is not None and task_id is None:
                 return {"items": [], "text": "", "truncated": False, "stats": stats}
             if task_id is not None:
                 store_mod.ensure_evidence_schema(conn)
                 max_chars = min(max_chars, MAX_TASK_CHARS)
                 prior_sessions = []
-                findings = _scoped_findings(conn, root, task_id, query, file=file)
-                messages = (_relevant_messages(conn, query, exclude_session_id, limit=2, task_id=task_id)
+                findings = _scoped_findings(conn, root, task_id, query, file=file, retired=retired)
+                messages = (_relevant_messages(conn, query, exclude_session_id, limit=2, task_id=task_id, retired=retired)
                             if query and file is None else [])
                 supported = {item["text"] for item in findings if item.get("evidence")}
                 messages = [item for item in messages if item["text"] not in supported]
                 if file is None and not findings and not messages:
-                    findings = _scoped_findings(conn, root, None, query)
+                    findings = _scoped_findings(conn, root, None, query, retired=retired)
                     if not findings and query:
-                        messages = _relevant_messages(conn, query, exclude_session_id, limit=2)
+                        messages = _relevant_messages(conn, query, exclude_session_id, limit=2, retired=retired)
                     stats["task_fallback"] = bool(findings or messages)
             else:
-                relevant = _relevant_messages(conn, query, exclude_session_id) if query else []
-                tail_limit = MAX_TASK_TAIL if relevant else MAX_TAIL_MESSAGES
-                messages, prior_sessions = _tail_messages(conn, exclude_session_id, tail_limit)
-                if relevant:
+                matches, symbols = _source_matches(conn, root, None, query, retired)
+                relevant = (_relevant_messages(conn, query, exclude_session_id, retired=retired, symbols=symbols)
+                            if query else [])
+                exact = _scoped_findings(conn, root, None, query, exact=matches) if matches else []
+                if symbols:
+                    exact = [item for item in exact if item.get("evidence") or not item["role"].startswith("observation")]
+                if exact or symbols:
+                    findings = list(reversed(exact))
+                    supported = {item["text"] for item in exact if item.get("evidence")}
+                    messages = list(reversed([item for item in relevant if item["text"] not in supported][:2]))
+                    prior_sessions = list(dict.fromkeys(item["session"] for item in messages))
                     max_chars = min(max_chars, MAX_TASK_CHARS)
-                    seen = {m["text"] for m in messages}
-                    relevant = [m for m in relevant if m["text"] not in seen]
-                    # _select keeps the END of the list first, so relevant hits win.
-                    messages = messages + list(reversed(relevant))
-                    stats["relevant_items"] = len(relevant)
-                exact = _scoped_findings(conn, root, None, query, exact_only=True) if query else []
-                findings = exact or _recent_findings(conn, root)
-                if exact:
-                    messages = list(reversed(relevant[:2]))
-                    max_chars = min(max_chars, MAX_TASK_CHARS)
+                else:
+                    findings = _recent_findings(conn, root, retired=retired)
+                    tail_limit = MAX_TASK_TAIL if relevant else MAX_TAIL_MESSAGES
+                    messages, prior_sessions = _tail_messages(conn, exclude_session_id, tail_limit, retired=retired)
+                    if relevant:
+                        max_chars = min(max_chars, MAX_TASK_CHARS)
+                        seen = {m["text"] for m in messages}
+                        relevant = [m for m in relevant if m["text"] not in seen]
+                        # _select keeps the END of the list first, so relevant hits win.
+                        messages += list(reversed(relevant))
+                        stats["relevant_items"] = len(relevant)
         finally:
             conn.close()
     except Exception:
@@ -545,16 +640,25 @@ def get_session_start_context(
     try:
         if task_id is not None:
             items, truncated = [], False
-            # Give a decision and the most relevant concrete failure room ahead of transcript excerpts.
+            # Keep matched decisions across files ahead of routine transcript excerpts.
             failure = next((item for item in findings[1:] if item.get("previously_failed_checks")), None)
             priority = [failure] if failure else []
-            for item in [*findings[:1], *priority, *messages, *(item for item in findings[1:] if item is not failure)]:
+            remaining = [item for item in findings[1:] if item is not failure]
+            decisions = [item for item in remaining if item.get("evidence") and item.get("code")
+                         and item["role"].startswith("decision (verified)") and not item.get("uncertain")]
+            other = [item for item in remaining if item not in decisions]
+            for item in [*findings[:1], *priority, *decisions, *messages, *other]:
                 if item.get("code_targets") and len(synthetic_mod.render_user_block([*items, item])) > max_chars:
-                    item = {key: value for key, value in item.items() if key != "code_targets"}
+                    item = {**item, "code_targets": [
+                        {key: value for key, value in target.items() if key != "decision_excerpt"}
+                        for target in item["code_targets"]
+                    ]}
                     truncated = True
                 if (item.get("acceptance") and len(synthetic_mod.render_user_block([*items, item])) > max_chars):
                     item = {key: value for key, value in item.items() if key != "acceptance"}
                     truncated = True
+                if item.get("code_targets") and len(synthetic_mod.render_user_block([*items, item])) > max_chars:
+                    item = {key: value for key, value in item.items() if key != "code_targets"}
                 if len(items) < max_items and len(synthetic_mod.render_user_block([*items, item])) <= max_chars:
                     items.append(item)
                 else:
