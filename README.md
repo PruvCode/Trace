@@ -349,6 +349,23 @@ Approved rules live in `.trace/RULES.md`, in Git, next to the code they govern:
   the same check (state in `.agent-memory/rule-checks.json`). Rules with no
   checks are listed as not verified. Write one bullet per requirement so each
   clause has its own checks.
+- **Propose from a fix (prototype).** `trace rules propose <commit>
+  [--pythonpath src] [--later 5] [--write]` turns a fix commit that changed
+  code and tests into a proposed rule:
+  - Its checks are the test functions the commit added or changed.
+  - It is scoped to the changed function.
+  - Its sentence is the commit subject, to be reworded in review.
+  - Each check is run in a temporary worktree. It must **fail** (not error) on
+    the parent with the new tests present, and pass on the fix. Checks that
+    don't are dropped and listed.
+  - Up to `--later` subsequent commits touching the file are checked. Each
+    failure there is reported as a possible false alarm, a vanished test or
+    an environment problem.
+  - `--write` appends the block to `.trace/RULES.md` as a *proposed* rule, with
+    `fails-before`/`passes-after` provenance, and keeps the full report in
+    `.agent-memory/guardrails/<sha>.json`. Approval is still a reviewed merge.
+  - An approved check whose test was later renamed or removed blocks as
+    `missing_check`, so a guardrail never silently stops guarding.
 - **Inspect.** `trace rules list [--file PATH] [--json]`,
   `trace rules check [--all] [--json]`, `trace preview --query-stdin` (what would be
   injected).

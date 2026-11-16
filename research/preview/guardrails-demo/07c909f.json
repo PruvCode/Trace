@@ -1,0 +1,71 @@
+{
+  "correction": {
+    "sha": "07c909f23f0f83b5ca137c167b9a134d66201f67",
+    "parent": "7925a3410d7098c28cfca3b2baa6c852666bbd14",
+    "subject": "Validate style() color arguments, fix explicit black color argument",
+    "source_files": [
+      "src/click/termui.py"
+    ],
+    "test_files": [
+      "tests/test_utils/test_style.py"
+    ]
+  },
+  "rule": {
+    "path": "src/click/termui.py",
+    "symbol": null,
+    "text": "Validate style() color arguments, fix explicit black color argument.",
+    "checks": [
+      "tests/test_utils/test_style.py::test_styling_invalid_color"
+    ],
+    "provenance": "trace:correction=07c909f23f0f"
+  },
+  "kept": [
+    "tests/test_utils/test_style.py::test_styling_invalid_color"
+  ],
+  "dropped": {},
+  "runs": [
+    {
+      "revision": "7925a3410d7098c28cfca3b2baa6c852666bbd14",
+      "role": "before",
+      "check": "tests/test_utils/test_style.py::test_styling_invalid_color",
+      "outcome": "fail",
+      "output": "_styling_invalid_color[value14-fg]\nFAILED tests/test_utils/test_style.py::test_styling_invalid_color[value14-bg]\nFAILED tests/test_utils/test_style.py::test_styling_invalid_color[value15-fg]\nFAILED tests/test_utils/test_style.py::test_styling_invalid_color[value15-bg]\nFAILED tests/test_utils/test_style.py::test_styling_invalid_color[value16-fg]\nFAILED tests/test_utils/test_style.py::test_styling_invalid_color[value16-bg]\nFAILED tests/test_utils/test_style.py::test_styling_invalid_color[value17-fg]\nFAILED tests/test_utils/test_style.py::test_styling_invalid_color[value17-bg]\n36 failed in 0.81s\n"
+    },
+    {
+      "revision": "07c909f23f0f83b5ca137c167b9a134d66201f67",
+      "role": "after",
+      "check": "tests/test_utils/test_style.py::test_styling_invalid_color",
+      "outcome": "pass",
+      "output": "....................................                                     [100%]\n36 passed in 0.12s\n"
+    },
+    {
+      "revision": "7a0a3447f6ddd2c15438c5d098e289323f9f9556",
+      "role": "later",
+      "check": "tests/test_utils/test_style.py::test_styling_invalid_color",
+      "outcome": "pass",
+      "output": "....................................                                     [100%]\n36 passed in 0.12s\n"
+    },
+    {
+      "revision": "0585f456baa6eeb2edbaab7c85fa796a004aef86",
+      "role": "later",
+      "check": "tests/test_utils/test_style.py::test_styling_invalid_color",
+      "outcome": "pass",
+      "output": "....................................                                     [100%]\n36 passed in 0.13s\n"
+    },
+    {
+      "revision": "3b16957cba718a6d77ef680114de8e0830c436ba",
+      "role": "later",
+      "check": "tests/test_utils/test_style.py::test_styling_invalid_color",
+      "outcome": "pass",
+      "output": "....................................                                     [100%]\n36 passed in 0.12s\n"
+    }
+  ],
+  "later_revisions": [
+    "7a0a3447f6ddd2c15438c5d098e289323f9f9556",
+    "0585f456baa6eeb2edbaab7c85fa796a004aef86",
+    "3b16957cba718a6d77ef680114de8e0830c436ba"
+  ],
+  "later_failures": [],
+  "supporting_events": [],
+  "proposal": "## src/click/termui.py\n- Validate style() color arguments, fix explicit black color argument.\n  checks:\n    - pytest: tests/test_utils/test_style.py::test_styling_invalid_color\n  <!-- trace:correction=07c909f23f0f fails-before=7925a3410d70 passes-after=07c909f23f0f later-clean=3/3 -->\n"
+}

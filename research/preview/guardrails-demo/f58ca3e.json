@@ -1,0 +1,62 @@
+{
+  "correction": {
+    "sha": "f58ca3e81424a35626c8a475eb59ab95589008ce",
+    "parent": "420c8fb44eeadb537cae69d2fee3796e808558dd",
+    "subject": "Fix `copy`, `deepcopy` and `pickle` of `Sentinel` members",
+    "source_files": [
+      "src/click/_utils.py"
+    ],
+    "test_files": [
+      "tests/test_utils/test_sentinel.py"
+    ]
+  },
+  "rule": {
+    "path": "src/click/_utils.py",
+    "symbol": null,
+    "text": "Fix `copy`, `deepcopy` and `pickle` of `Sentinel` members.",
+    "checks": [
+      "tests/test_utils/test_sentinel.py::test_sentinel_duplication_preserves_identity",
+      "tests/test_utils/test_sentinel.py::test_parameter_duplication"
+    ],
+    "provenance": "trace:correction=f58ca3e81424"
+  },
+  "kept": [
+    "tests/test_utils/test_sentinel.py::test_sentinel_duplication_preserves_identity",
+    "tests/test_utils/test_sentinel.py::test_parameter_duplication"
+  ],
+  "dropped": {},
+  "runs": [
+    {
+      "revision": "420c8fb44eeadb537cae69d2fee3796e808558dd",
+      "role": "before",
+      "check": "tests/test_utils/test_sentinel.py::test_sentinel_duplication_preserves_identity",
+      "outcome": "fail",
+      "output": "      if result is None and exc is None:\n>                   raise ve_exc\nE                   ValueError: <object object at 0x0000020B4D816C30> is not a valid Sentinel\n\n..\\..\\..\\..\\Roaming\\uv\\python\\cpython-3.11-windows-x86_64-none\\Lib\\enum.py:1137: ValueError\n=========================== short test summary info ===========================\nFAILED tests/test_utils/test_sentinel.py::test_sentinel_duplication_preserves_identity[pickle-Sentinel.UNSET]\nFAILED tests/test_utils/test_sentinel.py::test_sentinel_duplication_preserves_identity[pickle-Sentinel.FLAG_NEEDS_VALUE]\n2 failed, 4 passed in 0.50s\n"
+    },
+    {
+      "revision": "420c8fb44eeadb537cae69d2fee3796e808558dd",
+      "role": "before",
+      "check": "tests/test_utils/test_sentinel.py::test_parameter_duplication",
+      "outcome": "fail",
+      "output": "     ):\n                return result\n            else:\n                ve_exc = ValueError(\"%r is not a valid %s\" % (value, cls.__qualname__))\n                if result is None and exc is None:\n>                   raise ve_exc\nE                   ValueError: <object object at 0x000001E400B45F20> is not a valid Sentinel\n\n..\\..\\..\\..\\Roaming\\uv\\python\\cpython-3.11-windows-x86_64-none\\Lib\\enum.py:1137: ValueError\n=========================== short test summary info ===========================\nFAILED tests/test_utils/test_sentinel.py::test_parameter_duplication[pickle]\n1 failed, 2 passed in 0.45s\n"
+    },
+    {
+      "revision": "f58ca3e81424a35626c8a475eb59ab95589008ce",
+      "role": "after",
+      "check": "tests/test_utils/test_sentinel.py::test_sentinel_duplication_preserves_identity",
+      "outcome": "pass",
+      "output": "......                                                                   [100%]\n6 passed in 0.09s\n"
+    },
+    {
+      "revision": "f58ca3e81424a35626c8a475eb59ab95589008ce",
+      "role": "after",
+      "check": "tests/test_utils/test_sentinel.py::test_parameter_duplication",
+      "outcome": "pass",
+      "output": "...                                                                      [100%]\n3 passed in 0.07s\n"
+    }
+  ],
+  "later_revisions": [],
+  "later_failures": [],
+  "supporting_events": [],
+  "proposal": "## src/click/_utils.py\n- Fix `copy`, `deepcopy` and `pickle` of `Sentinel` members.\n  checks:\n    - pytest: tests/test_utils/test_sentinel.py::test_sentinel_duplication_preserves_identity\n    - pytest: tests/test_utils/test_sentinel.py::test_parameter_duplication\n  <!-- trace:correction=f58ca3e81424 fails-before=420c8fb44eea passes-after=f58ca3e81424 later-clean=0/0 -->\n"
+}

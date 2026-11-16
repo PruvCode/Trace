@@ -251,3 +251,13 @@ def test_pythonpath_puts_the_tree_first(tmp_path):
     rule = rules.Rule("probe.py", None, "r", (rules.Check("py", "tracefixturelib.VALUE == 1"),))
     assert rule_checks.subprocess_executor(tmp_path)(rule, rule.checks[0])[0] == "error"  # src not on the path
     assert rule_checks.subprocess_executor(tmp_path, pythonpath=("src",))(rule, rule.checks[0]) == ("pass", "")
+
+
+def test_a_vanished_pytest_check_blocks_as_missing_not_environment(repo):
+    rule = rules.Rule("pkg/limits.py", None, "r", (rules.Check("pytest", "tests/test_limits.py::test_gone"),))
+    gone = lambda r, c: ("error", "no tests ran\nERROR: not found: tests/test_limits.py::test_gone\n(no match in any of [<Module test_limits.py>])")
+    broken = lambda r, c: ("error", "ERROR tests/test_limits.py - ImportError\nERROR: not found: tests/test_limits.py::test_gone")
+    vanished = rule_checks.run(repo, [rule], gone)[0]
+    assert vanished.classification == "missing_check" and rule_checks.blocking([vanished]) == [vanished]
+    assert "no longer exists" in rule_checks.next_step(vanished)
+    assert rule_checks.run(repo, [rule], broken)[0].classification == "environment"  # the module failed to collect

@@ -62,6 +62,45 @@ This tests one link only: whether TRACE can turn real corrections into useful, v
   - Refactors, features, dependency bumps and docs are excluded.
 - **Selection:** the first 40 eligible commits in chronological order from a fixed start date, split as evenly as possible across repositories. The list (repository, SHA) is frozen and committed **before any generation runs**.
 
+### Amendment 1 (2026-11-16, before the corpus was frozen)
+
+Building the prototype exposed a flaw in the design above, so the following replaces the corpus rules wherever they conflict.
+
+1. **Two strata, not one.**
+   - **The problem:** when a fix commit adds a test, TRACE does not need to generate anything. It harvests that test as the guardrail, deterministically and at $0 (`trace rules propose`). Restricting the corpus to fixes with tests would measure generation only where it is least needed.
+   - **Stratum A, fix with a human test (target 24):**
+     - Eligible when the harvested human test fails before and passes after.
+     - Generated drafts are compared with the harvested human test: blind review, mutant kill rate, false alarms.
+     - The harvested test also gives a $0 baseline for "TRACE without generation".
+   - **Stratum B, fix-like commit that changes only non-test code (target 16):** this is where generation is the only source of a check. Yield, false alarms and relevance are measured; there is no human test to compare with.
+2. **Repositories and window:**
+   - more-itertools, sqlparse, boltons, cachetools, pyparsing, tomlkit and wcwidth: pure Python, tests need only pytest, none used in TRACE development. toolz was dropped for having too few commits.
+   - Window: 2026-07-01 to 2026-11-15, to reduce the chance that the drafting model saw the fixes in training. The drafting model's cutoff is not published, so contamination is a stated residual risk.
+   - Quota: the first 4 A and the first 3 B per repository in commit order, then the first 40 overall by date.
+3. **"Links an issue" is dropped.** It cannot be checked offline, so the generator gets the full commit message, not issue text.
+4. **V3 uses later commits that touch the governed file** (up to 5, plus the pinned head), not release tags 12 months later, because none exist yet for a recent window.
+5. **The maintained-notes comparison is made explicit:**
+   - For each correction, the reviewer first writes the one-line note they would add to `CLAUDE.md`/`AGENTS.md` (timed).
+   - Then they review TRACE's proposal (timed).
+   - **Efficiency:** minutes per guardrail, note vs. TRACE review.
+   - **Usefulness:** whether each states the real requirement.
+   - **Detection:** mutant kill rate, which a prose note cannot have.
+   - This does not test whether a note changes an agent's behaviour. That needs the prospective study.
+
+### Amendment 2 (2026-11-16, after mining, before qualification and freezing)
+
+Mining all non-merge commits in the window (`candidates.json`) found 178 fix-like source changes:
+- 168 came with a test function (stratum A).
+- Only 10 changed source alone (stratum B).
+
+The first mining pass used `--first-parent` and silently dropped merged PRs (more-itertools showed 0 candidates). It was discarded and kept as `candidates-v1-first-parent.json`.
+
+**Changes, made without looking at any qualification or generation result:**
+- **Target:** B = every eligible B candidate (at most 10; per-repository cap 4); A = 30 (per-repository cap 6), so the total stays 40.
+- **Stratum B is small.** With n ≤ 10 its rates have Wilson intervals of roughly ±30 points. B results are therefore reported as descriptive, not judged against the pass/kill thresholds. A is judged as preregistered.
+- **Finding, independent of the gate:** in these mature projects about 94% of fixes ship with a test, so TRACE's deterministic, $0 harvesting path (`trace rules propose`) already covers nearly all real OSS corrections. Generation's value lies in corrections that come without tests, chiefly agent-session corrections, which public Git history cannot sample. The prospective study has to measure that population.
+- **Environment:** checks run in one pinned environment (`guardrails-eval/gate-venv`: Python 3.12, pytest 8.4.2, PyYAML, railroad-diagrams, jinja2). A check that cannot run there is an environment exclusion, never counted as a failure of the method.
+
 ### Generator input
 
 Only information that existed when the correction landed:
@@ -107,7 +146,8 @@ Including the non-test fix diff is deliberate. In the product, drafting happens 
 
 | Metric | Pass | Kill |
 |---|---|---|
-| Yield: corrections with at least one draft surviving V1–V4 | ≥ 60% | < 40% |
+| Yield, stratum A and stratum B reported separately: corrections with at least one draft surviving V1–V4 | ≥ 60% each | < 40% in B |
+| Efficiency vs. notes: median TRACE review minutes per guardrail, compared with writing the note | ≤ note-writing time | > 2× note-writing time |
 | False alarms: surviving checks failing a later known-good revision | ≤ 5% | > 10% |
 | Relevance: survivors rated 2 on (a) and ≥ 1 on (b) | ≥ 70% | < 50% |
 | Detection: mutant kill rate vs. human fix tests | ≥ 80% of human (non-inferior) | < 60% |

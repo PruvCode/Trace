@@ -208,6 +208,17 @@ def build_parser() -> argparse.ArgumentParser:
             action.add_argument("--all", action="store_true", help="check every approved rule (for CI)")
             action.add_argument("--python", default=None, help="interpreter for checks (default: TRACE_RULES_PYTHON or this Python)")
         action.set_defaults(func=cmd_rules)
+    propose = rule_actions.add_parser("propose", help="draft a rule from a fix commit and validate its checks against history")
+    propose.add_argument("commit", help="the fix commit (must change code and tests)")
+    _project_arg(propose)
+    propose.add_argument("--later", type=int, default=5, help="later commits touching the file to check for false alarms")
+    propose.add_argument("--pythonpath", action="append", default=[], metavar="DIR",
+                         help="repository-relative source root to put on PYTHONPATH (repeatable, e.g. src)")
+    propose.add_argument("--python", default=None, help="interpreter for checks (default: TRACE_RULES_PYTHON or this Python)")
+    propose.add_argument("--write", action="store_true",
+                         help="append the proposed rule to .trace/RULES.md and keep the report in .agent-memory/guardrails/")
+    propose.add_argument("--json", action="store_true", help="print the full validation report")
+    propose.set_defaults(func=cmd_rules_propose)
 
     task = sub.add_parser("task", help="browse and organize project investigations")
     actions = task.add_subparsers(dest="task_action", required=True)
@@ -698,6 +709,45 @@ def cmd_rules(args) -> int:
         if skipped:
             print(f"not run (proposed, not approved): {', '.join(skipped)}")
     return EXIT_ERROR if blocking else EXIT_OK
+
+
+def cmd_rules_propose(args) -> int:
+    from dataclasses import asdict
+
+    from memory import guardrails
+    from memory import rules as rules_mod
+
+    project = _resolve(args)
+    try:
+        item = guardrails.correction(project, args.commit)
+        rule = guardrails.draft(project, item)
+    except ValueError as exc:
+        raise project_mod.TraceUserError("no rule can be proposed from this commit", str(exc),
+                                         "Pick a fix commit that changes code and adds or changes a test.") from exc
+    report = guardrails.validate(project, item, rule, python=args.python, pythonpath=tuple(args.pythonpath), later=args.later)
+    report.supporting_events = guardrails.supporting_events(project, rule)
+    block = guardrails.render(rule, report) if report.valid else ""
+    if args.json:
+        print(json.dumps({**asdict(report), "proposal": block}, indent=2))
+    else:
+        for check, reason in report.dropped.items():
+            print(f"dropped {check}: {reason}")
+        for failure in report.later_failures:
+            print(f"later {failure['revision'][:12]}: {failure['check']} {failure['outcome']} (false alarm or deliberate change?)")
+        if not report.valid:
+            print("no check fails before the fix and passes after it; nothing to propose")
+            return EXIT_ERROR
+        print(f"proposed rule (reword the sentence before approving; source files changed: {', '.join(item.source_files)}):\n")
+        print(block)
+    if report.valid and args.write:
+        rules_file = project / rules_mod.RULES_PATH
+        rules_file.parent.mkdir(exist_ok=True)
+        existing = rules_file.read_text(encoding="utf-8") if rules_file.exists() else ""
+        rules_file.write_text(existing + ("\n" if existing and not existing.endswith("\n\n") else "") + block, encoding="utf-8")
+        saved = guardrails.save(project, report)
+        print(f"appended to {rules_file.relative_to(project)} as a proposed rule; approve it by merging to the default branch"
+              + (f"; report: {saved.relative_to(project)}" if saved else ""), file=sys.stderr)
+    return EXIT_OK if report.valid else EXIT_ERROR
 
 
 def cmd_events(args) -> int:

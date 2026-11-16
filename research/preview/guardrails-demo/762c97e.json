@@ -1,0 +1,48 @@
+{
+  "correction": {
+    "sha": "762c97eef7c1b3779678992f26a553a2a8c80793",
+    "parent": "8929d392781c8113bc569f388c15c47b94f86581",
+    "subject": "Fix double-bracketing of choices in synopsis",
+    "source_files": [
+      "src/click/core.py"
+    ],
+    "test_files": [
+      "tests/test_basic.py"
+    ]
+  },
+  "rule": {
+    "path": "src/click/core.py",
+    "symbol": "Argument.make_metavar",
+    "text": "Fix double-bracketing of choices in synopsis.",
+    "checks": [
+      "tests/test_basic.py::test_choice_argument_optional_metavar",
+      "tests/test_basic.py::test_datetime_argument_optional_metavar"
+    ],
+    "provenance": "trace:correction=762c97eef7c1"
+  },
+  "kept": [],
+  "dropped": {
+    "tests/test_basic.py::test_choice_argument_optional_metavar": "does not fail before the fix (environment)",
+    "tests/test_basic.py::test_datetime_argument_optional_metavar": "does not fail before the fix (environment)"
+  },
+  "runs": [
+    {
+      "revision": "8929d392781c8113bc569f388c15c47b94f86581",
+      "role": "before",
+      "check": "tests/test_basic.py::test_choice_argument_optional_metavar",
+      "outcome": "environment",
+      "output": "ng: Passing a non-Collection iterable to parametrize is deprecated.\nE   Test: tests/test_basic.py::test_boolean_conversion, argvalues type: chain\nE   Please convert to a list or tuple.\nE   See https://docs.pytest.org/en/stable/deprecations.html#parametrize-iterators\n=========================== short test summary info ===========================\nERROR tests/test_basic.py - pytest.PytestRemovedIn10Warning: Passing a non-Co...\n1 error in 0.54s\nERROR: found no collectors for C:\\Users\\pruth\\AppData\\Local\\Temp\\trace-guardrail-1uico2zz\\tree\\tests\\test_basic.py::test_choice_argument_optional_metavar\n\n"
+    },
+    {
+      "revision": "8929d392781c8113bc569f388c15c47b94f86581",
+      "role": "before",
+      "check": "tests/test_basic.py::test_datetime_argument_optional_metavar",
+      "outcome": "environment",
+      "output": ": Passing a non-Collection iterable to parametrize is deprecated.\nE   Test: tests/test_basic.py::test_boolean_conversion, argvalues type: chain\nE   Please convert to a list or tuple.\nE   See https://docs.pytest.org/en/stable/deprecations.html#parametrize-iterators\n=========================== short test summary info ===========================\nERROR tests/test_basic.py - pytest.PytestRemovedIn10Warning: Passing a non-Co...\n1 error in 0.43s\nERROR: found no collectors for C:\\Users\\pruth\\AppData\\Local\\Temp\\trace-guardrail-1uico2zz\\tree\\tests\\test_basic.py::test_datetime_argument_optional_metavar\n\n"
+    }
+  ],
+  "later_revisions": [],
+  "later_failures": [],
+  "supporting_events": [],
+  "proposal": ""
+}
