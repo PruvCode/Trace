@@ -1,0 +1,139 @@
+{
+  "correction": {
+    "sha": "c53d3732b98c764932e146c007146ad402acb229",
+    "parent": "bb695aaecdef95832d167fc1d508921745aa824e",
+    "subject": "Fix `show_envvar` output for a sequence or an empty `envvar`",
+    "source_files": [
+      "src/click/core.py"
+    ],
+    "test_files": [
+      "tests/test_options.py"
+    ]
+  },
+  "rule": {
+    "path": "src/click/core.py",
+    "symbol": null,
+    "text": "Fix `show_envvar` output for a sequence or an empty `envvar`.",
+    "checks": [
+      "tests/test_options.py::test_show_envvar_empty",
+      "tests/test_options.py::test_missing_envvar_sequence"
+    ],
+    "provenance": "trace:correction=c53d3732b98c"
+  },
+  "kept": [
+    "tests/test_options.py::test_show_envvar_empty",
+    "tests/test_options.py::test_missing_envvar_sequence"
+  ],
+  "dropped": {},
+  "runs": [
+    {
+      "revision": "bb695aaecdef95832d167fc1d508921745aa824e",
+      "role": "before",
+      "check": "tests/test_options.py::test_show_envvar_empty",
+      "outcome": "fail",
+      "output": " --help        Show this message and exit.\\n' = <Result okay>.output\n\ntests\\test_options.py:892: AssertionError\n=========================== short test summary info ===========================\nFAILED tests/test_options.py::test_show_envvar_empty[None-  --units TEXT\\n-envvar1]\nFAILED tests/test_options.py::test_show_envvar_empty[None-  --units TEXT\\n-]\nFAILED tests/test_options.py::test_show_envvar_empty[WEATHER-  --units TEXT  [env var: WEATHER_UNITS]\\n-envvar1]\nFAILED tests/test_options.py::test_show_envvar_empty[WEATHER-  --units TEXT  [env var: WEATHER_UNITS]\\n-]\n4 failed, 2 passed in 1.13s\n"
+    },
+    {
+      "revision": "bb695aaecdef95832d167fc1d508921745aa824e",
+      "role": "before",
+      "check": "tests/test_options.py::test_missing_envvar_sequence",
+      "outcome": "fail",
+      "output": "onError\n=========================== short test summary info ===========================\nFAILED tests/test_options.py::test_missing_envvar_sequence[envvar1-'--units' (env var: 'UNITS')]\nFAILED tests/test_options.py::test_missing_envvar_sequence[envvar2-'--units' (env var: 'WEATHER_UNITS', 'UNITS')]\nFAILED tests/test_options.py::test_missing_envvar_sequence[envvar3-'--units' (env var: 'WEATHER_UNITS', 'UNITS')]\nFAILED tests/test_options.py::test_missing_envvar_sequence[envvar4-'--units']\nFAILED tests/test_options.py::test_missing_envvar_sequence[-'--units'] - asse...\n5 failed, 1 passed in 0.86s\n"
+    },
+    {
+      "revision": "c53d3732b98c764932e146c007146ad402acb229",
+      "role": "after",
+      "check": "tests/test_options.py::test_show_envvar_empty",
+      "outcome": "pass",
+      "output": "......                                                                   [100%]\n6 passed in 0.43s\n"
+    },
+    {
+      "revision": "c53d3732b98c764932e146c007146ad402acb229",
+      "role": "after",
+      "check": "tests/test_options.py::test_missing_envvar_sequence",
+      "outcome": "pass",
+      "output": "......                                                                   [100%]\n6 passed in 0.16s\n"
+    },
+    {
+      "revision": "6aabf099bfdd4c1e75fe8d0e0d4241372b988ab1",
+      "role": "later",
+      "check": "tests/test_options.py::test_show_envvar_empty",
+      "outcome": "missing_check",
+      "output": "\nno tests ran in 0.48s\nERROR: not found: C:\\Users\\pruth\\AppData\\Local\\Temp\\trace-guardrail-nmmq_g7_\\tree\\tests\\test_options.py::test_show_envvar_empty\n(no match in any of [<Module test_options.py>])\n\n"
+    },
+    {
+      "revision": "6aabf099bfdd4c1e75fe8d0e0d4241372b988ab1",
+      "role": "later",
+      "check": "tests/test_options.py::test_missing_envvar_sequence",
+      "outcome": "missing_check",
+      "output": "\nno tests ran in 0.13s\nERROR: not found: C:\\Users\\pruth\\AppData\\Local\\Temp\\trace-guardrail-nmmq_g7_\\tree\\tests\\test_options.py::test_missing_envvar_sequence\n(no match in any of [<Module test_options.py>])\n\n"
+    },
+    {
+      "revision": "3cbaa76b6014be7427d1ab06b4af40f01e7c278e",
+      "role": "later",
+      "check": "tests/test_options.py::test_show_envvar_empty",
+      "outcome": "missing_check",
+      "output": "\nno tests ran in 0.43s\nERROR: not found: C:\\Users\\pruth\\AppData\\Local\\Temp\\trace-guardrail-nmmq_g7_\\tree\\tests\\test_options.py::test_show_envvar_empty\n(no match in any of [<Module test_options.py>])\n\n"
+    },
+    {
+      "revision": "3cbaa76b6014be7427d1ab06b4af40f01e7c278e",
+      "role": "later",
+      "check": "tests/test_options.py::test_missing_envvar_sequence",
+      "outcome": "missing_check",
+      "output": "\nno tests ran in 0.14s\nERROR: not found: C:\\Users\\pruth\\AppData\\Local\\Temp\\trace-guardrail-nmmq_g7_\\tree\\tests\\test_options.py::test_missing_envvar_sequence\n(no match in any of [<Module test_options.py>])\n\n"
+    },
+    {
+      "revision": "b90faad1788bc030bb3320938f07c9189f42d7d0",
+      "role": "later",
+      "check": "tests/test_options.py::test_show_envvar_empty",
+      "outcome": "missing_check",
+      "output": "\nno tests ran in 0.51s\nERROR: not found: C:\\Users\\pruth\\AppData\\Local\\Temp\\trace-guardrail-nmmq_g7_\\tree\\tests\\test_options.py::test_show_envvar_empty\n(no match in any of [<Module test_options.py>])\n\n"
+    },
+    {
+      "revision": "b90faad1788bc030bb3320938f07c9189f42d7d0",
+      "role": "later",
+      "check": "tests/test_options.py::test_missing_envvar_sequence",
+      "outcome": "missing_check",
+      "output": "\nno tests ran in 0.14s\nERROR: not found: C:\\Users\\pruth\\AppData\\Local\\Temp\\trace-guardrail-nmmq_g7_\\tree\\tests\\test_options.py::test_missing_envvar_sequence\n(no match in any of [<Module test_options.py>])\n\n"
+    }
+  ],
+  "later_revisions": [
+    "6aabf099bfdd4c1e75fe8d0e0d4241372b988ab1",
+    "3cbaa76b6014be7427d1ab06b4af40f01e7c278e",
+    "b90faad1788bc030bb3320938f07c9189f42d7d0"
+  ],
+  "later_failures": [
+    {
+      "revision": "6aabf099bfdd4c1e75fe8d0e0d4241372b988ab1",
+      "check": "tests/test_options.py::test_show_envvar_empty",
+      "outcome": "missing_check"
+    },
+    {
+      "revision": "6aabf099bfdd4c1e75fe8d0e0d4241372b988ab1",
+      "check": "tests/test_options.py::test_missing_envvar_sequence",
+      "outcome": "missing_check"
+    },
+    {
+      "revision": "3cbaa76b6014be7427d1ab06b4af40f01e7c278e",
+      "check": "tests/test_options.py::test_show_envvar_empty",
+      "outcome": "missing_check"
+    },
+    {
+      "revision": "3cbaa76b6014be7427d1ab06b4af40f01e7c278e",
+      "check": "tests/test_options.py::test_missing_envvar_sequence",
+      "outcome": "missing_check"
+    },
+    {
+      "revision": "b90faad1788bc030bb3320938f07c9189f42d7d0",
+      "check": "tests/test_options.py::test_show_envvar_empty",
+      "outcome": "missing_check"
+    },
+    {
+      "revision": "b90faad1788bc030bb3320938f07c9189f42d7d0",
+      "check": "tests/test_options.py::test_missing_envvar_sequence",
+      "outcome": "missing_check"
+    }
+  ],
+  "supporting_events": [],
+  "proposal": "## src/click/core.py\n- Fix `show_envvar` output for a sequence or an empty `envvar`.\n  checks:\n    - pytest: tests/test_options.py::test_show_envvar_empty\n    - pytest: tests/test_options.py::test_missing_envvar_sequence\n  <!-- trace:correction=c53d3732b98c fails-before=bb695aaecdef passes-after=c53d3732b98c later-clean=0/3 -->\n"
+}

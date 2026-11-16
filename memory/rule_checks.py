@@ -16,6 +16,9 @@ and classified:
   change.
 - ``stale_or_regression``: fails deterministically on committed code. Only a
   person can decide whether the rule or the code is wrong.
+- ``missing_check``: the approved pytest check no longer exists (the test was
+  renamed or removed). The rule is no longer enforced until its check is
+  updated through review, so this blocks like a failure.
 """
 
 from __future__ import annotations
@@ -36,7 +39,8 @@ from memory.rules import Check, Rule
 TIMEOUT = 120
 MAX_OUTPUT = 2000
 OUTCOMES = ("pass", "fail", "error")
-BLOCKING = ("regression_in_progress", "stale_or_regression")
+BLOCKING = ("regression_in_progress", "stale_or_regression", "missing_check")
+_NOT_FOUND = ("ERROR: not found:", "no match in any of", "file or directory not found")
 
 # An executor runs one check and returns (outcome, output); outcome is one of OUTCOMES.
 Executor = Callable[[Rule, Check], tuple[str, str]]
@@ -149,6 +153,11 @@ def _uncommitted(root: Path, path: str) -> bool:
         return True
 
 
+def _vanished(output: str, check: Check) -> bool:
+    """pytest could not find the node itself (renamed or removed), as opposed to failing to collect its module."""
+    return any(marker in output for marker in _NOT_FOUND) and "ERROR " + check.value.split("::")[0] not in output
+
+
 def _digest(root: Path, path: str) -> str | None:
     try:
         return sha256((root / path).read_bytes()).hexdigest()
@@ -170,6 +179,8 @@ def run(root: Path, rules: list[Rule], executor: Executor) -> list[CheckResult]:
                 again, again_output = executor(rule, check)
                 if again == "pass":
                     classification = "flaky"
+                elif check.kind == "pytest" and "error" in (outcome, again) and _vanished(output, check):
+                    classification = "missing_check"
                 elif "error" in (outcome, again):
                     classification = "environment"
                     output = output or again_output
@@ -205,6 +216,8 @@ _NEXT = {
                               "propose a rule change in .trace/RULES.md for review.",
     "stale_or_regression": "Committed code fails an approved rule. A person must decide whether the code or the "
                            "rule is wrong.",
+    "missing_check": "The approved check no longer exists (test renamed or removed), so this rule is not enforced. "
+                     "Update the check in .trace/RULES.md through review.",
 }
 
 
