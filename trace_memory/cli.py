@@ -194,6 +194,21 @@ def build_parser() -> argparse.ArgumentParser:
                    help="link a file at a full local commit hash (repeatable)")
     p.set_defaults(func=cmd_record)
 
+    rules_parser = sub.add_parser("rules", help="list and check approved project rules (.trace/RULES.md)")
+    rule_actions = rules_parser.add_subparsers(dest="rules_action", required=True)
+    for name, help_text in (("list", "show approved and proposed rules"),
+                            ("check", "run the checks of approved rules for changed files")):
+        action = rule_actions.add_parser(name, help=help_text)
+        _project_arg(action)
+        action.add_argument("--file", action="append", default=None, metavar="PATH",
+                            help="repository-relative file to scope to (repeatable; check defaults to files changed since HEAD)")
+        action.add_argument("--ref", default=None, help="approval ref (default: the repository's default branch)")
+        action.add_argument("--json", action="store_true", help="machine-readable output")
+        if name == "check":
+            action.add_argument("--all", action="store_true", help="check every approved rule (for CI)")
+            action.add_argument("--python", default=None, help="interpreter for checks (default: TRACE_RULES_PYTHON or this Python)")
+        action.set_defaults(func=cmd_rules)
+
     task = sub.add_parser("task", help="browse and organize project investigations")
     actions = task.add_subparsers(dest="task_action", required=True)
     create = actions.add_parser("create", help="create a task with a stable local ID")
@@ -606,6 +621,60 @@ def cmd_search(args) -> int:
         project_mod.search_project_symbols(project, args.query, args.limit),
         f"no symbols matching {args.query!r}",
     )
+
+
+def _changed_files(project: Path) -> list[str]:
+    tracked = task_library.local_git(project, "diff", "--name-only", "HEAD").decode("utf-8", "replace").split("\n")
+    untracked = task_library.local_git(project, "ls-files", "--others", "--exclude-standard").decode("utf-8", "replace").split("\n")
+    return sorted({path for path in tracked + untracked if path})
+
+
+def cmd_rules(args) -> int:
+    from memory import rule_checks
+    from memory import rules as rules_mod
+
+    project = _resolve(args)
+    loaded = rules_mod.load(project, ref=args.ref)
+    for error in loaded.errors:
+        print(f"warning: {error}", file=sys.stderr)
+    if args.rules_action == "list":
+        approved = rules_mod.scoped(loaded.approved, args.file)
+        proposed = rules_mod.scoped(loaded.proposed, args.file)
+        if args.json:
+            row = lambda rule, state: {"state": state, "scope": rule.scope, "text": rule.text,
+                                       "checks": [f"{c.kind}: {c.value}" for c in rule.checks]}
+            print(json.dumps({"ref": loaded.ref, "commit": loaded.commit,
+                              "rules": [row(r, "approved") for r in approved] + [row(r, "proposed") for r in proposed],
+                              "removed_locally": [r.scope for r in loaded.removed_locally]}, indent=2))
+            return EXIT_OK
+        where = f"{loaded.ref} at {loaded.commit[:12]}" if loaded.commit else "no approval ref"
+        print(f"approved ({len(approved)}), from {where}:")
+        for rule in approved:
+            print(f"  {rule.scope}: {rule.text}" + (f"  [{len(rule.checks)} checks]" if rule.checks else "  [advisory: no checks]"))
+        print(f"proposed ({len(proposed)}), not approved, never executed:")
+        for rule in proposed:
+            print(f"  {rule.scope}: {rule.text}")
+        for rule in loaded.removed_locally:
+            print(f"note: approved rule removed only in the working tree, still enforced: {rule.scope}")
+        return EXIT_OK
+    files = None if args.all else (args.file or _changed_files(project))
+    selected = [rule for rule in rules_mod.scoped(loaded.approved, files) if rule.checks] if files != [] else []
+    results = rule_checks.run(project, selected, rule_checks.subprocess_executor(project, args.python))
+    blocking = rule_checks.blocking(results)
+    if args.json:
+        print(json.dumps({"ref": loaded.ref, "commit": loaded.commit, "results": [r.as_record() for r in results],
+                          "blocking": len(blocking)}, indent=2))
+    else:
+        passed = sum(r.outcome == "pass" for r in results)
+        print(f"{len(results)} checks from {len(selected)} approved rules: {passed} passed, {len(results) - passed} not passed")
+        for result in results:
+            if result.outcome != "pass":
+                print(f"[{result.classification}] {result.rule.scope}: {result.rule.text}\n"
+                      f"    {result.check.kind}: {result.check.value}\n    {result.output}")
+        skipped = [rule.scope for rule in rules_mod.scoped(loaded.proposed, files)] if files != [] else []
+        if skipped:
+            print(f"not run (proposed, not approved): {', '.join(skipped)}")
+    return EXIT_ERROR if blocking else EXIT_OK
 
 
 def cmd_events(args) -> int:
