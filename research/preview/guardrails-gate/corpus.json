@@ -1,0 +1,509 @@
+{
+ "corpus": [
+  {
+   "date": "2026-07-03T18:21:02+05:30",
+   "dropped": {},
+   "eligible": true,
+   "human_checks": [
+    "tests/test_regressions.py::test_alter_table_row_format_issue773"
+   ],
+   "repo": "sqlparse",
+   "sha": "26d7d652218757828b64cfe7914660d529ab21e3",
+   "stratum": "A",
+   "subject": "Recognize ROW_FORMAT as a keyword (issue773)"
+  },
+  {
+   "date": "2026-07-04T16:01:40-05:00",
+   "dropped": {
+    "tests/test_unit.py::Test02_WithoutPackrat::testRepeaterPreservesParseAction": "does not fail before the fix (pass)",
+    "tests/test_unit.py::Test02_WithoutPackrat::testRepeaterRecursiveFalse": "does not fail before the fix (pass)",
+    "tests/test_unit.py::Test02_WithoutPackrat::testRepeaterRecursiveWhitespace": "does not fail before the fix (pass)"
+   },
+   "eligible": true,
+   "human_checks": [
+    "tests/test_unit.py::Test02_WithoutPackrat::testCommonExpressions"
+   ],
+   "repo": "pyparsing",
+   "sha": "e378aaf45c5fad96d69daac25f53ff7469cb2878",
+   "stratum": "A",
+   "subject": "fix: as_datetime passes ParseResults instead of input string to ParseException"
+  },
+  {
+   "date": "2026-07-04T17:00:44-05:00",
+   "dropped": {},
+   "eligible": true,
+   "human_checks": [
+    "tests/test_unit.py::Test02_WithoutPackrat::testSetDebugWithControlCharInLine"
+   ],
+   "repo": "pyparsing",
+   "sha": "a5e080704e9f266f960a71aaaffc3b00d2e72d20",
+   "stratum": "A",
+   "subject": "Escape control characters in set_debug() debug output"
+  },
+  {
+   "date": "2026-07-12T15:05:04-05:00",
+   "dropped": {},
+   "eligible": true,
+   "human_checks": [
+    "tests/test_more.py::TestRunningMin::test_stability",
+    "tests/test_more.py::TestRunningMax::test_stability"
+   ],
+   "repo": "more-itertools",
+   "sha": "d992be0de9383ddcaae3a24866a2d96b52132b07",
+   "stratum": "A",
+   "subject": "Fix stability in running_min and running_max"
+  },
+  {
+   "date": "2026-07-13T15:51:35+08:00",
+   "dropped": {},
+   "eligible": true,
+   "human_checks": [
+    "tests/test_toml_document.py::test_replace_super_table_preserves_whitespace"
+   ],
+   "repo": "tomlkit",
+   "sha": "b2821370ca8a7ead712287d7ec856b36165aaef7",
+   "stratum": "A",
+   "subject": "Preserve whitespace when replacing super tables (#534)"
+  },
+  {
+   "date": "2026-07-14T08:23:47+08:00",
+   "dropped": {},
+   "eligible": true,
+   "human_checks": [
+    "tests/test_toml_document.py::test_replace_table_with_itself_preserves_display_name"
+   ],
+   "repo": "tomlkit",
+   "sha": "49069361a41d2050086b7ec0f69a38a548802867",
+   "stratum": "A",
+   "subject": "Preserve table display names on self assignment (#537)"
+  },
+  {
+   "date": "2026-07-14T08:26:12+08:00",
+   "dropped": {},
+   "eligible": true,
+   "human_checks": [
+    "tests/test_toml_document.py::test_repr_out_of_order_table_proxy"
+   ],
+   "repo": "tomlkit",
+   "sha": "cc05afa962244b3d1c781a7fc54f66b7f29ef8b7",
+   "stratum": "A",
+   "subject": "Represent out-of-order table proxies with merged values (#536)"
+  },
+  {
+   "date": "2026-07-14T08:28:54+08:00",
+   "dropped": {},
+   "eligible": true,
+   "human_checks": [
+    "tests/test_parser.py::test_parser_rejects_overlong_decimal_integer"
+   ],
+   "repo": "tomlkit",
+   "sha": "b48c094775fba4cb3c16dea4c302ae5e371ac4e9",
+   "stratum": "A",
+   "subject": "reject overlong decimal integer instead of coercing to inf (#538)"
+  },
+  {
+   "date": "2026-07-14T08:52:08+08:00",
+   "dropped": {},
+   "eligible": true,
+   "human_checks": [
+    "tests/test_toml_document.py::test_set_value_on_out_of_order_table_with_empty_concrete_part"
+   ],
+   "repo": "tomlkit",
+   "sha": "e23a25438c6cc9b8cc28b6dcf76dc52f9c7a33e3",
+   "stratum": "A",
+   "subject": "fix: avoid duplicate table header when adding a key to an out-of-order table (#545)"
+  },
+  {
+   "date": "2026-07-14T08:59:45+08:00",
+   "dropped": {},
+   "eligible": true,
+   "human_checks": [
+    "tests/test_toml_document.py::test_replace_dotted_key_with_aot_keeps_following_sibling"
+   ],
+   "repo": "tomlkit",
+   "sha": "67d3e86502706df2a9ed67114ab67e25bcdcbbb7",
+   "stratum": "A",
+   "subject": "Fix array of tables replacing a dotted key swallowing the next sibling (#542) (#549)"
+  },
+  {
+   "date": "2026-07-14T15:28:48+08:00",
+   "dropped": {},
+   "eligible": true,
+   "human_checks": [
+    "tests/test_api.py::test_create_multiline_string_with_leading_newline_round_trips"
+   ],
+   "repo": "tomlkit",
+   "sha": "8cd44f58b499da3c80a29bc877a512665a15e0bb",
+   "stratum": "A",
+   "subject": "fix: preserve leading newline of multiline string built with string() (#551)"
+  },
+  {
+   "date": "2026-07-14T16:36:37+08:00",
+   "dropped": {
+    "tests/test_items.py::test_comment_method_keeps_existing_hash_prefix": "does not fail before the fix (pass)"
+   },
+   "eligible": true,
+   "human_checks": [
+    "tests/test_items.py::test_array_add_line_multiline_comment_is_rejected",
+    "tests/test_items.py::test_comment_method_multiline_comment_is_rejected"
+   ],
+   "repo": "tomlkit",
+   "sha": "21a4942ed31e773061c9fc047d55b1bb3c637ee3",
+   "stratum": "A",
+   "subject": "reject a comment containing line breaks in Item.comment and add_line (#544)"
+  },
+  {
+   "date": "2026-07-14T22:19:44-05:00",
+   "dropped": {},
+   "eligible": true,
+   "human_checks": [
+    "tests/test_unit.py::Test02_WithoutPackrat::testParseResultsDeepcopy4"
+   ],
+   "repo": "pyparsing",
+   "sha": "92f52e2c3b3ffb24215e966c0c349ca5678a7f86",
+   "stratum": "A",
+   "subject": "fix: deepcopy results names referencing nested ParseResults"
+  },
+  {
+   "date": "2026-07-16T23:36:33-07:00",
+   "dropped": {},
+   "eligible": true,
+   "human_checks": [
+    "tests/test_setutils.py::test_iset_slice_after_removal",
+    "tests/test_setutils.py::test_iset_slice_agreement"
+   ],
+   "repo": "boltons",
+   "sha": "609cabe932a1ea1423b24568644945abb1b8bb84",
+   "stratum": "A",
+   "subject": "fix IndexedSet slicing after removals: keep iter_slice bounds in apparent index space (#423)"
+  },
+  {
+   "date": "2026-07-16T23:36:33-07:00",
+   "dropped": {},
+   "eligible": true,
+   "human_checks": [
+    "tests/test_setutils.py::test_iset_scalar_index_bounds",
+    "tests/test_setutils.py::test_iset_scalar_index_multiple_dead_intervals"
+   ],
+   "repo": "boltons",
+   "sha": "d0a284fc7ef1aebceb54798600d73be4eeb76ed8",
+   "stratum": "A",
+   "subject": "fix IndexedSet out-of-range negative indexing wrapping around (x[-n-k], pop(-n-k))"
+  },
+  {
+   "date": "2026-07-17T01:11:06-07:00",
+   "dropped": {
+    "tests/test_dictutils.py::test_omd_pickle": "does not fail before the fix (pass)"
+   },
+   "eligible": true,
+   "human_checks": [
+    "tests/test_dictutils.py::test_omd_copy_module"
+   ],
+   "repo": "boltons",
+   "sha": "ebc7a8f776debfa33f0b380b57a444bca75a251b",
+   "stratum": "A",
+   "subject": "Fix copy.copy/copy.deepcopy collapsing OrderedMultiDict values"
+  },
+  {
+   "date": "2026-07-17T01:11:18-07:00",
+   "dropped": {},
+   "eligible": true,
+   "human_checks": [
+    "tests/test_fileutils.py::test_atomicsaver_pathlike",
+    "tests/test_fileutils.py::test_iter_find_files_pathlike"
+   ],
+   "repo": "boltons",
+   "sha": "55dfe5077bcb5fa76611b5f2a557ea6c442ad87c",
+   "stratum": "A",
+   "subject": "fix(fileutils): accept os.PathLike in AtomicSaver"
+  },
+  {
+   "date": "2026-07-17T01:11:29-07:00",
+   "dropped": {},
+   "eligible": true,
+   "human_checks": [
+    "tests/test_strutils.py::test_singularize_double_s"
+   ],
+   "repo": "boltons",
+   "sha": "1e61524a798ea73632029a013a7686036d5c126f",
+   "stratum": "A",
+   "subject": "fix(strutils): stop singularize() mangling words ending in 'ss'"
+  },
+  {
+   "date": "2026-07-17T17:43:22-07:00",
+   "dropped": {},
+   "eligible": true,
+   "human_checks": [
+    "tests/test_iterutils.py::test_backoff_constant_factor"
+   ],
+   "repo": "boltons",
+   "sha": "ead236e278ca0466bf468de746b5960fb12d7e5b",
+   "stratum": "A",
+   "subject": "fix: backoff_iter with factor=1.0 and no count raised ZeroDivisionError"
+  },
+  {
+   "date": "2026-07-17T17:43:38-07:00",
+   "dropped": {},
+   "eligible": true,
+   "human_checks": [
+    "tests/test_strutils.py::test_pluralize_x"
+   ],
+   "repo": "boltons",
+   "sha": "8c3fc2850693eacd2f2f8c95e7581adbb65b1269",
+   "stratum": "A",
+   "subject": "Pluralize words ending in \"x\" with \"-es\" (box -> boxes)"
+  },
+  {
+   "date": "2026-07-17T17:44:24-07:00",
+   "dropped": {
+    "tests/test_tbutils_parsed_exc.py::test_parsed_exc_with_anchor_indented": "does not fail before the fix (pass)"
+   },
+   "eligible": true,
+   "human_checks": [
+    "tests/test_tbutils_parsed_exc.py::test_parsed_exc_with_anchor"
+   ],
+   "repo": "boltons",
+   "sha": "7b577b0f3cc7adc2418733ce5c7dcdf6af82187d",
+   "stratum": "A",
+   "subject": "tbutils: round-trip traceback anchor lines in ParsedException (#333)"
+  },
+  {
+   "date": "2026-07-19T17:19:09-05:00",
+   "dropped": {},
+   "eligible": true,
+   "human_checks": [
+    "tests/test_unit.py::Test02_WithoutPackrat::testCommonExpressions"
+   ],
+   "repo": "pyparsing",
+   "sha": "d3388aaf5c60d1069b7294a743ccd0e7c87a1d1d",
+   "stratum": "A",
+   "subject": "Carry a rounded-up fractional second in as_datetime instead of overflowing"
+  },
+  {
+   "date": "2026-07-22T22:58:07+03:00",
+   "dropped": {},
+   "eligible": true,
+   "human_checks": [
+    "tests/test_grouping.py::test_grouping_alias_ctas_lowercase_as"
+   ],
+   "repo": "sqlparse",
+   "sha": "111b35cffcfe44b16fbdd27507f165bafd52a2a1",
+   "stratum": "A",
+   "subject": "Fix function grouping skipped for lowercase 'as' in CREATE TABLE AS SELECT"
+  },
+  {
+   "date": "2026-07-25T11:27:52+02:00",
+   "dropped": {},
+   "eligible": true,
+   "human_checks": [
+    "tests/test_regressions.py::test_materialized_view_issue752"
+   ],
+   "repo": "sqlparse",
+   "sha": "ac3b9e0b25627feb42a7053074b6549df81dcfaf",
+   "stratum": "A",
+   "subject": "Recognize MATERIALIZED as a keyword (issue752)"
+  },
+  {
+   "date": "2026-07-25T11:44:58+02:00",
+   "dropped": {},
+   "eligible": true,
+   "human_checks": [
+    "tests/test_parse.py::test_get_real_name_multi_part_dotted"
+   ],
+   "repo": "sqlparse",
+   "sha": "f66d12c245412f28c58f045b646eb53c0e691b8b",
+   "stratum": "A",
+   "subject": "Fix get_real_name for names with more than two dotted parts (#332)"
+  },
+  {
+   "date": "2026-07-25T17:08:09+02:00",
+   "dropped": {
+    "tests/test_regressions.py::test_keyword_before_qualified_name_still_grouped": "does not fail before the fix (pass)"
+   },
+   "eligible": true,
+   "human_checks": [
+    "tests/test_regressions.py::test_between_leading_dot_float_issue601"
+   ],
+   "repo": "sqlparse",
+   "sha": "a194d3187b04b0aed7a935c3401f068236fb6264",
+   "stratum": "A",
+   "subject": "Keep keyword before leading-dot float literal (issue601)"
+  },
+  {
+   "date": "2026-07-25T17:56:54+05:30",
+   "dropped": {},
+   "eligible": true,
+   "human_checks": [
+    "tests/test_unit.py::Test02_WithoutPackrat::testQuotedStringWithWhitespaceInQuoteChars"
+   ],
+   "repo": "pyparsing",
+   "sha": "59b167db1ba364422e1505e8e112f8447764cd22",
+   "stratum": "A",
+   "subject": "Preserve whitespace in QuotedString multi-char delimiters (fixes #492)"
+  },
+  {
+   "date": "2026-08-01T15:56:56-05:00",
+   "dropped": {},
+   "eligible": true,
+   "human_checks": [
+    "tests/test_unit.py::Test02_WithoutPackrat::testParseResultsArithmeticContract"
+   ],
+   "repo": "pyparsing",
+   "sha": "b0e277721f36ccc701ac0e4d3693f0ec00baf4c1",
+   "stratum": "A",
+   "subject": "Guard ParseResults.__iadd__ against non-ParseResults operands"
+  },
+  {
+   "date": "2026-08-08T12:00:51-05:00",
+   "dropped": {},
+   "eligible": true,
+   "human_checks": [
+    "tests/test_unit.py::Test02_WithoutPackrat::testWordMaxIndependentOfWhitespaceInCharset"
+   ],
+   "repo": "pyparsing",
+   "sha": "4fb4aa06af713749beebc5e38c14c0768c38575c",
+   "stratum": "A",
+   "subject": "Remove exception raised when a Word(max) match is followed by more body chars, makes regex and non-regex matching in Word consistent"
+  },
+  {
+   "date": "2026-08-09T01:06:17-05:00",
+   "dropped": {},
+   "eligible": true,
+   "human_checks": [
+    "tests/test_unit.py::Test02_WithoutPackrat::testParseResultsCopyResultsNamesAreIndependent"
+   ],
+   "repo": "pyparsing",
+   "sha": "94842d07f1cb80ad0644ca93b814e59d73fec836",
+   "stratum": "A",
+   "subject": "Give ParseResults.copy() its own results-name bookkeeping"
+  },
+  {
+   "changed": [
+    "payload",
+    "measure",
+    "run",
+    "classify",
+    "main",
+    "group_comments"
+   ],
+   "date": "2026-08-10T07:41:56+02:00",
+   "eligible": true,
+   "repo": "sqlparse",
+   "sha": "ef2012a5eeb491e604dea2b00d516904a3830c87",
+   "stratum": "B",
+   "subject": "Fix quadratic DoS in group_comments (GHSA-f2ff-p2ww-7p4p)"
+  },
+  {
+   "changed": [
+    "_alarm_handler",
+    "measure",
+    "make_dollar_quote_payload",
+    "make_comment_payload",
+    "run_scaling",
+    "find_delimited_spans",
+    "Lexer.get_tokens",
+    "resolve_paired_delimiters"
+   ],
+   "date": "2026-08-13T07:29:00+02:00",
+   "eligible": true,
+   "repo": "sqlparse",
+   "sha": "d1d80602741f77ec78e5a04ce4719244cf32352e",
+   "stratum": "B",
+   "subject": "Fix uncontrolled CPU consumption (ReDoS) in the lexer's handling of dollar-quoted literals and multiline comments."
+  },
+  {
+   "changed": [
+    "combination_with_replacement_index"
+   ],
+   "date": "2026-09-08T12:47:13+02:00",
+   "eligible": true,
+   "repo": "more-itertools",
+   "sha": "1b74b56d03bbe0d7496b8431aabe41598850ec0d",
+   "stratum": "B",
+   "subject": "Fix/simplify `combination_with_replacement_index`"
+  },
+  {
+   "changed": [
+    "constrained_batches"
+   ],
+   "date": "2026-09-09T13:12:29-04:00",
+   "eligible": true,
+   "repo": "more-itertools",
+   "sha": "d032cab7798c7a072ecbb8ade4dfa50030c75cb5",
+   "stratum": "B",
+   "subject": "fix nonpositive item limits in constrained_batches"
+  },
+  {
+   "changed": [
+    "bucket.__init__",
+    "bucket._get_values",
+    "bucket.__iter__"
+   ],
+   "date": "2026-09-17T12:40:19-05:00",
+   "eligible": true,
+   "repo": "more-itertools",
+   "sha": "288d6da0058a3e1e56842bd1ce6f4fc669658aea",
+   "stratum": "B",
+   "subject": "Issue #1287: Less aggressive fix for issue #1284"
+  },
+  {
+   "changed": [
+    "seekable.peek"
+   ],
+   "date": "2026-09-21T11:50:11+08:00",
+   "eligible": true,
+   "repo": "more-itertools",
+   "sha": "262dbb9805710cf31140f7566037e9f6178b6c28",
+   "stratum": "B",
+   "subject": "fix: check maxlen with getattr instead of isinstance"
+  },
+  {
+   "changed": [
+    "Cache.__init__"
+   ],
+   "date": "2026-10-05T15:46:16+02:00",
+   "eligible": true,
+   "repo": "cachetools",
+   "sha": "ffe21c44d3f7de9c7a89870c8cf1fd7aa583a2ae",
+   "stratum": "B",
+   "subject": "Fix #430: Honor falsey getsizeof callables (#431)"
+  },
+  {
+   "changed": [
+    "string",
+    "String.from_raw"
+   ],
+   "date": "2026-10-27T08:56:53+08:00",
+   "eligible": true,
+   "repo": "tomlkit",
+   "sha": "10fbd373f4ce2916ba08d7a2c4421a77f68a2ca2",
+   "stratum": "B",
+   "subject": "Fix regression in String.from_raw and improve documentation (#658)"
+  },
+  {
+   "changed": [
+    "_ClassMethodDescriptor.__call__"
+   ],
+   "date": "2026-11-02T20:27:45+01:00",
+   "eligible": true,
+   "repo": "cachetools",
+   "sha": "8c953ab8cabb147c6921b5d08d262078e22891ec",
+   "stratum": "B",
+   "subject": "Fix #451: Forward self keyword arguments in cached methods"
+  }
+ ],
+ "corpus_sha256": "80dfb32750f5d6e03d4966b0d69be5777b938615e7c65f51fd63d88c8e4eafe8",
+ "frozen_at": "2026-11-16T15:15:39+00:00",
+ "per_repo": {
+  "A": 8,
+  "B": 4
+ },
+ "target": {
+  "A": 30,
+  "B": 10
+ },
+ "window": [
+  "2026-07-01",
+  "2026-11-15"
+ ]
+}
