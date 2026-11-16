@@ -1,0 +1,57 @@
+{
+  "correction": {
+    "sha": "bec59289d8cf9b9b4010642b2fee483e5f8eeefc",
+    "parent": "916883afad450c0c9bbc4212817900949131adbd",
+    "subject": "Fix `package_name` resolution when top-level module differs from distribution name",
+    "source_files": [
+      "src/click/decorators.py"
+    ],
+    "test_files": [
+      "tests/test_basic.py"
+    ]
+  },
+  "rule": {
+    "path": "src/click/decorators.py",
+    "symbol": "version_option",
+    "text": "Fix `package_name` resolution when top-level module differs from distribution name.",
+    "checks": [
+      "tests/test_basic.py::test_version_option_resolves_import_name_to_distribution",
+      "tests/test_basic.py::test_version_option_ambiguous_import_name_errors",
+      "tests/test_basic.py::test_version_option_unknown_package_errors"
+    ],
+    "provenance": "trace:correction=bec59289d8cf"
+  },
+  "kept": [],
+  "dropped": {
+    "tests/test_basic.py::test_version_option_resolves_import_name_to_distribution": "does not fail before the fix (environment)",
+    "tests/test_basic.py::test_version_option_ambiguous_import_name_errors": "does not fail before the fix (environment)",
+    "tests/test_basic.py::test_version_option_unknown_package_errors": "does not fail before the fix (environment)"
+  },
+  "runs": [
+    {
+      "revision": "916883afad450c0c9bbc4212817900949131adbd",
+      "role": "before",
+      "check": "tests/test_basic.py::test_version_option_resolves_import_name_to_distribution",
+      "outcome": "environment",
+      "output": "ollection iterable to parametrize is deprecated.\nE   Test: tests/test_basic.py::test_boolean_conversion, argvalues type: chain\nE   Please convert to a list or tuple.\nE   See https://docs.pytest.org/en/stable/deprecations.html#parametrize-iterators\n=========================== short test summary info ===========================\nERROR tests/test_basic.py - pytest.PytestRemovedIn10Warning: Passing a non-Co...\n1 error in 0.49s\nERROR: found no collectors for C:\\Users\\pruth\\AppData\\Local\\Temp\\trace-guardrail-ezmpfq35\\tree\\tests\\test_basic.py::test_version_option_resolves_import_name_to_distribution\n\n"
+    },
+    {
+      "revision": "916883afad450c0c9bbc4212817900949131adbd",
+      "role": "before",
+      "check": "tests/test_basic.py::test_version_option_ambiguous_import_name_errors",
+      "outcome": "environment",
+      "output": " a non-Collection iterable to parametrize is deprecated.\nE   Test: tests/test_basic.py::test_boolean_conversion, argvalues type: chain\nE   Please convert to a list or tuple.\nE   See https://docs.pytest.org/en/stable/deprecations.html#parametrize-iterators\n=========================== short test summary info ===========================\nERROR tests/test_basic.py - pytest.PytestRemovedIn10Warning: Passing a non-Co...\n1 error in 0.42s\nERROR: found no collectors for C:\\Users\\pruth\\AppData\\Local\\Temp\\trace-guardrail-ezmpfq35\\tree\\tests\\test_basic.py::test_version_option_ambiguous_import_name_errors\n\n"
+    },
+    {
+      "revision": "916883afad450c0c9bbc4212817900949131adbd",
+      "role": "before",
+      "check": "tests/test_basic.py::test_version_option_unknown_package_errors",
+      "outcome": "environment",
+      "output": "assing a non-Collection iterable to parametrize is deprecated.\nE   Test: tests/test_basic.py::test_boolean_conversion, argvalues type: chain\nE   Please convert to a list or tuple.\nE   See https://docs.pytest.org/en/stable/deprecations.html#parametrize-iterators\n=========================== short test summary info ===========================\nERROR tests/test_basic.py - pytest.PytestRemovedIn10Warning: Passing a non-Co...\n1 error in 0.39s\nERROR: found no collectors for C:\\Users\\pruth\\AppData\\Local\\Temp\\trace-guardrail-ezmpfq35\\tree\\tests\\test_basic.py::test_version_option_unknown_package_errors\n\n"
+    }
+  ],
+  "later_revisions": [],
+  "later_failures": [],
+  "supporting_events": [],
+  "proposal": ""
+}

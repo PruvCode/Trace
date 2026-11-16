@@ -1,0 +1,999 @@
+[
+ {
+  "repo": "boltons",
+  "sha": "609cabe932a1ea1423b24568644945abb1b8bb84",
+  "date": "2026-07-16T23:36:33-07:00",
+  "subject": "fix IndexedSet slicing after removals: keep iter_slice bounds in apparent index space (#423)",
+  "stratum": "A",
+  "eligible": true,
+  "human_checks": [
+   "tests/test_setutils.py::test_iset_slice_after_removal",
+   "tests/test_setutils.py::test_iset_slice_agreement"
+  ],
+  "dropped": {}
+ },
+ {
+  "repo": "boltons",
+  "sha": "d0a284fc7ef1aebceb54798600d73be4eeb76ed8",
+  "date": "2026-07-16T23:36:33-07:00",
+  "subject": "fix IndexedSet out-of-range negative indexing wrapping around (x[-n-k], pop(-n-k))",
+  "stratum": "A",
+  "eligible": true,
+  "human_checks": [
+   "tests/test_setutils.py::test_iset_scalar_index_bounds",
+   "tests/test_setutils.py::test_iset_scalar_index_multiple_dead_intervals"
+  ],
+  "dropped": {}
+ },
+ {
+  "repo": "boltons",
+  "sha": "ebc7a8f776debfa33f0b380b57a444bca75a251b",
+  "date": "2026-07-17T01:11:06-07:00",
+  "subject": "Fix copy.copy/copy.deepcopy collapsing OrderedMultiDict values",
+  "stratum": "A",
+  "eligible": true,
+  "human_checks": [
+   "tests/test_dictutils.py::test_omd_copy_module"
+  ],
+  "dropped": {
+   "tests/test_dictutils.py::test_omd_pickle": "does not fail before the fix (pass)"
+  }
+ },
+ {
+  "repo": "boltons",
+  "sha": "55dfe5077bcb5fa76611b5f2a557ea6c442ad87c",
+  "date": "2026-07-17T01:11:18-07:00",
+  "subject": "fix(fileutils): accept os.PathLike in AtomicSaver",
+  "stratum": "A",
+  "eligible": true,
+  "human_checks": [
+   "tests/test_fileutils.py::test_atomicsaver_pathlike",
+   "tests/test_fileutils.py::test_iter_find_files_pathlike"
+  ],
+  "dropped": {}
+ },
+ {
+  "repo": "boltons",
+  "sha": "1e61524a798ea73632029a013a7686036d5c126f",
+  "date": "2026-07-17T01:11:29-07:00",
+  "subject": "fix(strutils): stop singularize() mangling words ending in 'ss'",
+  "stratum": "A",
+  "eligible": true,
+  "human_checks": [
+   "tests/test_strutils.py::test_singularize_double_s"
+  ],
+  "dropped": {}
+ },
+ {
+  "repo": "boltons",
+  "sha": "ead236e278ca0466bf468de746b5960fb12d7e5b",
+  "date": "2026-07-17T17:43:22-07:00",
+  "subject": "fix: backoff_iter with factor=1.0 and no count raised ZeroDivisionError",
+  "stratum": "A",
+  "eligible": true,
+  "human_checks": [
+   "tests/test_iterutils.py::test_backoff_constant_factor"
+  ],
+  "dropped": {}
+ },
+ {
+  "repo": "boltons",
+  "sha": "d12d86a4706aa4a367a91679b0ff9b6a572e5298",
+  "date": "2026-09-07T12:18:30+08:00",
+  "subject": "Fix Unicode line separators in iter_splitlines",
+  "stratum": "B",
+  "eligible": false,
+  "changed": []
+ },
+ {
+  "repo": "cachetools",
+  "sha": "ffe21c44d3f7de9c7a89870c8cf1fd7aa583a2ae",
+  "date": "2026-10-05T15:46:16+02:00",
+  "subject": "Fix #430: Honor falsey getsizeof callables (#431)",
+  "stratum": "B",
+  "eligible": true,
+  "changed": [
+   "Cache.__init__"
+  ]
+ },
+ {
+  "repo": "cachetools",
+  "sha": "8c953ab8cabb147c6921b5d08d262078e22891ec",
+  "date": "2026-11-02T20:27:45+01:00",
+  "subject": "Fix #451: Forward self keyword arguments in cached methods",
+  "stratum": "B",
+  "eligible": true,
+  "changed": [
+   "_ClassMethodDescriptor.__call__"
+  ]
+ },
+ {
+  "repo": "more-itertools",
+  "sha": "d992be0de9383ddcaae3a24866a2d96b52132b07",
+  "date": "2026-07-12T15:05:04-05:00",
+  "subject": "Fix stability in running_min and running_max",
+  "stratum": "A",
+  "eligible": true,
+  "human_checks": [
+   "tests/test_more.py::TestRunningMin::test_stability",
+   "tests/test_more.py::TestRunningMax::test_stability"
+  ],
+  "dropped": {}
+ },
+ {
+  "repo": "more-itertools",
+  "sha": "ddd678209da01d97844d61a2bd963ce4b67c0a0c",
+  "date": "2026-09-06T14:52:54-05:00",
+  "subject": "Thinner API with only random_ordered_range()",
+  "stratum": "A",
+  "eligible": false,
+  "human_checks": [],
+  "dropped": {
+   "tests/test_more.py::TestRandomOrderedRange::test_vs_ordered_baseline": "does not fail before the fix (pass)"
+  }
+ },
+ {
+  "repo": "more-itertools",
+  "sha": "1b74b56d03bbe0d7496b8431aabe41598850ec0d",
+  "date": "2026-09-08T12:47:13+02:00",
+  "subject": "Fix/simplify `combination_with_replacement_index`",
+  "stratum": "B",
+  "eligible": true,
+  "changed": [
+   "combination_with_replacement_index"
+  ]
+ },
+ {
+  "repo": "more-itertools",
+  "sha": "d032cab7798c7a072ecbb8ade4dfa50030c75cb5",
+  "date": "2026-09-09T13:12:29-04:00",
+  "subject": "fix nonpositive item limits in constrained_batches",
+  "stratum": "B",
+  "eligible": true,
+  "changed": [
+   "constrained_batches"
+  ]
+ },
+ {
+  "repo": "more-itertools",
+  "sha": "288d6da0058a3e1e56842bd1ce6f4fc669658aea",
+  "date": "2026-09-17T12:40:19-05:00",
+  "subject": "Issue #1287: Less aggressive fix for issue #1284",
+  "stratum": "B",
+  "eligible": true,
+  "changed": [
+   "bucket.__init__",
+   "bucket._get_values",
+   "bucket.__iter__"
+  ]
+ },
+ {
+  "repo": "more-itertools",
+  "sha": "262dbb9805710cf31140f7566037e9f6178b6c28",
+  "date": "2026-09-21T11:50:11+08:00",
+  "subject": "fix: check maxlen with getattr instead of isinstance",
+  "stratum": "B",
+  "eligible": true,
+  "changed": [
+   "seekable.peek"
+  ]
+ },
+ {
+  "repo": "pyparsing",
+  "sha": "e378aaf45c5fad96d69daac25f53ff7469cb2878",
+  "date": "2026-07-04T16:01:40-05:00",
+  "subject": "fix: as_datetime passes ParseResults instead of input string to ParseException",
+  "stratum": "A",
+  "eligible": true,
+  "human_checks": [
+   "tests/test_unit.py::Test02_WithoutPackrat::testCommonExpressions"
+  ],
+  "dropped": {
+   "tests/test_unit.py::Test02_WithoutPackrat::testRepeaterRecursiveWhitespace": "does not fail before the fix (pass)",
+   "tests/test_unit.py::Test02_WithoutPackrat::testRepeaterRecursiveFalse": "does not fail before the fix (pass)",
+   "tests/test_unit.py::Test02_WithoutPackrat::testRepeaterPreservesParseAction": "does not fail before the fix (pass)"
+  }
+ },
+ {
+  "repo": "pyparsing",
+  "sha": "9b728b8835aeef5974f0ee2be8df204b642ba008",
+  "date": "2026-07-04T16:01:40-05:00",
+  "subject": "fix: revert unrelated as_datetime formatting changes",
+  "stratum": "A",
+  "eligible": false,
+  "human_checks": [],
+  "dropped": {
+   "tests/test_unit.py::Test02_WithoutPackrat::testRepeaterRecursiveWhitespace": "does not fail before the fix (pass)",
+   "tests/test_unit.py::Test02_WithoutPackrat::testRepeaterRecursiveFalse": "does not fail before the fix (pass)",
+   "tests/test_unit.py::Test02_WithoutPackrat::testRepeaterPreservesParseAction": "does not fail before the fix (pass)"
+  }
+ },
+ {
+  "repo": "pyparsing",
+  "sha": "a5e080704e9f266f960a71aaaffc3b00d2e72d20",
+  "date": "2026-07-04T17:00:44-05:00",
+  "subject": "Escape control characters in set_debug() debug output",
+  "stratum": "A",
+  "eligible": true,
+  "human_checks": [
+   "tests/test_unit.py::Test02_WithoutPackrat::testSetDebugWithControlCharInLine"
+  ],
+  "dropped": {}
+ },
+ {
+  "repo": "pyparsing",
+  "sha": "92f52e2c3b3ffb24215e966c0c349ca5678a7f86",
+  "date": "2026-07-14T22:19:44-05:00",
+  "subject": "fix: deepcopy results names referencing nested ParseResults",
+  "stratum": "A",
+  "eligible": true,
+  "human_checks": [
+   "tests/test_unit.py::Test02_WithoutPackrat::testParseResultsDeepcopy4"
+  ],
+  "dropped": {}
+ },
+ {
+  "repo": "pyparsing",
+  "sha": "b4175cf2ef1baab65ed51ecadd954c6657110887",
+  "date": "2026-07-15T19:39:25-05:00",
+  "subject": "Simplified ParseResults.deepcopy, replaced calls to copy_value with memo.get",
+  "stratum": "A",
+  "eligible": false,
+  "human_checks": [],
+  "dropped": {
+   "tests/test_unit.py::Test02_WithoutPackrat::testParseResultsDeepcopy": "does not fail before the fix (pass)"
+  }
+ },
+ {
+  "repo": "pyparsing",
+  "sha": "d3388aaf5c60d1069b7294a743ccd0e7c87a1d1d",
+  "date": "2026-07-19T17:19:09-05:00",
+  "subject": "Carry a rounded-up fractional second in as_datetime instead of overflowing",
+  "stratum": "A",
+  "eligible": true,
+  "human_checks": [
+   "tests/test_unit.py::Test02_WithoutPackrat::testCommonExpressions"
+  ],
+  "dropped": {}
+ },
+ {
+  "repo": "pyparsing",
+  "sha": "59b167db1ba364422e1505e8e112f8447764cd22",
+  "date": "2026-07-25T17:56:54+05:30",
+  "subject": "Preserve whitespace in QuotedString multi-char delimiters (fixes #492)",
+  "stratum": "A",
+  "eligible": true,
+  "human_checks": [
+   "tests/test_unit.py::Test02_WithoutPackrat::testQuotedStringWithWhitespaceInQuoteChars"
+  ],
+  "dropped": {}
+ },
+ {
+  "repo": "pyparsing",
+  "sha": "b0e277721f36ccc701ac0e4d3693f0ec00baf4c1",
+  "date": "2026-08-01T15:56:56-05:00",
+  "subject": "Guard ParseResults.__iadd__ against non-ParseResults operands",
+  "stratum": "A",
+  "eligible": true,
+  "human_checks": [
+   "tests/test_unit.py::Test02_WithoutPackrat::testParseResultsArithmeticContract"
+  ],
+  "dropped": {}
+ },
+ {
+  "repo": "sqlparse",
+  "sha": "26d7d652218757828b64cfe7914660d529ab21e3",
+  "date": "2026-07-03T18:21:02+05:30",
+  "subject": "Recognize ROW_FORMAT as a keyword (issue773)",
+  "stratum": "A",
+  "eligible": true,
+  "human_checks": [
+   "tests/test_regressions.py::test_alter_table_row_format_issue773"
+  ],
+  "dropped": {}
+ },
+ {
+  "repo": "sqlparse",
+  "sha": "111b35cffcfe44b16fbdd27507f165bafd52a2a1",
+  "date": "2026-07-22T22:58:07+03:00",
+  "subject": "Fix function grouping skipped for lowercase 'as' in CREATE TABLE AS SELECT",
+  "stratum": "A",
+  "eligible": true,
+  "human_checks": [
+   "tests/test_grouping.py::test_grouping_alias_ctas_lowercase_as"
+  ],
+  "dropped": {}
+ },
+ {
+  "repo": "sqlparse",
+  "sha": "ac3b9e0b25627feb42a7053074b6549df81dcfaf",
+  "date": "2026-07-25T11:27:52+02:00",
+  "subject": "Recognize MATERIALIZED as a keyword (issue752)",
+  "stratum": "A",
+  "eligible": true,
+  "human_checks": [
+   "tests/test_regressions.py::test_materialized_view_issue752"
+  ],
+  "dropped": {}
+ },
+ {
+  "repo": "sqlparse",
+  "sha": "f66d12c245412f28c58f045b646eb53c0e691b8b",
+  "date": "2026-07-25T11:44:58+02:00",
+  "subject": "Fix get_real_name for names with more than two dotted parts (#332)",
+  "stratum": "A",
+  "eligible": true,
+  "human_checks": [
+   "tests/test_parse.py::test_get_real_name_multi_part_dotted"
+  ],
+  "dropped": {}
+ },
+ {
+  "repo": "sqlparse",
+  "sha": "a194d3187b04b0aed7a935c3401f068236fb6264",
+  "date": "2026-07-25T17:08:09+02:00",
+  "subject": "Keep keyword before leading-dot float literal (issue601)",
+  "stratum": "A",
+  "eligible": true,
+  "human_checks": [
+   "tests/test_regressions.py::test_between_leading_dot_float_issue601"
+  ],
+  "dropped": {
+   "tests/test_regressions.py::test_keyword_before_qualified_name_still_grouped": "does not fail before the fix (pass)"
+  }
+ },
+ {
+  "repo": "sqlparse",
+  "sha": "53ff44b53e27cff78259acc1af015506fea60f63",
+  "date": "2026-08-10T06:34:07+02:00",
+  "subject": "Escape backslashes in output formatters.",
+  "stratum": "A",
+  "eligible": true,
+  "human_checks": [
+   "tests/test_format.py::TestOutputFormat::test_python_escapes_backslashes",
+   "tests/test_format.py::TestOutputFormat::test_php_escapes_backslashes"
+  ],
+  "dropped": {}
+ },
+ {
+  "repo": "sqlparse",
+  "sha": "ef2012a5eeb491e604dea2b00d516904a3830c87",
+  "date": "2026-08-10T07:41:56+02:00",
+  "subject": "Fix quadratic DoS in group_comments (GHSA-f2ff-p2ww-7p4p)",
+  "stratum": "B",
+  "eligible": true,
+  "changed": [
+   "payload",
+   "measure",
+   "run",
+   "classify",
+   "main",
+   "group_comments"
+  ]
+ },
+ {
+  "repo": "sqlparse",
+  "sha": "d1d80602741f77ec78e5a04ce4719244cf32352e",
+  "date": "2026-08-13T07:29:00+02:00",
+  "subject": "Fix uncontrolled CPU consumption (ReDoS) in the lexer's handling of dollar-quoted literals and multiline comments.",
+  "stratum": "B",
+  "eligible": true,
+  "changed": [
+   "_alarm_handler",
+   "measure",
+   "make_dollar_quote_payload",
+   "make_comment_payload",
+   "run_scaling",
+   "find_delimited_spans",
+   "Lexer.get_tokens",
+   "resolve_paired_delimiters"
+  ]
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "b2821370ca8a7ead712287d7ec856b36165aaef7",
+  "date": "2026-07-13T15:51:35+08:00",
+  "subject": "Preserve whitespace when replacing super tables (#534)",
+  "stratum": "A",
+  "eligible": true,
+  "human_checks": [
+   "tests/test_toml_document.py::test_replace_super_table_preserves_whitespace"
+  ],
+  "dropped": {}
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "49069361a41d2050086b7ec0f69a38a548802867",
+  "date": "2026-07-14T08:23:47+08:00",
+  "subject": "Preserve table display names on self assignment (#537)",
+  "stratum": "A",
+  "eligible": true,
+  "human_checks": [
+   "tests/test_toml_document.py::test_replace_table_with_itself_preserves_display_name"
+  ],
+  "dropped": {}
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "cc05afa962244b3d1c781a7fc54f66b7f29ef8b7",
+  "date": "2026-07-14T08:26:12+08:00",
+  "subject": "Represent out-of-order table proxies with merged values (#536)",
+  "stratum": "A",
+  "eligible": true,
+  "human_checks": [
+   "tests/test_toml_document.py::test_repr_out_of_order_table_proxy"
+  ],
+  "dropped": {}
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "b48c094775fba4cb3c16dea4c302ae5e371ac4e9",
+  "date": "2026-07-14T08:28:54+08:00",
+  "subject": "reject overlong decimal integer instead of coercing to inf (#538)",
+  "stratum": "A",
+  "eligible": true,
+  "human_checks": [
+   "tests/test_parser.py::test_parser_rejects_overlong_decimal_integer"
+  ],
+  "dropped": {}
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "e23a25438c6cc9b8cc28b6dcf76dc52f9c7a33e3",
+  "date": "2026-07-14T08:52:08+08:00",
+  "subject": "fix: avoid duplicate table header when adding a key to an out-of-order table (#545)",
+  "stratum": "A",
+  "eligible": true,
+  "human_checks": [
+   "tests/test_toml_document.py::test_set_value_on_out_of_order_table_with_empty_concrete_part"
+  ],
+  "dropped": {}
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "67d3e86502706df2a9ed67114ab67e25bcdcbbb7",
+  "date": "2026-07-14T08:59:45+08:00",
+  "subject": "Fix array of tables replacing a dotted key swallowing the next sibling (#542) (#549)",
+  "stratum": "A",
+  "eligible": true,
+  "human_checks": [
+   "tests/test_toml_document.py::test_replace_dotted_key_with_aot_keeps_following_sibling"
+  ],
+  "dropped": {}
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "10fbd373f4ce2916ba08d7a2c4421a77f68a2ca2",
+  "date": "2026-10-27T08:56:53+08:00",
+  "subject": "Fix regression in String.from_raw and improve documentation (#658)",
+  "stratum": "B",
+  "eligible": true,
+  "changed": [
+   "string",
+   "String.from_raw"
+  ]
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "79287df2e3c228bb259572eb1165e7f529e4f124",
+  "date": "2026-07-26T19:05:54-04:00",
+  "subject": "Fix hang wrapping OSC-8 hyperlinks with wide graphemes (#232)",
+  "stratum": "A",
+  "eligible": false,
+  "human_checks": [],
+  "dropped": {
+   "tests/test_textwrap.py::test_wrap_bare_esc_at_line_start": "does not fail before the fix (environment)"
+  }
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "8364c236f1d84b0212b8a948d745ddcdc545726f",
+  "date": "2026-08-28T13:27:28-04:00",
+  "subject": "bugfix: clip() should behave like propagate_sgr() (#235)",
+  "stratum": "A",
+  "eligible": false,
+  "human_checks": [],
+  "dropped": {
+   "tests/test_clip.py::test_clip_sgr_inside_window_preserved": "does not fail before the fix (environment)",
+   "tests/test_clip.py::test_clip_sgr_before_start_folded_into_prefix": "does not fail before the fix (environment)",
+   "tests/test_clip.py::test_clip_sgr_after_end_discarded": "does not fail before the fix (environment)",
+   "tests/test_clip.py::test_clip_matches_propagate_sgr": "does not fail before the fix (environment)",
+   "tests/test_clip.py::test_clip_sgr_result_is_self_contained": "does not fail before the fix (environment)",
+   "tests/test_clip.py::test_clip_sgr_after_non_sgr_sequence": "does not fail before the fix (environment)"
+  }
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "c0dc90b25e8eab30fe1285484bb8b71a1007460e",
+  "date": "2026-09-15T01:13:04-04:00",
+  "subject": "Fix VS15 applying more than once to the same base character (#244)",
+  "stratum": "A",
+  "eligible": false,
+  "human_checks": [],
+  "dropped": {
+   "tests/test_term_overrides.py::test_vs15_repeated_ignored": "does not fail before the fix (environment)",
+   "tests/test_term_overrides.py::test_vs16_repeated_ignored": "does not fail before the fix (environment)",
+   "tests/test_term_overrides.py::test_vs15_vs16_do_not_stack": "does not fail before the fix (environment)"
+  }
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "d11cbea58ae5a6f8f928522e7a75e6c1da44d64f",
+  "date": "2026-09-15T06:47:32-04:00",
+  "subject": "Small fixes and refactor document structure/length (#246)",
+  "stratum": "A",
+  "eligible": false,
+  "human_checks": [],
+  "dropped": {
+   "tests/test_ambiguous.py::test_ambiguous_width_out_of_range_is_clamped": "does not fail before the fix (environment)",
+   "tests/test_clip.py::test_strip_sequences_osc66_stripped": "does not fail before the fix (environment)",
+   "tests/test_clip.py::test_strip_sequences_unterminated_csi": "does not fail before the fix (environment)",
+   "tests/test_clip.py::test_clip_canonicalizes_osc66_without_display_text": "does not fail before the fix (environment)",
+   "tests/test_clip.py::test_clip_osc66_zero_text_unit": "does not fail before the fix (environment)",
+   "tests/test_clip.py::test_clip_osc8_empty_unit_skipped": "does not fail before the fix (environment)"
+  }
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "f7b9df5f487fb09edd50611e188d089451e1e9b5",
+  "date": "2026-09-15T15:52:30-04:00",
+  "subject": "clip(): end=-1 default signifies 'to end of line' (#250)",
+  "stratum": "A",
+  "eligible": false,
+  "human_checks": [],
+  "dropped": {
+   "tests/test_benchmarks.py::test_clip_ascii_to_end": "does not fail before the fix (environment)",
+   "tests/test_benchmarks.py::test_clip_long_ascii_to_end": "does not fail before the fix (environment)",
+   "tests/test_benchmarks.py::test_clip_japanese_to_end": "does not fail before the fix (environment)",
+   "tests/test_benchmarks.py::test_clip_long_cjk_to_end": "does not fail before the fix (environment)",
+   "tests/test_benchmarks.py::test_clip_dense_ansi_to_end": "does not fail before the fix (environment)",
+   "tests/test_benchmarks.py::test_clip_dense_ansi_to_end_no_propagate": "does not fail before the fix (environment)"
+  }
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "adac690cc8428782d23c03514681541478d51807",
+  "date": "2026-09-16T15:33:35-04:00",
+  "subject": "Unicode 18.0.0 support, releases soonish (#238)",
+  "stratum": "A",
+  "eligible": false,
+  "human_checks": [],
+  "dropped": {
+   "tests/test_grapheme.py::test_precomposed_hangul_graphemes": "does not fail before the fix (environment)",
+   "tests/test_grapheme.py::test_gb11_emoji_zwj_lookback": "does not fail before the fix (environment)",
+   "tests/test_grapheme.py::test_indic_conjunct_graphemes": "does not fail before the fix (environment)",
+   "tests/test_grapheme.py::test_grapheme_break_test_fixture_version": "does not fail before the fix (environment)",
+   "tests/test_term_overrides.py::test_get_term_overrides_reads_narrow_zeroer_key": "does not fail before the fix (environment)",
+   "tests/test_ucslevel.py::test_list_versions_single": "does not fail before the fix (environment)"
+  }
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "a29c0e1810a062eec7dbd2b518bb9fd26ad129d8",
+  "date": "2026-09-16T20:18:38-04:00",
+  "subject": "Bugfix clip() can hang on OSC 8 hyperlinks (#252)",
+  "stratum": "A",
+  "eligible": false,
+  "human_checks": [],
+  "dropped": {
+   "tests/test_clip_overtyping.py::test_clip_hyperlink_inner_text_clipped_away": "does not fail before the fix (environment)",
+   "tests/test_clip_overtyping.py::test_clip_hyperlink_clipped_away_keeps_underlying_cell": "does not fail before the fix (environment)"
+  }
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "69d5c1efccfed42c6620694b1a102efe3678ee6f",
+  "date": "2026-09-17T13:48:04-04:00",
+  "subject": "Packaging and libwcwidth fixes (#253)",
+  "stratum": "A",
+  "eligible": false,
+  "human_checks": [],
+  "dropped": {
+   "tests/test_benchmarks.py::test_clip_cjk_paragraph": "does not fail before the fix (environment)",
+   "tests/test_benchmarks.py::test_clip_cjk_paragraph_overtyping": "does not fail before the fix (environment)",
+   "tests/test_benchmarks.py::test_clip_emoji_zwj": "does not fail before the fix (environment)",
+   "tests/test_core.py::test_version_matches_pyproject": "does not fail before the fix (environment)"
+  }
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "b088450fca01476718c8aeed625905862b7a7dcb",
+  "date": "2026-09-17T16:40:23-04:00",
+  "subject": "bugfix clip() painter's algo and charset designator (#259)",
+  "stratum": "A",
+  "eligible": false,
+  "human_checks": [],
+  "dropped": {
+   "tests/test_clip.py::test_strip_sequences_osc66_no_splice": "does not fail before the fix (environment)",
+   "tests/test_clip_overtyping.py::test_clip_movement_past_window": "does not fail before the fix (environment)",
+   "tests/test_clip_overtyping.py::test_clip_sequences_after_tab_past_window": "does not fail before the fix (environment)",
+   "tests/test_clip_overtyping.py::test_clip_tab_expands_to_spaces_not_fillchar": "does not fail before the fix (environment)",
+   "tests/test_clip_overtyping.py::test_clip_zero_width_text_sizing_survives_following_cell": "does not fail before the fix (environment)",
+   "tests/test_clip_overtyping.py::test_clip_sequence_past_window_without_captured_sgr": "does not fail before the fix (environment)"
+  }
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "e16d354206d2f98804927aa8d36f5e2afe7348a1",
+  "date": "2026-09-17T19:19:50-04:00",
+  "subject": "Prepare for Unicode 18.0 (w/correction tables) (#260)",
+  "stratum": "A",
+  "eligible": false,
+  "human_checks": [],
+  "dropped": {
+   "tests/test_core.py::test_version_matches_pyproject": "does not fail before the fix (environment)",
+   "tests/test_core.py::test_version_matches_libwcwidth": "does not fail before the fix (environment)"
+  }
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "b7a3098bd087c6d04776c44c00fe4298299cd793",
+  "date": "2026-09-23T10:17:43-04:00",
+  "subject": "Use Python extension with libwcwidth (#248)",
+  "stratum": "A",
+  "eligible": false,
+  "human_checks": [],
+  "dropped": {
+   "tests/test_check_release.py::test_wheel_tags": "does not fail before the fix (environment)",
+   "tests/test_check_release.py::test_check_artifacts_accepts_abi3_wheels": "does not fail before the fix (environment)",
+   "tests/test_check_release.py::test_check_artifacts_reports_wrong_python_tag": "does not fail before the fix (environment)",
+   "tests/test_clip.py::test_clip_parity_corpus": "does not fail before the fix (environment)",
+   "tests/test_clip.py::test_clip_parity_lone_surrogate": "does not fail before the fix (environment)",
+   "tests/test_clip.py::test_clip_offload_is_actually_used": "does not fail before the fix (environment)"
+  }
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "8cda5e608f0f107a18011074ccc7d25775be1cb8",
+  "date": "2026-09-23T14:07:33-04:00",
+  "subject": "bugfix width() value for very-long CSI sequences (#272)",
+  "stratum": "A",
+  "eligible": false,
+  "human_checks": [],
+  "dropped": {
+   "tests/test_width.py::test_csi_longer_than_span_buffer_is_zero_width": "does not fail before the fix (environment)"
+  }
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "f607d76a785a07a893b353d999e5fd8054989ebb",
+  "date": "2026-09-28T13:59:41-04:00",
+  "subject": "Documentation about Tamil, Kannada and Sinhala (#278)",
+  "stratum": "A",
+  "eligible": false,
+  "human_checks": [],
+  "dropped": {
+   "tests/test_clip.py::test_clip_virama_conjunct_known_limitation": "does not fail before the fix (environment)",
+   "tests/test_textwrap.py::test_wrap_virama_conjunct_known_limitation": "does not fail before the fix (environment)"
+  }
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "2d521638879f14963925afcd0f73987826e36950",
+  "date": "2026-10-02T10:22:23-04:00",
+  "subject": "bugfix correction table use for flag emojis (#284)",
+  "stratum": "A",
+  "eligible": false,
+  "human_checks": [],
+  "dropped": {
+   "tests/test_term_overrides.py::test_regional_indicator_pair_term_program": "does not fail before the fix (environment)",
+   "tests/test_term_overrides.py::test_regional_indicator_runs_narrowed_terminal": "does not fail before the fix (environment)"
+  }
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "36d0c36a575ab20f2f69893ee0963abad70c99f1",
+  "date": "2026-10-02T11:58:14-04:00",
+  "subject": "bugfix clip() w/tabsize=0 (#288)",
+  "stratum": "A",
+  "eligible": false,
+  "human_checks": [],
+  "dropped": {
+   "tests/test_clip.py::test_clip_tabsize_zero_respects_window": "does not fail before the fix (environment)"
+  }
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "f1793abb4ebace173e307294fc15d8eb0d8fdb88",
+  "date": "2026-10-04T19:47:28-04:00",
+  "subject": "wrap() should omit an empty line as output (#292)",
+  "stratum": "A",
+  "eligible": false,
+  "human_checks": [],
+  "dropped": {
+   "tests/test_textwrap.py::test_wrap_drops_leading_whitespace_only_lines": "does not fail before the fix (environment)"
+  }
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "346fd3358195107dec8348e29f9d9c5b223ca059",
+  "date": "2026-10-12T11:28:00-04:00",
+  "subject": "Reject trailing content in hyperlink parameters (#296)",
+  "stratum": "A",
+  "eligible": false,
+  "human_checks": [],
+  "dropped": {
+   "tests/test_hyperlink.py::test_hyperlinkparams_rejects_trailing_content": "does not fail before the fix (environment)"
+  }
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "ffb4a747e12e45094d702a4e3662011ed525e879",
+  "date": "2026-10-24T09:54:29-04:00",
+  "subject": "Various performance gains, shortcuts and bitsets (#303)",
+  "stratum": "A",
+  "eligible": false,
+  "human_checks": [],
+  "dropped": {
+   "tests/test_core.py::test_python_functions_stay_python": "does not fail before the fix (environment)",
+   "tests/test_grapheme.py::test_grapheme_boundary_before_edge_cases": "does not fail before the fix (environment)",
+   "tests/test_grapheme.py::test_iter_graphemes_reverse_edge_cases": "does not fail before the fix (environment)",
+   "tests/test_grapheme.py::test_iter_graphemes_reverse_non_str": "does not fail before the fix (environment)",
+   "tests/test_grapheme.py::test_iter_graphemes_window_extension": "does not fail before the fix (environment)",
+   "tests/test_textwrap.py::test_iter_graphemes_import_error_fallback": "does not fail before the fix (environment)"
+  }
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "723e83b4dce2fef39622d21936ac3c9389b07ddf",
+  "date": "2026-10-24T17:18:12-04:00",
+  "subject": "Small performance improvement of flags (RI) (#304)",
+  "stratum": "A",
+  "eligible": false,
+  "human_checks": [],
+  "dropped": {
+   "tests/test_emojis.py::test_regional_indicator_single_width": "does not fail before the fix (environment)",
+   "tests/test_emojis.py::test_regional_indicator_runs": "does not fail before the fix (environment)"
+  }
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "b68195374dad114a4c3d0b0fa2d29728cee4efa8",
+  "date": "2026-11-09T14:06:30-05:00",
+  "subject": "kinder python fallback (#313)",
+  "stratum": "A",
+  "eligible": false,
+  "human_checks": [],
+  "dropped": {
+   "tests/test_core.py::test_partial_extension_fallback": "does not fail before the fix (environment)"
+  }
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "0e30e300dad21e2cca30ef7487c075c10f769567",
+  "date": "2026-11-09T14:31:48-05:00",
+  "subject": "easier python fallback (#314)",
+  "stratum": "A",
+  "eligible": false,
+  "human_checks": [],
+  "dropped": {
+   "tests/test_core.py::test_partial_extension_fallback": "does not fail before the fix (environment)"
+  }
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "45c4002e1239639e32777d5887356627a4b04a87",
+  "date": "2026-11-09T15:20:14-05:00",
+  "subject": "Preserve cell styles when clipping overtyped text+perf (#315)",
+  "stratum": "A",
+  "eligible": false,
+  "human_checks": [],
+  "dropped": {
+   "tests/test_benchmarks.py::test_clip_overtyping_styled_overwrite": "does not fail before the fix (environment)",
+   "tests/test_benchmarks.py::test_clip_overtyping_many_styles": "does not fail before the fix (environment)",
+   "tests/test_benchmarks.py::test_clip_overtyping_style_churn": "does not fail before the fix (environment)",
+   "tests/test_benchmarks.py::test_clip_overtyping_plain_overwrite": "does not fail before the fix (environment)",
+   "tests/test_benchmarks.py::test_propagate_sgr_repeated_styles": "does not fail before the fix (environment)",
+   "tests/test_clip_overtyping.py::test_clip_overtyping_preserves_cell_styles": "does not fail before the fix (environment)"
+  }
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "cd6b5fb588eaa13a853d7d2c052d8ae92f19bf8c",
+  "date": "2026-11-09T16:08:00-05:00",
+  "subject": "Preserve terminal styles when dropping whitespace-only wrapped lines+perf (#316)",
+  "stratum": "A",
+  "eligible": false,
+  "human_checks": [],
+  "dropped": {
+   "tests/test_textwrap.py::test_wrap_preserves_color_after_dropped_leading_space": "does not fail before the fix (environment)",
+   "tests/test_textwrap.py::test_wrap_dropped_styled_space_keeps_initial_indent": "does not fail before the fix (environment)",
+   "tests/test_textwrap.py::test_wrap_dropped_leading_space_retains_color_at_wider_widths": "does not fail before the fix (environment)",
+   "tests/test_textwrap.py::test_wrap_drops_styled_blank_line_at_wider_widths": "does not fail before the fix (environment)"
+  }
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "6fd6039ed838dfb606d70fd094d379c32d4c668b",
+  "date": "2026-11-10T13:32:10-05:00",
+  "subject": "fix control character processing after an errant OSC 8 close (#319)",
+  "stratum": "A",
+  "eligible": false,
+  "human_checks": [],
+  "dropped": {
+   "tests/test_clip.py::test_clip_redundant_hyperlink_close": "does not fail before the fix (environment)",
+   "tests/test_clip.py::test_clip_redundant_close_before_hyperlink": "does not fail before the fix (environment)"
+  }
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "c290e10dc3638059958cf6a124d119333c2289de",
+  "date": "2026-11-10T14:01:18-05:00",
+  "subject": "Preserve Prepend graphemes in backward boundary scans (#320)",
+  "stratum": "A",
+  "eligible": false,
+  "human_checks": [],
+  "dropped": {
+   "tests/test_grapheme.py::test_reverse_prepend_ascii_with_extenders": "does not fail before the fix (environment)",
+   "tests/test_grapheme.py::test_reverse_prepend_before_delete_control": "does not fail before the fix (environment)"
+  }
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "6cb47aa86ff158a619dde06e3e1db69c52df5225",
+  "date": "2026-11-13T08:55:04-05:00",
+  "subject": "Introduce UAX #14 Line breaking into wrap() (#322)",
+  "stratum": "A",
+  "eligible": false,
+  "human_checks": [],
+  "dropped": {
+   "tests/test_benchmarks.py::test_wrap_long_text_ascii_mode": "does not fail before the fix (environment)",
+   "tests/test_benchmarks.py::test_iter_line_breaks_ascii": "does not fail before the fix (environment)",
+   "tests/test_benchmarks.py::test_iter_line_breaks_long_text": "does not fail before the fix (environment)",
+   "tests/test_benchmarks.py::test_wrap_regional_indicators": "does not fail before the fix (environment)",
+   "tests/test_core.py::test_soft_hyphen": "does not fail before the fix (environment)",
+   "tests/test_linebreak.py::test_line_break_test_fixture_version": "does not fail before the fix (environment)"
+  }
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "5a43d772d2eadf2006ba3b5408608120a2e681b8",
+  "date": "2026-11-13T09:31:44-05:00",
+  "subject": "Reword comments and documentation prose (#323)",
+  "stratum": "A",
+  "eligible": false,
+  "human_checks": [],
+  "dropped": {
+   "tests/test_fastcall_args.py::test_rejected_calls_raise": "does not fail before the fix (environment)",
+   "tests/test_textwrap.py::test_wrap_drops_leading_whitespace_only_lines": "does not fail before the fix (environment)"
+  }
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "7eceab9162c71fe64f6fc10308e24588fd3358bd",
+  "date": "2026-11-13T09:34:13-05:00",
+  "subject": "Assert unreachable paths instead of returning errors (#324)",
+  "stratum": "A",
+  "eligible": false,
+  "human_checks": [],
+  "dropped": {
+   "tests/test_core.py::test_c_extension_assert_mode": "does not fail before the fix (environment)",
+   "tests/test_setup.py::test_release_build_rejects_asserts": "does not fail before the fix (environment)"
+  }
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "1585e45490ed41102584012c0c0b99068de6dd9f",
+  "date": "2026-11-13T12:12:11-05:00",
+  "subject": "Support for \"Hybrid\" semi-/colon SGR parameters (#327)",
+  "stratum": "A",
+  "eligible": false,
+  "human_checks": [],
+  "dropped": {
+   "tests/test_sgr_state.py::test_sgr_color_parameters": "does not fail before the fix (environment)"
+  }
+ },
+ {
+  "repo": "wcwidth",
+  "sha": "e49e7fabb77534efbfaf87e7cd6bc036be8af976",
+  "date": "2026-11-13T17:57:10-05:00",
+  "subject": "Update correction tables (iterm2, kitty, mlterm) (#329)",
+  "stratum": "A",
+  "eligible": false,
+  "human_checks": [],
+  "dropped": {
+   "tests/test_term_overrides.py::test_width_candidate_override_mid_string": "does not fail before the fix (environment)"
+  }
+ },
+ {
+  "repo": "boltons",
+  "sha": "8c3fc2850693eacd2f2f8c95e7581adbb65b1269",
+  "date": "2026-07-17T17:43:38-07:00",
+  "subject": "Pluralize words ending in \"x\" with \"-es\" (box -> boxes)",
+  "stratum": "A",
+  "eligible": true,
+  "human_checks": [
+   "tests/test_strutils.py::test_pluralize_x"
+  ],
+  "dropped": {}
+ },
+ {
+  "repo": "boltons",
+  "sha": "7b577b0f3cc7adc2418733ce5c7dcdf6af82187d",
+  "date": "2026-07-17T17:44:24-07:00",
+  "subject": "tbutils: round-trip traceback anchor lines in ParsedException (#333)",
+  "stratum": "A",
+  "eligible": true,
+  "human_checks": [
+   "tests/test_tbutils_parsed_exc.py::test_parsed_exc_with_anchor"
+  ],
+  "dropped": {
+   "tests/test_tbutils_parsed_exc.py::test_parsed_exc_with_anchor_indented": "does not fail before the fix (pass)"
+  }
+ },
+ {
+  "repo": "pyparsing",
+  "sha": "4fb4aa06af713749beebc5e38c14c0768c38575c",
+  "date": "2026-08-08T12:00:51-05:00",
+  "subject": "Remove exception raised when a Word(max) match is followed by more body chars, makes regex and non-regex matching in Word consistent",
+  "stratum": "A",
+  "eligible": true,
+  "human_checks": [
+   "tests/test_unit.py::Test02_WithoutPackrat::testWordMaxIndependentOfWhitespaceInCharset"
+  ],
+  "dropped": {}
+ },
+ {
+  "repo": "pyparsing",
+  "sha": "94842d07f1cb80ad0644ca93b814e59d73fec836",
+  "date": "2026-08-09T01:06:17-05:00",
+  "subject": "Give ParseResults.copy() its own results-name bookkeeping",
+  "stratum": "A",
+  "eligible": true,
+  "human_checks": [
+   "tests/test_unit.py::Test02_WithoutPackrat::testParseResultsCopyResultsNamesAreIndependent"
+  ],
+  "dropped": {}
+ },
+ {
+  "repo": "sqlparse",
+  "sha": "519e41698a172add8aa7b54ab4e94daad0af213e",
+  "date": "2026-08-13T14:46:22+02:00",
+  "subject": "Pair comment/dollar-quote delimiters at the lexer position",
+  "stratum": "A",
+  "eligible": true,
+  "human_checks": [
+   "tests/test_tokenize.py::test_delimiters_in_strings_and_comments"
+  ],
+  "dropped": {}
+ },
+ {
+  "repo": "sqlparse",
+  "sha": "3512a9d86912720ae67181ad2e9fd9cc28a73408",
+  "date": "2026-11-01T12:54:06+01:00",
+  "subject": "Fix formatter crashes on malformed grouped input",
+  "stratum": "A",
+  "eligible": true,
+  "human_checks": [
+   "tests/test_regressions.py::test_format_malformed_input_does_not_crash"
+  ],
+  "dropped": {}
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "8cd44f58b499da3c80a29bc877a512665a15e0bb",
+  "date": "2026-07-14T15:28:48+08:00",
+  "subject": "fix: preserve leading newline of multiline string built with string() (#551)",
+  "stratum": "A",
+  "eligible": true,
+  "human_checks": [
+   "tests/test_api.py::test_create_multiline_string_with_leading_newline_round_trips"
+  ],
+  "dropped": {}
+ },
+ {
+  "repo": "tomlkit",
+  "sha": "21a4942ed31e773061c9fc047d55b1bb3c637ee3",
+  "date": "2026-07-14T16:36:37+08:00",
+  "subject": "reject a comment containing line breaks in Item.comment and add_line (#544)",
+  "stratum": "A",
+  "eligible": true,
+  "human_checks": [
+   "tests/test_items.py::test_array_add_line_multiline_comment_is_rejected",
+   "tests/test_items.py::test_comment_method_multiline_comment_is_rejected"
+  ],
+  "dropped": {
+   "tests/test_items.py::test_comment_method_keeps_existing_hash_prefix": "does not fail before the fix (pass)"
+  }
+ }
+]

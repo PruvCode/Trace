@@ -23,6 +23,10 @@ def capture(db: Path, host: str, session: str, role: str, content: str, turn: st
     with closing(store.connect(db)) as conn, conn:
         conn.execute("PRAGMA busy_timeout = 750")
         transcript.record_message(
+            conn, autocommit=False, session_id=session, role="system", content="Session started",
+            metadata={"agent": host}, source_id=f"session:{session}",
+        )
+        transcript.record_message(
             conn, autocommit=False, session_id=session, role=role,
             content=clean[:MAX_MESSAGE_CHARS], metadata={"agent": host, "source": "native_hook"},
             source_id=source_id,
@@ -34,6 +38,6 @@ def recall(db: Path, session: str, query: str) -> str:
         return ""
     result = session_context.get_session_start_context(
         db, exclude_session_id=session, query=redact.redact_text(query)[:2_000],
-        max_items=4, max_chars=MAX_CONTEXT_CHARS, project_root=db.parent.parent,
+        max_items=4, max_chars=MAX_CONTEXT_CHARS, project_root=db.parent.parent, notes_first=True,
     )
-    return synthetic.render_user_block(result["items"])
+    return result.get("notes") or synthetic.render_user_block(result["items"])

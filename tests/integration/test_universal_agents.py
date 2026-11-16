@@ -12,7 +12,7 @@ import pytest
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-from memory import store
+from memory import episodic, store, task_library
 from trace_memory import integrations
 from trace_memory.cli import main
 from trace_memory.native import MAX_PAYLOAD_BYTES, receipt_path
@@ -108,12 +108,16 @@ def test_cross_agent_capture_recall_and_stdio(project, tmp_path, capsys):
     assert "IRIDIUM_409" in invoke(project, "antigravity", "PreInvocation", agy)["injectSteps"][0]["ephemeralMessage"]
     assert invoke(project, "antigravity", "PreInvocation", agy).get("injectSteps")
     with closing(store.connect(db_path(project))) as conn:
-        rows = conn.execute("SELECT session_id, role, content FROM transcript_messages ORDER BY id").fetchall()
+        rows = conn.execute(
+            "SELECT session_id, role, content FROM transcript_messages WHERE role <> 'system' ORDER BY id"
+        ).fetchall()
+        markers = conn.execute("SELECT count(*) FROM transcript_messages WHERE role = 'system'").fetchone()[0]
     assert [tuple(row)[:2] for row in rows] == [
         ("codex:same-id", "user"), ("codex:same-id", "assistant"),
         ("claude:same-id", "user"), ("claude:same-id", "assistant"), ("antigravity:same-id", "user"),
     ]
     assert token not in rows[0]["content"] and "REDACTED" in rows[0]["content"]
+    assert markers == 3
 
     command = tomllib.loads(files(project, "codex")[1].read_text("utf-8"))["mcp_servers"]["trace-memory"]
     other = tmp_path / "different-workspace"
@@ -163,6 +167,21 @@ def test_workspace_and_payload_boundaries(project, tmp_path):
     assert invoke(project, "antigravity", "PreInvocation", agy) == {}
     with closing(store.connect(db_path(project))) as conn:
         assert conn.execute("SELECT count(*) FROM transcript_messages").fetchone()[0] == 0
+
+
+def test_native_session_can_recall_its_bound_task(project):
+    assert cli("install", project, "codex") == 0
+    event = "UserPromptSubmit"
+    assert invoke(project, "codex", event, envelope(project, "codex", event, "task-session", "Initialize")) == {}
+    with closing(store.connect(db_path(project))) as conn:
+        task = task_library.create_task(conn, "Release readiness")["id"]
+        task_library.bind_session(conn, task, "codex:task-session")
+        episodic.record_event(
+            conn, repo="fixture", type="decision", task_id=task,
+            payload={"decision": "The release inspection uses a COBALT_702 gate.", "status": "observed"},
+        )
+    result = invoke(project, "codex", event, envelope(project, "codex", event, "task-session", "Recall release inspection", "turn-2"))
+    assert "COBALT_702" in result["hookSpecificOutput"]["additionalContext"]
 
 
 def test_preserves_settings_and_handles_conflicts(project, capsys):

@@ -117,6 +117,60 @@ def test_context_prioritizes_linked_investigation_with_noise_and_supersession(tm
         assert result["items"][0]["evidence"] is None
         unbound = session_context.get_session_start_context(db, query="Fix deliver_batch in dispatch.py")
         assert "pending items" not in unbound["text"]
+def test_unbound_recall_keeps_old_verified_definition_above_same_file_noise(tmp_path):
+    (tmp_path / "routing.py").write_text(
+        "def deliver_batch():\n    pass\n\ndef other_batch():\n    pass\n", encoding="utf-8",
+    )
+    project.init_project(tmp_path)
+    db = project.db_path(tmp_path)
+    with closing(store.connect(db)) as conn:
+        def record(symbol, text, **payload):
+            ref = transcript.record_message(conn, session_id=symbol, role="user", content=text)
+            return episodic.record_event(
+                conn, repo="fixture", type="decision", file="routing.py", symbol=symbol,
+                payload={"decision": text, "status": "verified", **payload},
+                evidence=[{"type": "transcript", "message_id": ref}],
+            )
+
+        old = record("deliver_batch", "deliver_batch uses RETIRED_RULE")
+        decision = record("deliver_batch", "deliver_batch preserves the accepted queue", supersedes=old)
+        record("other_batch", "other_batch uses SIBLING_RULE")
+        for n in range(60):
+            episodic.record_event(
+                conn, type="observation", repo="fixture", file="routing.py",
+                symbol="deliver_batch", payload={"summary": f"Routine deliver_batch check {n}"},
+            )
+
+    exact = session_context.get_session_start_context(db, query="deliver_batch in routing.py", max_items=1)
+    assert exact["items"][0]["event_id"] == decision
+    assert all(marker not in exact["text"] for marker in ("RETIRED_RULE", "SIBLING_RULE"))
+    recent = session_context.get_session_start_context(db)
+    assert "RETIRED_RULE" not in recent["text"]
+
+
+def test_explicit_file_and_definition_can_have_no_relevant_history(tmp_path):
+    (tmp_path / "routing.py").write_text(
+        "class InvalidRoute(Exception):\n    pass\n\ndef publish():\n    pass\n\ndef preview():\n    pass\n",
+        encoding="utf-8",
+    )
+    project.init_project(tmp_path)
+    db = project.db_path(tmp_path)
+    with closing(store.connect(db)) as conn:
+        text = "publish approved the ROUTING_102 rule for InvalidRoute"
+        ref = transcript.record_message(conn, session_id="prior", role="user", content=text)
+        episodic.record_event(
+            conn, repo="fixture", type="decision", file="routing.py", symbol="publish",
+            payload={"decision": text, "status": "verified"},
+            evidence=[{"type": "transcript", "message_id": ref}],
+        )
+        transcript.record_message(conn, session_id="prior", role="assistant", content="Reviewed preview; diagnostics pending.")
+    result = session_context.get_session_start_context(db, query="Update preview in routing.py for InvalidRoute")
+    assert result["items"] == []
+    recalled = session_context.get_session_start_context(db, query="Update publish in routing.py")
+    assert recalled["text"].count("ROUTING_102") == 1
+    assert recalled["items"][0]["evidence"]
+
+
 def test_acceptance_checks_are_bounded_evidence_backed_and_optional(tmp_path, capsys):
     from memory import synthetic
 
@@ -161,6 +215,8 @@ def test_acceptance_checks_are_bounded_evidence_backed_and_optional(tmp_path, ca
 
 
 def test_verified_decision_resolves_both_definitions_and_omits_changed_source(tmp_path):
+    from memory import synthetic
+
     root = tmp_path / "definitions"
     root.mkdir()
     (root / "rules.py").write_text("def normalize(name):\n    return name\n", encoding="utf-8")
@@ -173,7 +229,8 @@ def test_verified_decision_resolves_both_definitions_and_omits_changed_source(tm
         text = "normalize trims whitespace. Preserve letter case. publish returns the cleaned name."
         source = transcript.record_message(conn, session_id="review", role="user", content=text)
         event = episodic.record_event(conn, repo="fixture", type="decision", task_id=task, file="caller.py", symbol="publish",
-                                      payload={"decision": text, "status": "verified"},
+                                      payload={"decision": text, "status": "verified",
+                                               "acceptance": ["normalize('x ') == 'x'", "publish('x ') == 'x'"]},
                                       evidence=[{"type": "transcript", "message_id": source}])
 
     def targets():
@@ -184,6 +241,13 @@ def test_verified_decision_resolves_both_definitions_and_omits_changed_source(tm
         ("rules.py", 1, "normalize trims whitespace. Preserve letter case."),
         ("caller.py", 1, "publish returns the cleaned name."),
     ]
+    result = session_context.get_session_start_context(db, task_id=task, query="Continue publishing")
+    item = result["items"][0]
+    anchors = [{k: v for k, v in target.items() if k != "decision_excerpt"} for target in item["code_targets"]]
+    limit = len(synthetic.render_user_block([{**item, "code_targets": anchors}]))
+    bounded = session_context.get_session_start_context(db, task_id=task, query="Continue publishing", max_chars=limit)
+    assert bounded["truncated"] and bounded["items"][0]["code_targets"] == anchors
+    assert bounded["items"][0]["acceptance"] == item["acceptance"]
     (root / "rules.py").write_text("\ndef normalize(name):\n    return name.strip()\n", encoding="utf-8")
     assert [item["path"] for item in targets()] == ["caller.py"]
     project.index_project(root)
@@ -191,3 +255,50 @@ def test_verified_decision_resolves_both_definitions_and_omits_changed_source(tm
     (root / "other.py").write_text("def normalize(name):\n    return name\n", encoding="utf-8")
     project.index_project(root)
     assert [item["path"] for item in targets()] == ["caller.py"]
+
+
+@pytest.mark.parametrize("bound", [False, True])
+def test_secondary_file_recalls_current_contract_and_its_checks(tmp_path, bound):
+    from memory import synthetic
+
+    (tmp_path / "parser.py").write_text("def parse_rows(value):\n    return value\n", encoding="utf-8")
+    output = tmp_path / "table.py"
+    output.write_text("def build_table(value):\n    return value\n\ndef audit_entry():\n    pass\n", encoding="utf-8")
+    project.init_project(tmp_path)
+    db = project.db_path(tmp_path)
+    parse_check = "parse_rows('') == []"
+    build_check = "build_table([]) == ()"
+    shared_check = "build_table(parse_rows('')) == ()"
+    decision = "parse_rows and build_table preserve empty input. Preserve row order. An example logged audit_entry."
+    with closing(store.connect(db)) as conn:
+        task_id = task_library.create_task(conn, "Tables")["id"] if bound else None
+        foreign = task_library.create_task(conn, "Another task")["id"]
+        ref = transcript.record_message(conn, session_id="review", role="user", content="The latest contract is approved.")
+        common = dict(repo="fixture", type="decision", file="parser.py", symbol="parse_rows")
+
+        def record(text, scope, **payload):
+            return episodic.record_event(
+                conn, **common, task_id=scope, payload={"decision": text, "status": "verified", **payload},
+                evidence=[{"type": "transcript", "message_id": ref}],
+            )
+
+        old = record("parse_rows and build_table use RETIRED_RULE.", task_id)
+        approved = record(decision, task_id, supersedes=old, acceptance=[parse_check, build_check, shared_check])
+        record("parse_rows and build_table use OTHER_TASK_RULE.", foreign)
+    args = {"task_id": task_id, "file": "table.py"} if bound else {}
+    context = session_context.get_session_start_context(db, query="Update build_table in table.py", **args)
+    item, = context["items"]
+    assert item["event_id"] == approved and item["code"] == {"path": "table.py", "name": "build_table"}
+    assert item["evidence"]
+    record = json.loads(synthetic.render_lines([item])[0])
+    targets = {target["symbol"]: target for target in record["code_targets"]}
+    assert set(targets) == {"parse_rows", "build_table"}
+    assert targets["parse_rows"]["acceptance"] == [parse_check]
+    assert targets["build_table"]["acceptance"] == [build_check]
+    assert record["acceptance"] == [shared_check]
+    assert not any(marker in context["text"] for marker in ("RETIRED_RULE", "OTHER_TASK_RULE"))
+    assert session_context.get_session_start_context(db, query="Update audit_entry in table.py", **args)["items"] == []
+
+    output.write_text("def build_table(value):\n    return tuple(value)\n", encoding="utf-8")
+    stale = session_context.get_session_start_context(db, query="Update build_table in table.py", **args)
+    assert stale["items"] == []

@@ -28,6 +28,7 @@ from memory import episodic as episodic_mod
 from memory import evidence as evidence_mod
 from memory import git_events as git_events_mod
 from memory import redact as redact_mod
+from memory import rules as rules_mod
 from memory import session_context as session_context_mod
 from memory import store as store_mod
 from memory import task_library
@@ -138,12 +139,19 @@ def record_event(
 ) -> dict:
     """Record a finding later sessions should know (type: investigation/attempt/decision/observation).
 
-    status: hypothesis, observed or verified. supersedes: ids this replaces.
+    status: hypothesis or observed. "verified" is reserved for people using the trace CLI
+    and for captured test outcomes; agents cannot assert it. supersedes: ids this replaces.
     acceptance: observable checks for a decision, recorded as text and never executed.
     Link the file it depends on so later sessions are warned when it changes.
     task_id: an existing project task from trace task list.
     evidence: [{type: "transcript", message_id: 1}] or [{type: "git", commit: full_hash, path: repo_relative_path}].
     """
+    # Agent claims stay claims: git and capture events are derived by TRACE itself,
+    # and "verified" outranks other history in recall, so neither may come from this tool.
+    if source != "agent":
+        raise ValueError("record_event only records agent findings; git and capture events are derived by TRACE")
+    if status == "verified" or (isinstance(payload, dict) and payload.get("status") == "verified"):
+        raise ValueError('agents cannot mark a finding "verified"; record it as "observed" with evidence')
     payload = dict(payload or {})
     if status is not None:
         payload["status"] = status
@@ -234,6 +242,22 @@ def get_task_context(task_id: str, query: str, limit: int = 5, file: str | None 
         project_root=root.resolve() if root is not None else None, file=file,
     )
     return result["text"]
+
+
+@server.tool()
+def get_rules(path: str | None = None, symbol: str | None = None) -> str:
+    """Approved project rules (and labeled proposals) for a repository-relative file or definition.
+
+    Approved means merged into .trace/RULES.md on the default branch. Run `trace rules check <path>`
+    after editing to execute the checks of approved rules.
+    """
+    _check_integration()
+    root = _project_root()
+    if root is None:
+        raise RuntimeError("project root not configured; start the server with --root <project>")
+    paths = [task_library.task_context_file(path)] if path else None
+    text = rules_mod.render(rules_mod.load(root.resolve()), paths, [symbol] if symbol else None)
+    return text or "No approved or proposed rules for this scope."
 
 
 def _repo() -> Path:

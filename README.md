@@ -285,7 +285,10 @@ untested clients should be treated as experimental.
   events stay valid): `status` is `hypothesis`, `observed` or `verified`, and
   `supersedes` names earlier event ids a finding replaces
   (`trace record --status verified --supersedes 12`, or the MCP
-  `record_event` tool's `status`/`supersedes` arguments). New sessions are
+  `record_event` tool's `status`/`supersedes` arguments). Only a person
+  using the CLI can record `verified`; the MCP tool rejects it, and rejects
+  `source` values other than `agent`, so an agent's claim cannot outrank
+  other history or pose as a Git fact. New sessions are
   shown only current findings, with hypotheses and verified findings
   labeled; superseded ones stay searchable (`superseded_by` in
   `search_events`). A finding linked to a `file` is flagged
@@ -299,6 +302,75 @@ untested clients should be treated as experimental.
   is never re-captured as ordinary transcript memory.
 - Inspect with `trace status` / `trace report`, or open the SQLite file
   with any SQLite browser.
+
+## Project rules (approved engineering notes)
+
+Approved rules live in `.trace/RULES.md`, in Git, next to the code they govern:
+
+```markdown
+## memory/store.py :: clamp_limit
+- Reject fractional floats in clamp_limit by returning DEFAULT_LIMIT.
+  checks:
+    - py: clamp_limit(8.5) == DEFAULT_LIMIT
+    - pytest: tests/memory/test_store.py::test_clamp_limit
+  <!-- why: trace:event=42 -->
+```
+
+- **Approval.** A rule is approved when the same rule (scope, text, checks)
+  is in `.trace/RULES.md` on the default branch (`origin/HEAD`, else local
+  `main`/`master`; override with `TRACE_RULES_REF`). Anything else is
+  *proposed*: listed, never injected, never executed. TRACE cannot see branch
+  protection, so approval is only as strong as the review policy on that
+  branch. With no remote, any local commit counts, and `trace rules` warns.
+  Even with a remote, `origin/HEAD` and `origin/main` are local refs that any
+  process with a shell can rewrite (`git update-ref`), so on a developer
+  machine approved rules carry the same trust as `CLAUDE.md`. The trust anchor
+  is `trace rules check --all` in CI on a fresh checkout of the protected
+  branch. Agent findings and transcripts never become rules automatically.
+- **What the agent sees.** When a request names a rule's function (or a
+  file-level rule's file), the session-start hook injects the bare approved
+  sentence, exactly as a maintained notes file would give it, instead of the
+  recall block. One rule is one sentence; several are a bullet list. No title,
+  scope or check lines are added: on TRACE's development tasks every such
+  addition cost the agent tasks. With no matching rule, recall is unchanged.
+  Deeper memory (task context, evidence, events, graph, transcripts) stays
+  available through the MCP tools and CLI. MCP `get_rules` shows scope,
+  checks and proposed rules.
+- **What checks verify.** `trace rules check` runs the checks of approved
+  rules for files changed since `HEAD` (`--all` in CI) with the project's
+  interpreter, in a subprocess with a timeout and a minimal environment.
+  Approved checks are reviewed code, like the test suite. Each failure is
+  rerun once and classified: `flaky`, `environment` (could not run),
+  `regression_in_progress` (uncommitted change breaks the rule) or
+  `stale_or_regression` (committed code fails; a person decides whether
+  rule or code is wrong). Only the last two fail the command. Each failure
+  carries a `next:` step, commits touching the file since approval, the
+  rule's provenance, and `repeated` when the same file content already failed
+  the same check (state in `.agent-memory/rule-checks.json`). Rules with no
+  checks are listed as not verified. Write one bullet per requirement so each
+  clause has its own checks.
+- **Propose from a fix (prototype).** `trace rules propose <commit>
+  [--pythonpath src] [--later 5] [--write]` turns a fix commit that changed
+  code and tests into a proposed rule:
+  - Its checks are the test functions the commit added or changed.
+  - It is scoped to the changed function.
+  - Its sentence is the commit subject, to be reworded in review.
+  - Each check is run in a temporary worktree. It must **fail** (not error) on
+    the parent with the new tests present, and pass on the fix. Checks that
+    don't are dropped and listed.
+  - Up to `--later` subsequent commits touching the file are checked. Each
+    failure there is reported as a possible false alarm, a vanished test or
+    an environment problem.
+  - `--write` appends the block to `.trace/RULES.md` as a *proposed* rule, with
+    `fails-before`/`passes-after` provenance, and keeps the full report in
+    `.agent-memory/guardrails/<sha>.json`. Approval is still a reviewed merge.
+  - An approved check whose test was later renamed or removed blocks as
+    `missing_check`, so a guardrail never silently stops guarding.
+- **Inspect.** `trace rules list [--file PATH] [--json]`,
+  `trace rules check [--all] [--json]`, `trace preview --query-stdin` (what would be
+  injected).
+- **Disable.** `TRACE_NOTES_FIRST=0` restores the previous session-start
+  output exactly. Deleting `.trace/RULES.md` turns rules off.
 
 ## Task library
 
@@ -439,6 +511,10 @@ These small, single-model trials leave broader coding effectiveness open.
 See the [preview scorecard](docs/engineering-audit/PREVIEW_SCORECARD.md) and
 [effectiveness protocol](research/preview/EFFECTIVENESS.md).
 
+The [maintained-notes audit](docs/engineering-audit/MAINTAINED_NOTES_AUDIT.md)
+covers the retrieval fix and a fresh comparison on functions from TRACE,
+Click, and Packaging.
+
 Separately, the automatic retrieval path itself has bounded experimental
 evidence: 9/9 valid single-fact recall trials succeeded under the tested
 conditions (OpenCode 1.18.32, `opencode/big-pickle`, zero-tool clean
@@ -469,7 +545,11 @@ original evidence remains available through `trace evidence`.
 When recording a verified decision with a transcript or Git reference, add
 one `--acceptance "Expected behavior"` flag per requirement that an agent
 should verify. TRACE carries these checks into relevant, bounded recall.
-The checks are stored as text. Use the project's tests to verify the patch.
+A decision can be recalled from another file when it explicitly names a
+current, indexed definition there. TRACE groups checks that call one named
+function beside its source location and keeps cross-function checks with the
+decision. The checks are stored as text. Use the project's tests to verify
+the patch.
 
 ### Open the recursive graph in Obsidian
 

@@ -85,7 +85,7 @@ def bind_session(conn: sqlite3.Connection, task_id: str, session_id: str) -> dic
             (task_id, f"session:{session_id}", session_id),
         )
         if not saved.rowcount:
-            raise ValueError("OpenCode session has not been captured in this project")
+            raise ValueError("session has not been captured in this project")
     return {"session_id": session_id, "task_id": task_id}
 
 
@@ -105,7 +105,7 @@ def _check_row_id(value: int, field: str) -> None:
         raise ValueError(f"{field} must be a positive SQLite row ID")
 
 
-def local_git(root: Path, *args: str, data: bytes | None = None) -> bytes:
+def local_git(root: Path, *args: str, data: bytes | None = None, timeout: float = 5) -> bytes:
     # Ignore inherited Git repository overrides and avoid network access in partial clones.
     env = {
         key: value for key, value in os.environ.items()
@@ -115,7 +115,7 @@ def local_git(root: Path, *args: str, data: bytes | None = None) -> bytes:
     try:
         result = subprocess.run(
             ["git", *args], cwd=root, env=env, input=data,
-            capture_output=True, timeout=5, check=True,
+            capture_output=True, timeout=timeout, check=True,
         )
     except (OSError, subprocess.SubprocessError) as exc:
         raise ValueError("could not verify Git evidence in the local repository") from exc

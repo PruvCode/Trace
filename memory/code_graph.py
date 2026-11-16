@@ -161,7 +161,13 @@ def python_facts(tree: ast.Module) -> tuple[dict[str, list[tuple[str, int]]], li
                 options = bindings.get(name, [])
                 binding = options[0] if len(options) == 1 and "*" not in bindings else None
             elif isinstance(node, ast.Attribute):
+                # `alias.func()` where `from pkg import module as alias` names a module: look `func` up in pkg.module.
+                # It resolves only if that file exists and defines exactly one `func`, so non-modules stay unresolved.
                 name, binding = node.attr, None
+                options = bindings.get(node.value.id, []) if isinstance(node.value, ast.Name) else []
+                if len(options) == 1 and options[0] and (options[0][0] or options[0][2]) and "*" not in bindings:
+                    module, imported, level = options[0]
+                    binding = (f"{module}.{imported}" if module else imported, name, level)
             else:
                 continue
             observations.append(Observation(kind, name, node.lineno, node.col_offset + 1,

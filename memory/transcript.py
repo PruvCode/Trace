@@ -17,6 +17,15 @@ from memory import store as store_mod
 ROLES = frozenset({"user", "assistant", "system", "tool"})
 DECISION_WORDS = ("approved", "agreed", "decided", "decision", "must", "never", "requires")
 
+_ACTIVE_EVIDENCE = """NOT EXISTS (
+    SELECT 1 FROM event_evidence retired
+    WHERE retired.transcript_id = tm.id AND retired.event_id IN (SELECT value FROM json_each(?))
+    AND NOT EXISTS (
+        SELECT 1 FROM event_evidence active
+        WHERE active.transcript_id = tm.id AND active.event_id NOT IN (SELECT value FROM json_each(?))
+    )
+)"""
+
 
 @dataclass(frozen=True)
 class TranscriptMessage:
@@ -153,16 +162,9 @@ def search_messages(
 
     clauses: list[str] = []
     params: list = []
-    if exclude_superseded:
+    if exclude_superseded and store_mod.has_evidence_schema(conn):
         ids = json.dumps(exclude_superseded)
-        clauses.append("""NOT EXISTS (
-            SELECT 1 FROM event_evidence retired
-            WHERE retired.transcript_id = tm.id AND retired.event_id IN (SELECT value FROM json_each(?))
-            AND NOT EXISTS (
-                SELECT 1 FROM event_evidence active
-                WHERE active.transcript_id=tm.id AND active.event_id NOT IN (SELECT value FROM json_each(?))
-            )
-        )""")
+        clauses.append(_ACTIVE_EVIDENCE)
         params.extend((ids, ids))
     if session_id is not None:
         if not isinstance(session_id, str) or not session_id.strip():
@@ -232,6 +234,8 @@ def get_recent_conversation(
     conn: sqlite3.Connection,
     session_id: str,
     limit: int = 10,
+    *,
+    exclude_superseded: list[int] | None = None,
 ) -> list[TranscriptMessage]:
     """The newest ``limit`` user/assistant messages of a session, oldest first.
 
@@ -244,17 +248,22 @@ def get_recent_conversation(
     if not isinstance(session_id, str) or not session_id.strip():
         raise ValueError("session_id must be a non-empty string")
     placeholders = ", ".join("?" for _ in NON_CONVERSATIONAL_PART_TYPES)
+    active_clause = ""
+    retired = ()
+    if exclude_superseded and store_mod.has_evidence_schema(conn):
+        active_clause = f" AND {_ACTIVE_EVIDENCE}"
+        retired = (json.dumps(exclude_superseded),) * 2
     rows = conn.execute(
         "SELECT id, session_id, role, content, timestamp, metadata"
-        " FROM transcript_messages"
+        " FROM transcript_messages tm"
         " WHERE session_id = ? AND role IN ('user', 'assistant')"
         " AND trim(content) <> ''"
         " AND COALESCE(json_extract(CASE WHEN json_valid(metadata) THEN metadata END,"
         f" '$.part_type'), '') NOT IN ({placeholders})"
         " AND NOT COALESCE(json_extract(CASE WHEN json_valid(metadata) THEN metadata END,"
         " '$.incomplete'), 0)"
-        " ORDER BY id DESC LIMIT ?",
-        (session_id.strip(), *NON_CONVERSATIONAL_PART_TYPES, store_mod.clamp_limit(limit)),
+        f"{active_clause} ORDER BY id DESC LIMIT ?",
+        (session_id.strip(), *NON_CONVERSATIONAL_PART_TYPES, *retired, store_mod.clamp_limit(limit)),
     ).fetchall()
     return [_row_to_message(row) for row in reversed(rows)]
 

@@ -1,0 +1,11 @@
+{
+ "model": "claude-opus-5-5",
+ "corrections": 39,
+ "drafts_each": 3,
+ "input_tokens": 2542023,
+ "output_tokens": 936000,
+ "usd": 28.89,
+ "usd_low": 21.67,
+ "usd_high": 36.11,
+ "batch_usd": 14.44
+}

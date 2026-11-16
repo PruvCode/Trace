@@ -26,8 +26,8 @@ def _title(payload):
     return ""
 
 
-def candidates(conn, node_ids, task_id=None, limit=30, unassigned_only=False):
-    """Exact paths for files and exact, unambiguous symbols for definitions."""
+def candidates(conn, node_ids, task_id=None, limit=30, unassigned_only=False, *, exclude=()):
+    """Shortlist exact definitions and evidence-backed decisions before routine file history."""
     if not node_ids:
         return []
     markers = ",".join("?" for _ in node_ids)
@@ -42,13 +42,18 @@ def candidates(conn, node_ids, task_id=None, limit=30, unassigned_only=False):
             SELECT n.id, l.event_id FROM focus n JOIN event_evidence l ON l.git_path=n.path
             WHERE n.kind IN ('file', 'module')
         )
-        SELECT DISTINCT a.node_id, e.id FROM attached a
+        SELECT DISTINCT a.node_id, e.id, n.line IS NOT NULL AS definition_match,
+            CASE WHEN e.type='decision' AND json_extract(e.payload, '$.status')='verified'
+                 AND EXISTS (SELECT 1 FROM event_evidence ev WHERE ev.event_id=e.id)
+                 THEN 1 ELSE 0 END AS verified_decision
+        FROM attached a
         JOIN focus n ON n.id=a.node_id JOIN events e ON e.id=a.event_id
         WHERE (n.kind IN ('file', 'module') OR (n.line IS NOT NULL AND replace(e.file, char(92), '/')=n.path AND
           (e.symbol=n.qualified_name OR (e.symbol=n.name AND
             (SELECT count(*) FROM graph_nodes same WHERE same.path=n.path AND same.name=n.name AND same.line IS NOT NULL)=1))))
-        {scope} ORDER BY e.id DESC, a.node_id LIMIT ?
-    """, (*node_ids, *((task_id,) if task_id else ()), limit)).fetchall()
+        {scope} AND e.id NOT IN (SELECT value FROM json_each(?))
+        ORDER BY definition_match DESC, verified_decision DESC, e.id DESC, a.node_id LIMIT ?
+    """, (*node_ids, *((task_id,) if task_id else ()), json.dumps(list(exclude)), limit)).fetchall()
 
 
 def records(conn, project, ids):

@@ -24,8 +24,8 @@ CONTEXT_TOKENS = 4096
 MAX_REQUESTS = len(QUALIFY) + len(CASES) * len(ARMS)
 
 
-def request(path, body=None):
-    connection = http.client.HTTPConnection("127.0.0.1", 11434, timeout=180)
+def request(path, body=None, *, timeout=180):
+    connection = http.client.HTTPConnection("127.0.0.1", 11434, timeout=timeout)
     try:
         connection.request("GET" if body is None else "POST", path,
                            body=None if body is None else json.dumps(body),

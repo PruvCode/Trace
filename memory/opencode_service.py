@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from memory import captured_outcomes
-from memory.opencode_files import require_local_paths
+from memory.opencode_files import atomic_write_text, require_local_paths
 from memory import episodic as episodic_mod
 from memory import redact as redact_mod
 from memory import store as store_mod
@@ -310,7 +310,7 @@ class OpenCodeCaptureService:
         require_local_paths(
             self.project_path, self._service_dir, self._pid_file, self._status_file,
             self._lock_file, self._stop_file, self._disabled_file, self._service_dir / LOG_FILE,
-            self._status_file.with_suffix(".tmp"), self.trace_db_path,
+            self.trace_db_path,
         )
 
     def _get_service_dir(self) -> Path:
@@ -337,22 +337,20 @@ class OpenCodeCaptureService:
         """Best-effort status write; never raises (it must not stop capture).
 
         On Windows ``os.replace`` fails while another process (a status
-        reader, an indexer, antivirus) briefly holds the target, so retry,
-        then fall back to a direct write.
+        reader, an indexer, antivirus) briefly holds the target, so retry.
+        Each write owns its temporary file, which avoids racing storage checks.
         """
         text = json.dumps(status, indent=2)
         try:
             self._service_dir.mkdir(parents=True, exist_ok=True)
-            tmp = self._status_file.with_suffix(".tmp")
-            tmp.write_text(text)
-            for _ in range(10):
+            for attempt in range(10):
                 try:
-                    os.replace(tmp, self._status_file)
+                    atomic_write_text(self._status_file, text)
                     return
                 except PermissionError:
+                    if attempt == 9:
+                        raise
                     time.sleep(0.05)
-            self._status_file.write_text(text)
-            tmp.unlink(missing_ok=True)
         except OSError as exc:
             self._log(f"status write failed: {type(exc).__name__}: {exc}")
 
