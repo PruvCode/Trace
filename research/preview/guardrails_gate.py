@@ -33,9 +33,11 @@ import re
 import sys
 
 from memory import guardrails
+from memory import rule_checks
+from memory import rules as rules_mod
 
 WINDOW = ("2026-07-01", "2026-11-15")  # after the drafting model's assumed training data; see GUARDRAILS.md
-PER_REPO = {"A": 6, "B": 4}  # per repository, in commit order (Amendment 2)
+PER_REPO = {"A": 8, "B": 4}  # per repository, in commit order (Amendments 2-3)
 TARGET = {"A": 30, "B": 10}  # Amendment 2 in GUARDRAILS.md: only 10 B candidates exist in the window
 FIX = re.compile(r"\b(fix|fixes|fixed|bug|regression|crash|wrong|incorrect|prevent|handle|correct)\b", re.I)
 SKIP = re.compile(r"\b(docs?|typo|readme|changelog|ci|lint|format|typing|type hints?|annotations?|bump|release|version|conftest|tox)\b", re.I)
@@ -104,7 +106,12 @@ def freeze(qualified: list[dict]) -> dict:
 
 
 def generator_input(repo: Path, row: dict) -> dict:
-    """Point-in-time input. Raises if any line the fix added to a test file leaks in."""
+    """Point-in-time input: commit message, non-test diff, pre-fix source. Never a test file, never a later commit.
+
+    The guarantee is structural (test paths are excluded and asserted absent). Distinctive lines of the fix's
+    tests that also occur in the allowed material (e.g. an example quoted in the commit message) are counted
+    and reported per correction, not hidden.
+    """
     sha = row["sha"]
     parent = git(repo, "rev-parse", f"{sha}^").strip()
     message = git(repo, "log", "-1", "--format=%B", sha).strip()
@@ -113,13 +120,16 @@ def generator_input(repo: Path, row: dict) -> dict:
     tests = [f for f in files if guardrails.is_test_path(f)]
     before = {path: guardrails._show(repo, parent, path) or "" for path in sources}
     diff = git(repo, "diff", parent, sha, "--", *sources)
+    if any(f"b/{path}" in diff for path in tests) or set(before) & set(tests):
+        raise ValueError(f"{repo.name} {sha[:12]}: a test file entered the generator input")
     text = "\n".join([message, diff, *before.values()])
     added = [line[1:].strip() for line in (git(repo, "diff", parent, sha, "--", *tests) if tests else "").splitlines()
-             if line.startswith("+") and not line.startswith("+++") and len(line.strip()) > 25]
-    leaked = [line for line in added if line in text]
-    if leaked:
-        raise ValueError(f"{repo.name} {sha[:12]}: fix-test lines present in generator input: {leaked[:3]}")
-    return {"repo": repo.name, "sha": sha, "parent": parent, "message": message, "diff": diff, "before": before}
+             if line.startswith("+") and not line.startswith("+++")]
+    # Distinctive (long, after stripping) and not an import, which names things but reveals no tested behavior.
+    added = [line for line in added if len(line) > 25 and not re.match(r"(from\s+\S+\s+)?import\s", line)]
+    overlap = [line for line in added if line in text]
+    return {"repo": repo.name, "sha": sha, "parent": parent, "message": message, "diff": diff, "before": before,
+            "fix_test_lines": len(added), "fix_test_lines_also_in_input": len(overlap)}
 
 
 _FLIPS = {ast.Lt: ast.LtE, ast.LtE: ast.Lt, ast.Gt: ast.GtE, ast.GtE: ast.Gt, ast.Eq: ast.NotEq, ast.NotEq: ast.Eq,
@@ -127,7 +137,8 @@ _FLIPS = {ast.Lt: ast.LtE, ast.LtE: ast.Lt, ast.Gt: ast.GtE, ast.GtE: ast.Gt, as
 
 
 def mutants(source: str, lines: set[int], limit: int = 12) -> list[dict]:
-    """Single-point mutants on the given lines: comparison and boolean flips, constant nudges, dropped ``not``."""
+    """Single-point mutants on the given lines: comparison and boolean flips, constant nudges, dropped ``not``,
+    and a dropped statement (replaced by ``pass``: a partial revert)."""
     tree = ast.parse(source)
     sites = []
     for node in ast.walk(tree):
@@ -141,6 +152,8 @@ def mutants(source: str, lines: set[int], limit: int = 12) -> list[dict]:
             sites.append((node, "value", None))
         elif isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
             sites.append((node, "not", None))
+        if isinstance(node, ast.stmt) and not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Pass)):
+            sites.append((node, "drop", None))
     found = []
     for index in range(len(sites)):
         copy = ast.parse(source)
@@ -155,6 +168,11 @@ def mutants(source: str, lines: set[int], limit: int = 12) -> list[dict]:
             twin.op = _FLIPS[type(twin.op)]()
         elif kind == "value":
             twin.value = (not twin.value) if isinstance(twin.value, bool) else twin.value + 1
+        elif kind == "drop":
+            parent = next(p for p in ast.walk(copy) for child in ast.iter_child_nodes(p) if child is twin)
+            for field, value in ast.iter_fields(parent):
+                if isinstance(value, list) and twin in value:
+                    value[value.index(twin)] = ast.Pass()
         else:
             parent = next(p for p in ast.walk(copy) for child in ast.iter_child_nodes(p) if child is twin)
             for field, value in ast.iter_fields(parent):
@@ -176,6 +194,32 @@ def fixed_lines(repo: Path, row: dict, path: str) -> set[int]:
         start, count = int(match[1]), int(match[2] or 1)
         lines.update(range(start, start + count))
     return lines
+
+
+def kill_matrix(repo: Path, row: dict, checks: list[str], mutant_sets: dict, *, python: str | None,
+                pythonpath: tuple[str, ...], scratch: Path | None) -> dict:
+    """Run pytest checks against each mutant of the fixed source (at the fix revision).
+
+    A mutant is killed when any check fails or errors on it; the unmutated fix must pass every check,
+    otherwise the row is reported as unusable rather than scored.
+    """
+    rule = rules_mod.Rule(next(iter(mutant_sets), ""), None, "baseline", tuple(rules_mod.Check("pytest", c) for c in checks))
+    result = {"sha": row["sha"], "checks": checks, "clean_pass": None, "mutants": []}
+    with guardrails._worktree(repo, scratch) as tree:
+        git(tree, "checkout", "--quiet", "--force", "--detach", row["sha"])
+        run = rule_checks.subprocess_executor(tree, python, pythonpath=pythonpath)
+        result["clean_pass"] = all(run(rule, check)[0] == "pass" for check in rule.checks)
+        if not result["clean_pass"]:
+            return result
+        for path, items in mutant_sets.items():
+            original = (tree / path).read_text(encoding="utf-8")
+            for index, mutant in enumerate(items):
+                (tree / path).write_text(mutant["source"], encoding="utf-8")
+                outcomes = [run(rule, check)[0] for check in rule.checks]
+                result["mutants"].append({"path": path, "index": index, "kind": mutant["kind"], "line": mutant["line"],
+                                          "outcomes": outcomes, "killed": any(o != "pass" for o in outcomes)})
+            (tree / path).write_text(original, encoding="utf-8")
+    return result
 
 
 def estimate(inputs: list[dict]) -> dict:
@@ -233,14 +277,14 @@ def generate(item: dict, *, approved_budget_usd: float, spent_usd: float) -> dic
 
 REPOS = {  # repository -> source roots for PYTHONPATH
     "more-itertools": (), "sqlparse": (), "boltons": (), "cachetools": ("src",),
-    "pyparsing": (), "tomlkit": (), "wcwidth": (),
+    "pyparsing": (), "tomlkit": (),  # wcwidth excluded (Amendment 3): tests need its C extension
 }
 
 
 def main():
     sys.stdout.reconfigure(encoding="utf-8", write_through=True)
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("stage", choices=("mine", "qualify", "freeze", "inputs", "mutants", "estimate", "generate"))
+    parser.add_argument("stage", choices=("mine", "qualify", "freeze", "inputs", "mutants", "baseline", "estimate", "generate"))
     parser.add_argument("--repos", type=Path, required=True, help="directory holding the cloned repositories")
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--python", default=None)
@@ -258,7 +302,7 @@ def main():
         rows = json.loads(path("candidates.json").read_text(encoding="utf-8"))
         done = {r["sha"]: r for r in json.loads(path("qualified.json").read_text(encoding="utf-8"))} if path("qualified.json").exists() else {}
         # In commit order per repository and stratum; stop once the per-repository quota of eligible rows is met.
-        for row in sorted(rows, key=lambda r: (r["repo"], r["stratum"], r["date"])):
+        for row in sorted((r for r in rows if r["repo"] in REPOS), key=lambda r: (r["repo"], r["stratum"], r["date"])):
             eligible = sum(r["eligible"] for r in done.values() if r["repo"] == row["repo"] and r["stratum"] == row["stratum"])
             if row["sha"] in done or eligible >= PER_REPO[row["stratum"]]:
                 continue
@@ -290,6 +334,20 @@ def main():
             result[row["sha"]] = {p: mutants(guardrails._show(repo, row["sha"], p) or "", fixed_lines(repo, row, p)) for p in sources}
         path("mutants.json").write_text(json.dumps(result, indent=1), encoding="utf-8")
         print({sha[:12]: sum(len(v) for v in files.values()) for sha, files in result.items()})
+    elif args.stage == "baseline":
+        corpus = json.loads(path("corpus.json").read_text(encoding="utf-8"))["corpus"]
+        mutant_sets = json.loads(path("mutants.json").read_text(encoding="utf-8"))
+        rows = []
+        for row in corpus:
+            if row["stratum"] != "A":
+                continue
+            matrix = kill_matrix(args.repos / row["repo"], row, row["human_checks"], mutant_sets[row["sha"]],
+                                 python=args.python, pythonpath=REPOS[row["repo"]], scratch=args.scratch)
+            rows.append(matrix)
+            killed = sum(m["killed"] for m in matrix["mutants"])
+            print(json.dumps({"repo": row["repo"], "sha": row["sha"][:12], "clean_pass": matrix["clean_pass"],
+                              "killed": killed, "mutants": len(matrix["mutants"])}), flush=True)
+            path("baseline-human.json").write_text(json.dumps(rows, indent=1), encoding="utf-8")
     elif args.stage == "estimate":
         inputs = json.loads(path("inputs.json").read_text(encoding="utf-8"))
         result = estimate(inputs)

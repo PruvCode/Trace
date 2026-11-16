@@ -99,6 +99,11 @@ The first mining pass used `--first-parent` and silently dropped merged PRs (mor
 - **Target:** B = every eligible B candidate (at most 10; per-repository cap 4); A = 30 (per-repository cap 6), so the total stays 40.
 - **Stratum B is small.** With n ≤ 10 its rates have Wilson intervals of roughly ±30 points. B results are therefore reported as descriptive, not judged against the pass/kill thresholds. A is judged as preregistered.
 - **Finding, independent of the gate:** in these mature projects about 94% of fixes ship with a test, so TRACE's deterministic, $0 harvesting path (`trace rules propose`) already covers nearly all real OSS corrections. Generation's value lies in corrections that come without tests, chiefly agent-session corrections, which public Git history cannot sample. The prospective study has to measure that population.
+- **Amendment 3 (same day, after qualification, before freezing):**
+  - **wcwidth is excluded.** Its 30 A candidates were all environment errors: the test suite needs `pytest-cov` and a compiled C extension, or a `WCWIDTH_PYTHON` variable that the check runner deliberately strips. The decision rests on whether its tests can run, not on results.
+  - **A cap raised from 6 to 8 per repository**, to reach 30 A from the remaining repositories in commit order.
+  - **Ineligible but runnable A candidates:** three were dropped because their human tests already passed before the fix (more-itertools `ddd67820`, pyparsing `9b728b88` and `b4175cf2`). They are refactors or reverts, not corrections.
+  - **B has 9 eligible.** boltons `d12d86a4` changed no function body.
 - **Environment:** checks run in one pinned environment (`guardrails-eval/gate-venv`: Python 3.12, pytest 8.4.2, PyYAML, railroad-diagrams, jinja2). A check that cannot run there is an environment exclusion, never counted as a failure of the method.
 
 ### Generator input
