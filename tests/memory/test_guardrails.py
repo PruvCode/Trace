@@ -112,3 +112,20 @@ def test_cli_refuses_a_commit_with_no_discriminating_check(history, capsys):
                   "add a test")
     assert cli.main(["rules", "propose", noop, str(root), "--later", "0"]) != 0
     assert "nothing to propose" in capsys.readouterr().out
+
+
+def test_later_checks_skip_commits_that_do_not_contain_the_fix(tmp_path):
+    root = tmp_path / "repo"
+    root.mkdir()
+    git(root, "init", "-q", "-b", "main")
+    commit(root, {"lib.py": BUGGY, "tests/test_lib.py": BASE_TEST}, "start")
+    git(root, "checkout", "-q", "-b", "side")
+    commit(root, {"lib.py": BUGGY + "\n# side branch, forked before the fix\n"}, "side work")
+    git(root, "checkout", "-q", "main")
+    fix = commit(root, {"lib.py": FIXED, "tests/test_lib.py": FIX_TEST}, "fix: clamp values below 1 to 1")
+    git(root, "merge", "-q", "--no-edit", "-X", "ours", "side")
+    item = guardrails.correction(root, fix)
+    report = guardrails.validate(root, item, guardrails.draft(root, item), later=5, scratch=tmp_path)
+    side = git(root, "rev-parse", "side")
+    assert side not in report.later_revisions  # it never contained the fix
+    assert report.later_failures == []

@@ -197,7 +197,7 @@ def fixed_lines(repo: Path, row: dict, path: str) -> set[int]:
 
 
 def kill_matrix(repo: Path, row: dict, checks: list[str], mutant_sets: dict, *, python: str | None,
-                pythonpath: tuple[str, ...], scratch: Path | None) -> dict:
+                pythonpath: tuple[str, ...], scratch: Path | None, overlay: dict[str, str] | None = None) -> dict:
     """Run pytest checks against each mutant of the fixed source (at the fix revision).
 
     A mutant is killed when any check fails or errors on it; the unmutated fix must pass every check,
@@ -207,6 +207,9 @@ def kill_matrix(repo: Path, row: dict, checks: list[str], mutant_sets: dict, *, 
     result = {"sha": row["sha"], "checks": checks, "clean_pass": None, "mutants": []}
     with guardrails._worktree(repo, scratch) as tree:
         git(tree, "checkout", "--quiet", "--force", "--detach", row["sha"])
+        for path, text in (overlay or {}).items():
+            (tree / path).parent.mkdir(parents=True, exist_ok=True)
+            (tree / path).write_text(text, encoding="utf-8")
         run = rule_checks.subprocess_executor(tree, python, pythonpath=pythonpath)
         result["clean_pass"] = all(run(rule, check)[0] == "pass" for check in rule.checks)
         if not result["clean_pass"]:
@@ -220,6 +223,156 @@ def kill_matrix(repo: Path, row: dict, checks: list[str], mutant_sets: dict, *, 
                                           "outcomes": outcomes, "killed": any(o != "pass" for o in outcomes)})
             (tree / path).write_text(original, encoding="utf-8")
     return result
+
+
+def draft_overlay(row: dict, draft: dict) -> tuple[str, dict[str, str], list[str]]:
+    """Where a drafted test module lives in the tree, and its pytest node IDs."""
+    module = f"tests/test_trace_guardrail_{row['sha'][:8]}_{draft['draft_index']}.py"
+    names = [name.replace(".", "::") for name in draft["draft"]["test_names"]][: rules_mod.MAX_CHECKS]
+    return module, {module: draft["draft"]["test_module"]}, [f"{module}::{name}" for name in names]
+
+
+def validate_draft(repo: Path, row: dict, draft: dict, mutant_sets: dict, *, python: str | None,
+                   scratch: Path | None) -> dict:
+    """Judge one drafted guardrail exactly like a harvested one, then score it on the same mutants."""
+    result = {"sha": row["sha"], "repo": row["repo"], "stratum": row["stratum"], "draft_index": draft["draft_index"],
+              "valid": False, "kept": [], "later_failures": [], "killed": None, "mutants": None}
+    if "draft" not in draft:
+        return {**result, "error": draft.get("error")}
+    module, overlay, nodes = draft_overlay(row, draft)
+    sources = [f for f in git(repo, "diff-tree", "--no-commit-id", "--name-only", "-r", row["sha"]).split()
+               if f.endswith(".py") and not guardrails.is_test_path(f)]
+    item = guardrails.Correction(row["sha"], git(repo, "rev-parse", f"{row['sha']}^").strip(), row["subject"], sources, [module])
+    rule = rules_mod.Rule(sources[0], None, draft["draft"]["rule"][: rules_mod.MAX_RULE_CHARS],
+                          tuple(rules_mod.Check("pytest", node) for node in nodes))
+    report = guardrails.validate(repo, item, rule, python=python, pythonpath=REPOS[row["repo"]], later=5,
+                                 scratch=scratch, overlay=overlay)
+    result.update(valid=report.valid, kept=report.kept, dropped=report.dropped,
+                  later_revisions=report.later_revisions, later_failures=report.later_failures)
+    if report.valid and any(mutant_sets.values()):
+        matrix = kill_matrix(repo, row, report.kept, mutant_sets, python=python, pythonpath=REPOS[row["repo"]],
+                             scratch=scratch, overlay=overlay)
+        if matrix["clean_pass"]:
+            result.update(killed=sum(m["killed"] for m in matrix["mutants"]), mutants=len(matrix["mutants"]))
+    return result
+
+
+def human_tests(repo: Path, row: dict) -> str:
+    """Source of the test functions the fix added or changed: the human-written baseline."""
+    item = guardrails.correction(repo, row["sha"])
+    parts = []
+    for path in item.test_files:
+        defs = guardrails._definitions(guardrails._show(repo, item.sha, path))
+        parts += [defs[name] for name in guardrails.changed_definitions(repo, item, path)]
+    return "\n\n".join(parts)
+
+
+INSTRUCTIONS = (
+    "# Guardrails gate: blind review\n\n"
+    "For each item, in this order, filling review.csv (never open review-key.json):\n"
+    "1. Read the diff. Write the one line you would add to CLAUDE.md for this fix; record its seconds (row `note`).\n"
+    "2. For Check X and Check Y (test functions only, shuffled, sources hidden): rate b_generality 0-2 (does it express "
+    "the requirement rather than one incidental input?) and c_merge yes/no; record seconds (rows `X`, `Y`).\n"
+    "3. Only then read the proposed rule sentence: rate a_requirement 0-2 (does it state the real requirement?) and "
+    "c_merge yes/no; record seconds (row `rule`).\n\n"
+)
+
+
+def _functions(module: str, names: list[str]) -> str:
+    """Just the named test functions, so drafted and human checks look alike."""
+    defs = guardrails._definitions(module)
+    return "\n\n".join(defs[name.replace("::", ".")] for name in names if name.replace("::", ".") in defs)
+
+
+def build_packet(repos: Path, path) -> None:
+    """Blind A/B packet (TRACE draft vs human test, shuffled), with the timed note written first."""
+    corpus = json.loads(path("corpus.json").read_text(encoding="utf-8"))["corpus"]
+    validated = json.loads(path("drafts-validated.json").read_text(encoding="utf-8"))
+    drafts = {(d["sha"], d["draft_index"]): d for d in
+              (json.loads(line) for line in path("drafts.jsonl").read_text(encoding="utf-8").splitlines())}
+    rng, key, sections = random.Random(20261116), {}, []
+    for number, row in enumerate(corpus, 1):
+        first = next((v for v in validated if v["sha"] == row["sha"] and v["valid"]), None)
+        repo = repos / row["repo"]
+        sources = [f for f in git(repo, "diff-tree", "--no-commit-id", "--name-only", "-r", row["sha"]).split()
+                   if f.endswith(".py") and not guardrails.is_test_path(f)]
+        diff = git(repo, "diff", f"{row['sha']}^", row["sha"], "--", *sources)
+        options, rule = [], None
+        if first:
+            draft = drafts[row["sha"], first["draft_index"]]["draft"]
+            kept = [node.split("::", 1)[1] for node in first["kept"]]
+            options.append(("trace", f"```python\n{_functions(draft['test_module'], kept)}\n```"))
+            rule = draft["rule"]
+        if row["stratum"] == "A":
+            options.append(("human", f"```python\n{human_tests(repo, row)}\n```"))
+        rng.shuffle(options)
+        key[str(number)] = {"repo": row["repo"], "sha": row["sha"], "stratum": row["stratum"],
+                            **{label: source for label, (source, _) in zip("XY", options)}}
+        body = [f"## {number}. {row['repo']} {row['sha'][:12]}: {row['subject']}", f"```diff\n{diff[:6000]}\n```"]
+        body += [f"### Check {label}\n{text}" for label, (_, text) in zip("XY", options)]
+        if rule:
+            body.append(f"### Proposed rule sentence (rate after the checks)\n> {rule}")
+        sections.append("\n\n".join(body))
+    path("review-packet.md").write_text(INSTRUCTIONS + "\n\n---\n\n".join(sections), encoding="utf-8")
+    path("review-key.json").write_text(json.dumps(key, indent=1), encoding="utf-8")
+    rows = [f"{n},,,{label},,,," for n, entry in key.items()
+            for label in ("note", "X", "Y", "rule") if label == "note" or label in entry
+            or (label == "rule" and "trace" in entry.values())]
+    path("review.csv").write_text("\n".join(["item,note,note_seconds,label,a_requirement,b_generality,c_merge,seconds", *rows]) + "\n",
+                                  encoding="utf-8")
+
+
+def wilson(successes: int, total: int) -> list[float] | None:
+    if not total:
+        return None
+    z, p = 1.96, successes / total
+    centre, spread = p + z * z / (2 * total), z * ((p * (1 - p) + z * z / (4 * total)) / total) ** 0.5
+    return [round((centre - spread) / (1 + z * z / total), 3), round((centre + spread) / (1 + z * z / total), 3)]
+
+
+def score(path) -> dict:
+    """Preregistered metrics with Wilson 95% intervals (B is descriptive per Amendment 2)."""
+    corpus = json.loads(path("corpus.json").read_text(encoding="utf-8"))["corpus"]
+    validated = json.loads(path("drafts-validated.json").read_text(encoding="utf-8"))
+    human = {row["sha"]: row for row in json.loads(path("baseline-human.json").read_text(encoding="utf-8"))}
+    out = {}
+    for stratum in "AB":
+        rows = [r for r in corpus if r["stratum"] == stratum]
+        hits = sum(any(v["valid"] for v in validated if v["sha"] == r["sha"]) for r in rows)
+        out[f"yield_{stratum}"] = {"value": hits, "n": len(rows), "ci95": wilson(hits, len(rows))}
+    valid = [v for v in validated if v["valid"]]
+    alarms = sum(any(f["outcome"] == "fail" for f in v["later_failures"]) for v in valid)
+    out["false_alarm_drafts"] = {"value": alarms, "n": len(valid), "ci95": wilson(alarms, len(valid))}
+    paired = [(v, human[v["sha"]]) for v in valid if v["mutants"] and v["sha"] in human and human[v["sha"]]["clean_pass"]]
+    trace_kill = sum(v["killed"] for v, _ in paired)
+    human_kill = sum(sum(m["killed"] for m in h["mutants"]) for _, h in paired)
+    out["mutant_kill"] = {"trace": trace_kill, "human": human_kill, "mutants": sum(v["mutants"] for v, _ in paired),
+                          "ratio_to_human": round(trace_kill / human_kill, 3) if human_kill else None}
+    if path("review.csv").exists():
+        import csv
+
+        key = json.loads(path("review-key.json").read_text(encoding="utf-8"))
+        rows = list(csv.DictReader(path("review.csv").open(encoding="utf-8")))
+        by = {(r["item"], r["label"]): r for r in rows}
+        number = lambda value: float(value) if value else None
+        relevant, rated, trace_seconds = 0, 0, []
+        for item, entry in key.items():
+            label = next((label for label in "XY" if entry.get(label) == "trace"), None)
+            check, rule = by.get((item, label)), by.get((item, "rule"))
+            if not (check and rule and check["b_generality"] and rule["a_requirement"]):
+                continue
+            rated += 1
+            relevant += int(rule["a_requirement"]) == 2 and int(check["b_generality"]) >= 1
+            if check["seconds"] and rule["seconds"]:
+                trace_seconds.append(number(check["seconds"]) + number(rule["seconds"]))
+        median = lambda values: sorted(values)[len(values) // 2] if values else None
+        out["relevance_trace"] = {"value": relevant, "n": rated, "ci95": wilson(relevant, rated)}
+        out["median_review_seconds_trace"] = median(trace_seconds)
+        out["median_note_seconds"] = median([number(r["note_seconds"]) for r in rows if r["label"] == "note" and r["note_seconds"]])
+        human = [r for item, entry in key.items() for label in "XY" if entry.get(label) == "human"
+                 for r in [by.get((item, label))] if r and r["b_generality"]]
+        out["human_check_generality_ge1"] = {"value": sum(int(r["b_generality"]) >= 1 for r in human), "n": len(human)}
+    return out
 
 
 def estimate(inputs: list[dict]) -> dict:
@@ -267,12 +420,12 @@ def generate(item: dict, *, approved_budget_usd: float, spent_usd: float) -> dic
         output_config={"effort": "high", "format": {"type": "json_schema", "schema": SCHEMA}},
         messages=[{"role": "user", "content": body}],
     )
-    if response.stop_reason != "end_turn":
-        return {"error": response.stop_reason, "usage": response.usage.model_dump()}
-    text = next(block.text for block in response.content if block.type == "text")
     usage = response.usage
-    return {"draft": json.loads(text), "usage": usage.model_dump(),
-            "usd": usage.input_tokens / 1e6 * PRICE["input"] + usage.output_tokens / 1e6 * PRICE["output"]}
+    usd = usage.input_tokens / 1e6 * PRICE["input"] + usage.output_tokens / 1e6 * PRICE["output"]
+    if response.stop_reason != "end_turn":  # still billed: count it against the budget
+        return {"error": response.stop_reason, "usage": usage.model_dump(), "usd": usd}
+    text = next(block.text for block in response.content if block.type == "text")
+    return {"draft": json.loads(text), "usage": usage.model_dump(), "usd": usd}
 
 
 REPOS = {  # repository -> source roots for PYTHONPATH
@@ -284,12 +437,14 @@ REPOS = {  # repository -> source roots for PYTHONPATH
 def main():
     sys.stdout.reconfigure(encoding="utf-8", write_through=True)
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("stage", choices=("mine", "qualify", "freeze", "inputs", "mutants", "baseline", "estimate", "generate"))
+    parser.add_argument("stage", choices=("mine", "qualify", "freeze", "inputs", "mutants", "baseline", "estimate", "generate",
+                                          "validate-drafts", "packet", "score"))
     parser.add_argument("--repos", type=Path, required=True, help="directory holding the cloned repositories")
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--python", default=None)
     parser.add_argument("--scratch", type=Path, default=None)
     parser.add_argument("--approved-budget-usd", type=float, default=None)
+    parser.add_argument("--drafts", type=Path, default=None, help="drafts JSONL (default: <out>/drafts.jsonl)")
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
     path = lambda name: args.out / name
@@ -353,10 +508,37 @@ def main():
         result = estimate(inputs)
         path("estimate.json").write_text(json.dumps(result, indent=1), encoding="utf-8")
         print(json.dumps(result))
-    else:
+    elif args.stage == "generate":  # pragma: no cover - paid; never run without the owner's approved budget
         if args.approved_budget_usd is None:
             sys.exit("generate is paid: pass --approved-budget-usd only after the owner approves the spend")
-        raise SystemExit("generation is prepared but intentionally not wired to run in this milestone")
+        drafts_file = args.drafts or path("drafts.jsonl")
+        done = [json.loads(line) for line in drafts_file.read_text(encoding="utf-8").splitlines()] if drafts_file.exists() else []
+        spent = sum(row.get("usd", 0) for row in done)
+        seen = {(row["sha"], row["draft_index"]) for row in done}
+        for item in json.loads(path("inputs.json").read_text(encoding="utf-8")):
+            for index in range(DRAFTS):
+                if (item["sha"], index) in seen:
+                    continue
+                row = {"sha": item["sha"], "repo": item["repo"], "draft_index": index,
+                       **generate(item, approved_budget_usd=args.approved_budget_usd, spent_usd=spent)}
+                spent += row.get("usd", 0)
+                with drafts_file.open("a", encoding="utf-8") as handle:
+                    handle.write(json.dumps(row) + "\n")
+                print(json.dumps({"sha": item["sha"][:12], "draft": index, "usd_total": round(spent, 2)}), flush=True)
+    elif args.stage == "validate-drafts":
+        corpus = {row["sha"]: row for row in json.loads(path("corpus.json").read_text(encoding="utf-8"))["corpus"]}
+        mutant_sets = json.loads(path("mutants.json").read_text(encoding="utf-8"))
+        drafts = [json.loads(line) for line in (args.drafts or path("drafts.jsonl")).read_text(encoding="utf-8").splitlines()]
+        results = []
+        for draft in drafts:
+            results.append(validate_draft(args.repos / draft["repo"], corpus[draft["sha"]], draft, mutant_sets[draft["sha"]],
+                                          python=args.python, scratch=args.scratch))
+            print(json.dumps({k: results[-1][k] for k in ("sha", "draft_index", "valid", "killed", "mutants")}), flush=True)
+            path("drafts-validated.json").write_text(json.dumps(results, indent=1), encoding="utf-8")
+    elif args.stage == "packet":
+        build_packet(args.repos, path)
+    else:
+        print(json.dumps(score(path), indent=1))
 
 
 if __name__ == "__main__":

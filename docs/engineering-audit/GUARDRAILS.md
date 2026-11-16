@@ -175,6 +175,41 @@ Uncertainty is reported as Wilson 95% intervals on every rate. With 40 correctio
 - **Engineering:** corpus mining and freezing, the validation harness, the mutant generator and the review packet come to roughly **4–6 days**. The drafting step itself is about a day. The one-week figure from before covered only drafting and was too optimistic.
 - **Human time:** about 2–3 hours to review roughly 80–120 drafts blind.
 
+## Status (2026-11-16): prepared, not run
+
+Everything before the paid step is built and dry-run. **The paid generation has not run.** Its cost is estimated from the real frozen inputs:
+
+| | |
+|---|---|
+| Drafts | 39 corrections × 3 drafts on Claude Opus 5.5 |
+| Tokens | about 2.54M input, about 0.94M output |
+| Cost | **about $29** (range $22–36); with the Batch API about $14 |
+| Proposed cap | $100 |
+
+**Prepared stages:**
+
+| Stage | Result |
+|---|---|
+| Mine | 178 candidates (168 A, 10 B) in six repositories (`candidates.json`) |
+| Qualify | Human tests fail before and pass after: 33 A eligible; 9 B eligible |
+| Freeze | **39 corrections (30 A, 9 B), SHA-256 `80dfb327…`, committed before any generation** |
+| Inputs | Structurally test-free. Overlap with fix tests: 1 of 39 corrections (an example quoted in a commit message), recorded |
+| Mutants | 259, on the lines each fix changed; 35 of 39 corrections have at least one |
+| Human baseline ($0) | The fix commits' own tests pass on every fix (30/30) and kill **120 of 158 mutants (76%)** across 27 corrections |
+| Draft validation, packet, scoring | Dry-run end to end with replayed human tests. Kill counts match the baseline exactly (7/12, 12/12) |
+
+### Defects found by preparing the gate (all fixed before any generation)
+
+| Found | Effect | Fix |
+|---|---|---|
+| Miner used `--first-parent` | Repositories that merge PRs lost all candidates (more-itertools: 0) | Mine every non-merge commit; first result kept as `candidates-v1-first-parent.json` |
+| `conftest.py` counted as source | A pytest-infrastructure commit became a B candidate | Treated as test code |
+| Leakage check measured length before stripping | False positives on indented one-character lines | Measure after stripping. The guarantee is now structural; text overlaps are reported, not fatal |
+| Mutants only flipped operators and constants | 13 of 39 corrections had none | Added statement deletion (a partial revert): 4 of 39 now have none |
+| **Later-revision check used `fix..HEAD`** | Included commits from branches that forked before the fix and were merged later. These never contained the fix, so they reported false alarms and, in the Click demo, a wrong "test renamed" finding | `--ancestry-path`, with a test |
+| **Review packet was not blind** | Only the TRACE option carried a rule sentence and a full module | Both checks are shown as test functions only. The rule sentence is rated separately, after the reviewer writes their own note |
+| A refused or truncated draft recorded no cost | The budget guard would undercount | Every response's cost counts |
+
 ## After the gate
 
 - **Prospective study (only if the gate passes):** teams or projects using TRACE guardrails vs. ordinary maintained notes, over weeks. Measure recurrence of corrected mistakes, rules written, review time, CI false alarms and bypasses. Historical replay can show a check *would* have caught something; only this can show recurrence actually drops.

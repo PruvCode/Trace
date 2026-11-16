@@ -29,27 +29,35 @@
       "role": "before",
       "check": "tests/test_utils/test_make_default_short_help.py::test_make_default_short_help",
       "outcome": "fail",
-      "output": ".py::test_make_default_short_help[-abbreviation inside truncated sentence]\nFAILED tests/test_utils/test_make_default_short_help.py::test_make_default_short_help[-lowercase after dot]\nFAILED tests/test_utils/test_make_default_short_help.py::test_make_default_short_help[no-wrap mark-abbreviation inside sentence]\nFAILED tests/test_utils/test_make_default_short_help.py::test_make_default_short_help[no-wrap mark-abbreviation inside truncated sentence]\nFAILED tests/test_utils/test_make_default_short_help.py::test_make_default_short_help[no-wrap mark-lowercase after dot]\n6 failed, 30 passed in 0.45s\n"
+      "output": ".py::test_make_default_short_help[-abbreviation inside truncated sentence]\nFAILED tests/test_utils/test_make_default_short_help.py::test_make_default_short_help[-lowercase after dot]\nFAILED tests/test_utils/test_make_default_short_help.py::test_make_default_short_help[no-wrap mark-abbreviation inside sentence]\nFAILED tests/test_utils/test_make_default_short_help.py::test_make_default_short_help[no-wrap mark-abbreviation inside truncated sentence]\nFAILED tests/test_utils/test_make_default_short_help.py::test_make_default_short_help[no-wrap mark-lowercase after dot]\n6 failed, 30 passed in 0.85s\n"
     },
     {
       "revision": "f67c2bb6c2f055c1c7a57cd46c3697fc26a7742e",
       "role": "after",
       "check": "tests/test_utils/test_make_default_short_help.py::test_make_default_short_help",
       "outcome": "pass",
-      "output": "....................................                                     [100%]\n36 passed in 0.11s\n"
+      "output": "....................................                                     [100%]\n36 passed in 0.07s\n"
     },
     {
       "revision": "a2b9b2f29580aa253fdbc210718f047a1e98b916",
       "role": "later",
       "check": "tests/test_utils/test_make_default_short_help.py::test_make_default_short_help",
       "outcome": "pass",
-      "output": "....................................                                     [100%]\n36 passed in 0.12s\n"
+      "output": "....................................                                     [100%]\n36 passed in 0.08s\n"
+    },
+    {
+      "revision": "e38188e9e205005d5af5f9e59df51904c984586a",
+      "role": "later",
+      "check": "tests/test_utils/test_make_default_short_help.py::test_make_default_short_help",
+      "outcome": "pass",
+      "output": "....................................                                     [100%]\n36 passed in 0.14s\n"
     }
   ],
   "later_revisions": [
-    "a2b9b2f29580aa253fdbc210718f047a1e98b916"
+    "a2b9b2f29580aa253fdbc210718f047a1e98b916",
+    "e38188e9e205005d5af5f9e59df51904c984586a"
   ],
   "later_failures": [],
   "supporting_events": [],
-  "proposal": "## src/click/utils.py :: _make_default_short_help\n- Fix short help abbreviation.\n  checks:\n    - pytest: tests/test_utils/test_make_default_short_help.py::test_make_default_short_help\n  <!-- trace:correction=f67c2bb6c2f0 fails-before=6d5bac5c7121 passes-after=f67c2bb6c2f0 later-clean=1/1 -->\n"
+  "proposal": "## src/click/utils.py :: _make_default_short_help\n- Fix short help abbreviation.\n  checks:\n    - pytest: tests/test_utils/test_make_default_short_help.py::test_make_default_short_help\n  <!-- trace:correction=f67c2bb6c2f0 fails-before=6d5bac5c7121 passes-after=f67c2bb6c2f0 later-clean=2/2 -->\n"
 }

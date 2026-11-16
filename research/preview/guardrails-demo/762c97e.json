@@ -31,14 +31,14 @@
       "role": "before",
       "check": "tests/test_basic.py::test_choice_argument_optional_metavar",
       "outcome": "environment",
-      "output": "ng: Passing a non-Collection iterable to parametrize is deprecated.\nE   Test: tests/test_basic.py::test_boolean_conversion, argvalues type: chain\nE   Please convert to a list or tuple.\nE   See https://docs.pytest.org/en/stable/deprecations.html#parametrize-iterators\n=========================== short test summary info ===========================\nERROR tests/test_basic.py - pytest.PytestRemovedIn10Warning: Passing a non-Co...\n1 error in 0.54s\nERROR: found no collectors for C:\\Users\\pruth\\AppData\\Local\\Temp\\trace-guardrail-1uico2zz\\tree\\tests\\test_basic.py::test_choice_argument_optional_metavar\n\n"
+      "output": "ng: Passing a non-Collection iterable to parametrize is deprecated.\nE   Test: tests/test_basic.py::test_boolean_conversion, argvalues type: chain\nE   Please convert to a list or tuple.\nE   See https://docs.pytest.org/en/stable/deprecations.html#parametrize-iterators\n=========================== short test summary info ===========================\nERROR tests/test_basic.py - pytest.PytestRemovedIn10Warning: Passing a non-Co...\n1 error in 0.49s\nERROR: found no collectors for C:\\Users\\pruth\\AppData\\Local\\Temp\\trace-guardrail-e7gmcpwc\\tree\\tests\\test_basic.py::test_choice_argument_optional_metavar\n\n"
     },
     {
       "revision": "8929d392781c8113bc569f388c15c47b94f86581",
       "role": "before",
       "check": "tests/test_basic.py::test_datetime_argument_optional_metavar",
       "outcome": "environment",
-      "output": ": Passing a non-Collection iterable to parametrize is deprecated.\nE   Test: tests/test_basic.py::test_boolean_conversion, argvalues type: chain\nE   Please convert to a list or tuple.\nE   See https://docs.pytest.org/en/stable/deprecations.html#parametrize-iterators\n=========================== short test summary info ===========================\nERROR tests/test_basic.py - pytest.PytestRemovedIn10Warning: Passing a non-Co...\n1 error in 0.43s\nERROR: found no collectors for C:\\Users\\pruth\\AppData\\Local\\Temp\\trace-guardrail-1uico2zz\\tree\\tests\\test_basic.py::test_datetime_argument_optional_metavar\n\n"
+      "output": ": Passing a non-Collection iterable to parametrize is deprecated.\nE   Test: tests/test_basic.py::test_boolean_conversion, argvalues type: chain\nE   Please convert to a list or tuple.\nE   See https://docs.pytest.org/en/stable/deprecations.html#parametrize-iterators\n=========================== short test summary info ===========================\nERROR tests/test_basic.py - pytest.PytestRemovedIn10Warning: Passing a non-Co...\n1 error in 0.84s\nERROR: found no collectors for C:\\Users\\pruth\\AppData\\Local\\Temp\\trace-guardrail-e7gmcpwc\\tree\\tests\\test_basic.py::test_datetime_argument_optional_metavar\n\n"
     }
   ],
   "later_revisions": [],

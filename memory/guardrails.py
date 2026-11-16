@@ -168,7 +168,14 @@ def _worktree(root: Path, scratch: Path | None):
 
 
 def validate(root: Path, item: Correction, rule: rules_mod.Rule, *, python: str | None = None,
-             pythonpath: tuple[str, ...] = (), later: int = 5, scratch: Path | None = None) -> Report:
+             pythonpath: tuple[str, ...] = (), later: int = 5, scratch: Path | None = None,
+             overlay: dict[str, str] | None = None) -> Report:
+    """Validate a rule's checks against history.
+
+    Without ``overlay`` the checks are the fix's own tests (taken from the fix commit for the "before" run).
+    With ``overlay`` (path -> file text, e.g. a drafted test module) those files are written at every
+    revision, so a drafted check is judged on the same code as the human one.
+    """
     report = Report(asdict(item), {"path": rule.path, "symbol": rule.symbol, "text": rule.text,
                                    "checks": [c.value for c in rule.checks], "provenance": rule.provenance})
     with _worktree(root, scratch) as tree:
@@ -177,7 +184,11 @@ def validate(root: Path, item: Correction, rule: rules_mod.Rule, *, python: str 
         def at(revision: str, role: str, checks, *, overlay_tests: bool = False) -> dict[str, str]:
             _git(tree, "checkout", "--quiet", "--force", "--detach", revision)
             _git(tree, "clean", "-qfdx", "-e", ".venv")
-            if overlay_tests:
+            if overlay is not None:
+                for path, text in overlay.items():
+                    (tree / path).parent.mkdir(parents=True, exist_ok=True)
+                    (tree / path).write_text(text, encoding="utf-8")
+            elif overlay_tests:
                 _git(tree, "checkout", item.sha, "--", *item.test_files)
             outcomes = {}
             for check in checks:
@@ -201,7 +212,8 @@ def validate(root: Path, item: Correction, rule: rules_mod.Rule, *, python: str 
                 report.dropped[check.value] = f"does not pass after the fix ({after.get(check.value)})"
         report.kept = [c.value for c in kept]
         if kept and later:
-            revisions = _git(root, "rev-list", "--reverse", f"{item.sha}..HEAD", "--", rule.path).split()[:later]
+            # Descendants of the fix only: a commit merged in from a branch that forked before the fix does not contain it.
+            revisions = _git(root, "rev-list", "--reverse", "--ancestry-path", f"{item.sha}..HEAD", "--", rule.path).split()[:later]
             report.later_revisions = revisions
             for revision in revisions:
                 outcomes = at(revision, "later", kept)
