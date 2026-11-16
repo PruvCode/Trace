@@ -1,0 +1,27 @@
+distinct runs 140; identical duplicate rows collapsed 10
+sampled  clamp_limit            notes                pass 8/10  preservation-fail 0  valid 10  retried 0
+sampled  clamp_limit            trace                pass 3/10  preservation-fail 0  valid 10  retried 0
+sampled  clamp_limit            trace_prose          pass 5/10  preservation-fail 0  valid 10  retried 0
+sampled  clamp_limit            trace_reseeded       pass 3/10  preservation-fail 0  valid 10  retried 0
+sampled  clamp_limit            trace_revised_rule_only pass 2/10  preservation-fail 0  valid 10  retried 0
+sampled  clamp_limit            trace_rule_only      pass 2/10  preservation-fail 0  valid 10  retried 0
+sampled  clamp_limit            trace_trust_revised  pass 3/10  preservation-fail 0  valid 10  retried 0
+sampled  iter_rows              notes                pass 2/10  preservation-fail 7  valid 10  retried 0
+sampled  iter_rows              trace                pass 4/10  preservation-fail 5  valid 10  retried 1
+sampled  iter_rows              trace_prose          pass 4/10  preservation-fail 5  valid 10  retried 0
+sampled  iter_rows              trace_reseeded       pass 4/10  preservation-fail 2  valid 10  retried 1
+sampled  iter_rows              trace_revised_rule_only pass 2/10  preservation-fail 4  valid 10  retried 0
+sampled  iter_rows              trace_rule_only      pass 2/10  preservation-fail 5  valid 10  retried 1
+sampled  iter_rows              trace_trust_revised  pass 3/10  preservation-fail 5  valid 10  retried 1
+sampled  clamp_limit            trace_trust_revised  vs trace: 3/10 vs 3/10  Fisher p=1.000
+sampled  clamp_limit            trace_rule_only      vs trace: 2/10 vs 3/10  Fisher p=1.000
+sampled  clamp_limit            trace_revised_rule_only vs trace: 2/10 vs 3/10  Fisher p=1.000
+sampled  clamp_limit            trace_prose          vs trace: 5/10 vs 3/10  Fisher p=0.650
+sampled  clamp_limit            trace_reseeded       vs trace: 3/10 vs 3/10  Fisher p=1.000
+sampled  clamp_limit            notes                vs trace: 8/10 vs 3/10  Fisher p=0.070
+sampled  iter_rows              trace_trust_revised  vs trace: 3/10 vs 4/10  Fisher p=1.000
+sampled  iter_rows              trace_rule_only      vs trace: 2/10 vs 4/10  Fisher p=0.628
+sampled  iter_rows              trace_revised_rule_only vs trace: 2/10 vs 4/10  Fisher p=0.628
+sampled  iter_rows              trace_prose          vs trace: 4/10 vs 4/10  Fisher p=1.000
+sampled  iter_rows              trace_reseeded       vs trace: 4/10 vs 4/10  Fisher p=1.000
+sampled  iter_rows              notes                vs trace: 2/10 vs 4/10  Fisher p=0.628

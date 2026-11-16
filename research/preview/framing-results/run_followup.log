@@ -1,0 +1,33 @@
+{"task": "iter_rows", "variant": "trace_prose", "seed": 52183, "passed": false, "regression": false, "valid": true, "ms": 31613.77}
+BATCH prose-greedy done
+{"task": "clamp_limit", "variant": "trace_prose", "seed": 52183, "passed": true, "regression": false, "valid": true, "ms": 64384.35}
+{"task": "iter_rows", "variant": "trace_prose", "seed": 52183, "passed": false, "regression": false, "valid": true, "ms": 72214.26}
+{"task": "clamp_limit", "variant": "trace_prose", "seed": 52189, "passed": false, "regression": false, "valid": true, "ms": 78245.39}
+{"task": "iter_rows", "variant": "trace_prose", "seed": 52189, "passed": true, "regression": false, "valid": true, "ms": 74870.37}
+{"task": "clamp_limit", "variant": "trace_prose", "seed": 52193, "passed": false, "regression": false, "valid": true, "ms": 74677.2}
+{"task": "iter_rows", "variant": "trace_prose", "seed": 52193, "passed": false, "regression": true, "valid": true, "ms": 61758.73}
+{"task": "clamp_limit", "variant": "trace_prose", "seed": 52199, "passed": true, "regression": false, "valid": true, "ms": 74909.41}
+{"task": "iter_rows", "variant": "trace_prose", "seed": 52199, "passed": false, "regression": true, "valid": true, "ms": 69794.28}
+{"task": "clamp_limit", "variant": "trace_prose", "seed": 52201, "passed": true, "regression": false, "valid": true, "ms": 73715.78}
+{"task": "iter_rows", "variant": "trace_prose", "seed": 52201, "passed": true, "regression": false, "valid": true, "ms": 67543.93}
+BATCH prose-sampled done
+{"type": "regrade", "dev_probe": true, "checked": 144, "reproduced": 144, "mismatches": []}
+{"type": "regrade", "dev_probe": true, "checked": 35, "reproduced": 35, "mismatches": []}
+{"type": "regrade", "dev_probe": true, "checked": 150, "reproduced": 150, "mismatches": []}
+BATCH regrade done
+BATCH clauses done
+: true, "regression": false, "valid": true, "ms": 37861.33}
+{"task": "clamp_limit", "variant": "trace_prose", "seed": 52223, "passed": false, "regression": false, "valid": true, "ms": 42458.99}
+{"task": "iter_rows", "variant": "trace_prose", "seed": 52223, "passed": false, "regression": true, "valid": true, "ms": 30995.77}
+{"task": "clamp_limit", "variant": "trace_prose", "seed": 52237, "passed": true, "regression": false, "valid": true, "ms": 36908.21}
+{"task": "iter_rows", "variant": "trace_prose", "seed": 52237, "passed": true, "regression": false, "valid": true, "ms": 34719.96}
+{"task": "clamp_limit", "variant": "trace_prose", "seed": 52249, "passed": true, "regression": false, "valid": true, "ms": 38399.83}
+{"task": "iter_rows", "variant": "trace_prose", "seed": 52249, "passed": false, "regression": true, "valid": true, "ms": 31542.63}
+{"task": "clamp_limit", "variant": "trace_prose", "seed": 52253, "passed": false, "regression": false, "valid": true, "ms": 36678.08}
+{"task": "iter_rows", "variant": "trace_prose", "seed": 52253, "passed": false, "regression": true, "valid": true, "ms": 30177.65}
+BATCH prose-sampled done
+{"type": "regrade", "dev_probe": true, "checked": 144, "reproduced": 144, "mismatches": []}
+{"type": "regrade", "dev_probe": true, "checked": 35, "reproduced": 35, "mismatches": []}
+{"type": "regrade", "dev_probe": true, "checked": 150, "reproduced": 150, "mismatches": []}
+BATCH regrade done
+BATCH clauses done
