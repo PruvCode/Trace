@@ -1,0 +1,8 @@
+distinct runs 72; identical duplicate rows collapsed 0
+arm            pass  retained  lost  recovered  unresolved  regr  med_in
+notes         11/24        11     0          0          13     1     208
+trace          9/24         9     2          0          13     2     439
+trace_notes   11/24        11     0          0          13     1     208
+trace_notes context identical to the note on 24/24 tasks; different candidate despite identical prompt: 1 ['_text']
+  trace vs notes: lost ['clamp_limit', 'iter_rows']  recovered []
+  trace_notes vs notes: lost []  recovered []
