@@ -9,13 +9,14 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 from memory import structural as structural_mod
-from memory import store, task_library
+from memory import episodic, store, task_library
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 EXPECTED_TOOLS = [
     "find_callers",
     "find_definition",
     "get_git_history",
+    "get_rules",
     "get_task_context",
     "get_transcript_session",
     "record_event",
@@ -89,12 +90,23 @@ def test_mcp_task_scope_and_evidence_round_trip(tmp_path):
                 rows = _parse(await session.call_tool("search_events", {}))
                 assert [row["id"] for row in rows] == [legacy["id"], scoped["id"]]
                 assert "task_id" not in rows[0] and "evidence" not in rows[0]
-                recorded = await session.call_tool("record_event", {
+                decision = {
                     "type": "decision", "repo": "demo", "task_id": task_id, "status": "verified",
                     "file": "rules.py", "symbol": "normalize", "evidence": evidence,
                     "payload": {"decision": "normalize strips surrounding whitespace."},
-                })
-                assert not recorded.is_error
+                }
+                # Agents cannot self-assert verification or pose as a derived source.
+                assert (await session.call_tool("record_event", decision)).is_error
+                assert (await session.call_tool("record_event", {
+                    **decision, "status": None, "payload": {**decision["payload"], "status": "verified"},
+                })).is_error
+                assert (await session.call_tool("record_event", {**decision, "status": "observed", "source": "git"})).is_error
+                # The trusted channel (a person via the CLI) records the verified decision.
+                with closing(store.connect(db)) as conn:
+                    episodic.record_event(
+                        conn, type="decision", repo="demo", task_id=task_id, file="rules.py", symbol="normalize",
+                        payload={**decision["payload"], "status": "verified"}, evidence=evidence, project_root=tmp_path,
+                    )
                 context = await session.call_tool("get_task_context", {"task_id": task_id, "query": "normalize", "file": "rules.py"})
                 assert not context.is_error
                 assert all(term in context.content[0].text for term in ("rules.py", "code_targets", "strips surrounding whitespace"))

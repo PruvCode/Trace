@@ -285,7 +285,10 @@ untested clients should be treated as experimental.
   events stay valid): `status` is `hypothesis`, `observed` or `verified`, and
   `supersedes` names earlier event ids a finding replaces
   (`trace record --status verified --supersedes 12`, or the MCP
-  `record_event` tool's `status`/`supersedes` arguments). New sessions are
+  `record_event` tool's `status`/`supersedes` arguments). Only a person
+  using the CLI can record `verified`; the MCP tool rejects it, and rejects
+  `source` values other than `agent`, so an agent's claim cannot outrank
+  other history or pose as a Git fact. New sessions are
   shown only current findings, with hypotheses and verified findings
   labeled; superseded ones stay searchable (`superseded_by` in
   `search_events`). A finding linked to a `file` is flagged
