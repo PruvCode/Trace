@@ -28,6 +28,7 @@ from trace_memory import project as project_mod
 EXIT_OK = 0
 EXIT_ERROR = 1
 EXIT_USAGE = 2
+EXIT_INCONCLUSIVE = 3  # trace rules check: some approved checks could not run or were flaky (not verified)
 
 
 def _project_arg(parser: argparse.ArgumentParser) -> None:
@@ -207,6 +208,8 @@ def build_parser() -> argparse.ArgumentParser:
         if name == "check":
             action.add_argument("--all", action="store_true", help="check every approved rule (for CI)")
             action.add_argument("--python", default=None, help="interpreter for checks (default: TRACE_RULES_PYTHON or this Python)")
+            action.add_argument("--allow-inconclusive", action="store_true",
+                                help="exit 0 when checks could not run or were flaky (printed as an override; those rules stay unverified)")
         action.set_defaults(func=cmd_rules)
     propose = rule_actions.add_parser("propose", help="draft a rule from a fix commit and validate its checks against history")
     propose.add_argument("commit", help="the fix commit (must change code and tests)")
@@ -692,13 +695,19 @@ def cmd_rules(args) -> int:
     if state_file.parent.is_dir() and (state or previous):
         state_file.write_text(json.dumps(state, indent=1, sort_keys=True), encoding="utf-8")
     uncovered = [rule.scope for rule in in_scope if not rule.checks]
+    unsure = rule_checks.inconclusive(results)
+    outcome = rule_checks.verdict(results)
     if args.json:
-        print(json.dumps({"ref": loaded.ref, "commit": loaded.commit, "blocking": len(blocking), "uncovered": uncovered,
+        print(json.dumps({"ref": loaded.ref, "commit": loaded.commit, "verdict": outcome, "blocking": len(blocking),
+                          "inconclusive": len(unsure), "override": bool(args.allow_inconclusive and unsure), "uncovered": uncovered,
                           "results": [{**r.as_record(), "repeated": repeated, "changes_since_approval": changes,
                                        "next_step": step} for r, repeated, changes, step in report]}, indent=2))
     else:
         passed = sum(r.outcome == "pass" for r in results)
         print(f"{len(results)} checks from {len(selected)} approved rules: {passed} passed, {len(results) - passed} not passed")
+        print(f"verdict: {outcome}" + (f" ({len(unsure)} check(s) could not run or changed result on rerun: not verified)" if unsure else ""))
+        if unsure and args.allow_inconclusive:
+            print("override: inconclusive checks allowed by --allow-inconclusive (these rules were NOT verified)")
         for result, repeated, _, step in report:
             if result.outcome != "pass":
                 print(f"[{result.classification}{', repeated' if repeated else ''}] {result.rule.scope}: {result.rule.text}\n"
@@ -708,7 +717,9 @@ def cmd_rules(args) -> int:
         skipped = [rule.scope for rule in rules_mod.scoped(loaded.proposed, files)] if files != [] else []
         if skipped:
             print(f"not run (proposed, not approved): {', '.join(skipped)}")
-    return EXIT_ERROR if blocking else EXIT_OK
+    if blocking:
+        return EXIT_ERROR
+    return EXIT_INCONCLUSIVE if unsure and not args.allow_inconclusive else EXIT_OK
 
 
 def cmd_rules_propose(args) -> int:

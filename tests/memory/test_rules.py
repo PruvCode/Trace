@@ -197,7 +197,7 @@ def test_next_step_follows_the_diagnosis(repo):
     rule = rules.Rule("pkg/limits.py", "clamp_limit", "r", (rules.Check("py", "False"),), provenance="trace:event=42")
     result = rule_checks.CheckResult(rule, rule.checks[0], "fail", "False", "regression_in_progress", "d")
     step = rule_checks.next_step(result, repeated=True, changes=["abc123 edit"])
-    assert "Fix the code" in step and "already failed" in step and "abc123 edit" in step and "trace:event=42" in step
+    assert "If the change is wrong, fix it" in step and "already failed" in step and "abc123 edit" in step and "trace:event=42" in step
     assert "do not change code" in rule_checks.next_step(rule_checks.CheckResult(rule, rule.checks[0], "error", "", "environment"))
     assert rule_checks.next_step(rule_checks.CheckResult(rule, rule.checks[0], "pass", "")) == ""
 
@@ -261,3 +261,20 @@ def test_a_vanished_pytest_check_blocks_as_missing_not_environment(repo):
     assert vanished.classification == "missing_check" and rule_checks.blocking([vanished]) == [vanished]
     assert "no longer exists" in rule_checks.next_step(vanished)
     assert rule_checks.run(repo, [rule], broken)[0].classification == "environment"  # the module failed to collect
+
+
+def test_flaky_and_environment_results_are_inconclusive_and_guidance_never_coerces(repo):
+    rule = _rule("clamp_limit(8.5) == 99")
+    calls = []
+    flaky = lambda r, c: (calls.append(1), ("fail", "x") if len(calls) == 1 else ("pass", ""))[1]
+    results = rule_checks.run(repo, [rule], flaky) + rule_checks.run(repo, [rule], lambda r, c: ("error", "ImportError"))
+    assert [r.classification for r in results] == ["flaky", "environment"]
+    assert rule_checks.inconclusive(results) == results and rule_checks.blocking(results) == []
+    assert rule_checks.verdict(results) == "inconclusive"
+    assert rule_checks.verdict([]) == "nothing to check"
+    # failure guidance: never "change the code until it passes"
+    (repo / "pkg" / "limits.py").write_text(SOURCE + "\n# edit\n", encoding="utf-8")
+    failing = rule_checks.run(repo, [rule], lambda r, c: ("fail", "False"))[0]
+    step = rule_checks.next_step(failing, repeated=True)
+    assert "do not bend the code" in step.lower() and "stop" in step.lower() and "escalate" in step.lower()
+    assert "unverified" in rule_checks.next_step(results[1]).lower()
