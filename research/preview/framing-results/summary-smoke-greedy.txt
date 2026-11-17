@@ -1,0 +1,27 @@
+distinct runs 34; identical duplicate rows collapsed 1
+greedy   clamp_limit            notes                pass 3/3  preservation-fail 0  valid 3  retried 0
+greedy   clamp_limit            trace                pass 0/3  preservation-fail 0  valid 3  retried 0
+greedy   clamp_limit            trace_prose          pass 1/1  preservation-fail 0  valid 1  retried 0
+greedy   clamp_limit            trace_reseeded       pass 0/3  preservation-fail 0  valid 3  retried 0
+greedy   clamp_limit            trace_revised_rule_only pass 0/1  preservation-fail 0  valid 1  retried 0
+greedy   clamp_limit            trace_rule_only      pass 0/3  preservation-fail 0  valid 3  retried 0
+greedy   clamp_limit            trace_trust_revised  pass 0/3  preservation-fail 0  valid 3  retried 0
+greedy   iter_rows              notes                pass 3/3  preservation-fail 0  valid 3  retried 0
+greedy   iter_rows              trace                pass 3/3  preservation-fail 0  valid 3  retried 0
+greedy   iter_rows              trace_prose          pass 0/1  preservation-fail 0  valid 1  retried 0
+greedy   iter_rows              trace_reseeded       pass 0/3  preservation-fail 3  valid 3  retried 0
+greedy   iter_rows              trace_revised_rule_only pass 0/1  preservation-fail 0  valid 1  retried 0
+greedy   iter_rows              trace_rule_only      pass 0/3  preservation-fail 0  valid 3  retried 0
+greedy   iter_rows              trace_trust_revised  pass 1/3  preservation-fail 2  valid 3  retried 0
+greedy   clamp_limit            trace_trust_revised  vs trace: 0/3 vs 0/3  Fisher p=1.000
+greedy   clamp_limit            trace_rule_only      vs trace: 0/3 vs 0/3  Fisher p=1.000
+greedy   clamp_limit            trace_revised_rule_only vs trace: 0/1 vs 0/3  Fisher p=1.000
+greedy   clamp_limit            trace_prose          vs trace: 1/1 vs 0/3  Fisher p=0.250
+greedy   clamp_limit            trace_reseeded       vs trace: 0/3 vs 0/3  Fisher p=1.000
+greedy   clamp_limit            notes                vs trace: 3/3 vs 0/3  Fisher p=0.100
+greedy   iter_rows              trace_trust_revised  vs trace: 1/3 vs 3/3  Fisher p=0.400
+greedy   iter_rows              trace_rule_only      vs trace: 0/3 vs 3/3  Fisher p=0.100
+greedy   iter_rows              trace_revised_rule_only vs trace: 0/1 vs 3/3  Fisher p=0.250
+greedy   iter_rows              trace_prose          vs trace: 0/1 vs 3/3  Fisher p=0.250
+greedy   iter_rows              trace_reseeded       vs trace: 0/3 vs 3/3  Fisher p=0.100
+greedy   iter_rows              notes                vs trace: 3/3 vs 3/3  Fisher p=1.000
