@@ -1,5 +1,10 @@
 """Run the checks attached to approved rules, and diagnose failures.
 
+Governing principle: TRACE remembers what happened, proposes what should be
+remembered, and checks what has been explicitly approved. A check result is
+evidence, not a verdict on correctness: TRACE reports, it never edits code, and
+its guidance never tells an agent to bend code to fit a disputed rule.
+
 Only approved rules are executed (see ``memory.rules``); proposed rules are
 displayed, never run. Approved checks are reviewed code, like the project's
 tests, so they run with the project's own interpreter and test runner, in a
@@ -8,9 +13,11 @@ subprocess with a timeout and a minimal environment.
 A failing check is not automatically a stale rule. Each failure is rerun once
 and classified:
 
-- ``flaky``: passed on the rerun.
+- ``flaky``: failed, then passed on the rerun. It proves nothing either way, so
+  the run is *inconclusive*, not verified.
 - ``environment``: the check could not run (import error, missing runner,
-  timeout, collection error). The rule is not in question.
+  timeout, collection error). The rule is not in question, and it was not
+  verified either: the run is *inconclusive*, never a silent pass.
 - ``regression_in_progress``: the governed file has uncommitted changes. The
   rule stays approved; the change has to satisfy it or be proposed as a rule
   change.
@@ -40,6 +47,7 @@ TIMEOUT = 120
 MAX_OUTPUT = 2000
 OUTCOMES = ("pass", "fail", "error")
 BLOCKING = ("regression_in_progress", "stale_or_regression", "missing_check")
+INCONCLUSIVE = ("flaky", "environment")  # neither verified nor failed: never reported as a pass
 _NOT_FOUND = ("ERROR: not found:", "no match in any of", "file or directory not found")
 
 # An executor runs one check and returns (outcome, output); outcome is one of OUTCOMES.
@@ -197,6 +205,18 @@ def blocking(results: list[CheckResult]) -> list[CheckResult]:
     return [r for r in results if r.classification in BLOCKING]
 
 
+def inconclusive(results: list[CheckResult]) -> list[CheckResult]:
+    """Checks that neither passed nor failed reliably: they could not run, or gave different results on rerun."""
+    return [r for r in results if r.classification in INCONCLUSIVE]
+
+
+def verdict(results: list[CheckResult]) -> str:
+    """One word for the run: failing beats inconclusive beats verified; nothing ran → 'nothing to check'."""
+    if not results:
+        return "nothing to check"
+    return "failing" if blocking(results) else "inconclusive" if inconclusive(results) else "verified"
+
+
 def changes_since(root: Path, ref: str | None, path: str, limit: int = 5) -> list[str]:
     """Commits touching ``path`` that are on HEAD but not on the approval ref (newest first)."""
     if not ref:
@@ -208,14 +228,16 @@ def changes_since(root: Path, ref: str | None, path: str, limit: int = 5) -> lis
     return [line for line in log.decode("utf-8", "replace").splitlines() if line.strip()]
 
 
-_NEXT = {
-    "flaky": "Passed on rerun. Do not change code for it; report the flaky check.",
-    "environment": "The check could not run, so it says nothing about the rule. Fix the environment and rerun; "
-                   "do not change code for it.",
-    "regression_in_progress": "Your uncommitted change does not satisfy this approved rule. Fix the code, or "
-                              "propose a rule change in .trace/RULES.md for review.",
+_NEXT = {  # guidance only: TRACE never edits code, and never asks for code to be bent to fit a disputed rule
+    "flaky": "Failed, then passed on rerun: inconclusive, so this rule is unverified, not passed. Do not change code "
+             "for it; report the check for review.",
+    "environment": "The check could not run: inconclusive, so this rule is unverified, not passed. Fix the "
+                   "environment and rerun; do not change code for it.",
+    "regression_in_progress": "Your uncommitted change fails this approved rule's check. If the change is wrong, fix "
+                              "it. If the rule is wrong for this change, do not bend the code to fit: propose a rule "
+                              "change in .trace/RULES.md for review.",
     "stale_or_regression": "Committed code fails an approved rule. A person must decide whether the code or the "
-                           "rule is wrong.",
+                           "rule is wrong; do not edit code just to make this check pass.",
     "missing_check": "The approved check no longer exists (test renamed or removed), so this rule is not enforced. "
                      "Update the check in .trace/RULES.md through review.",
 }
@@ -227,8 +249,8 @@ def next_step(result: CheckResult, *, repeated: bool = False, changes: list[str]
         return ""
     steps = [_NEXT[result.classification]]
     if repeated:
-        steps.append("The same file content already failed this check. Change the approach or ask a person; "
-                     "resubmitting it will not help.")
+        steps.append("The same file content already failed this check. Stop: do not retry the same change. "
+                     "Escalate to a person, who decides whether the code or the rule is wrong.")
     if changes:
         steps.append("Commits touching this file since approval: " + "; ".join(changes))
     if result.rule.provenance and result.classification in BLOCKING:

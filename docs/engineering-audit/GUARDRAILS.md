@@ -223,3 +223,29 @@ Everything before the paid step is built and dry-run. **The paid generation has 
 - Graph output in prompts.
 - Graphify integration.
 - Trying to reach 24/24 on the old development benchmark.
+
+## Governance of verification (decision, 2026-11-17)
+
+**Principle:** TRACE remembers what happened, proposes what should be remembered, and checks what has been explicitly approved. It never decides on its own that its interpretation is the truth.
+
+The risk this guards against is circular validation. A check that fails before a fix and passes after it is consistent with those two versions of the code. That does not prove it expresses the intended behaviour. A mis-drafted rule would then be enforced against correct code.
+
+| Responsibility | TRACE does it? | Authority |
+|---|---|---|
+| Remember decisions, corrections and evidence | Yes, automatically | Historical evidence |
+| Propose a rule or check from a correction | Yes | Proposal only (`trace rules propose`, never self-approved) |
+| Approve a rule | No | A reviewed merge of `.trace/RULES.md` |
+| Run the checks of approved rules | Yes | Diagnostic evidence |
+| Edit code until checks pass | No | The agent or developer decides, under the agent's own repair budget |
+
+**Safeguards, as implemented on `fix/inconclusive-checks`:**
+- **Plain notes are valid.** Rules without checks are listed as "not verified".
+- **No self-approval.** Proposals are written as *proposed* rules; only the default branch approves.
+- **Bounded repair.** TRACE never edits code. A repeated identical failure produces "Stop: do not retry the same change. Escalate to a person."
+- **A failed check is not proof of a defect.**
+  - Guidance names the alternative: "If the rule is wrong for this change, do not bend the code to fit: propose a rule change."
+  - `stale_or_regression` adds "do not edit code just to make this check pass."
+  - Flaky and environment results are **inconclusive** (verdict line, exit 3), never a silent green.
+- **Reversible, with explicit overrides.** Rules change only through reviewed edits to `.trace/RULES.md`. The CI override `--allow-inconclusive` is printed in the output and recorded in the JSON.
+
+**Fixed in this change:** before it, checks that could not run (`environment`) and flaky checks exited 0, so CI reported green for rules that were never verified.

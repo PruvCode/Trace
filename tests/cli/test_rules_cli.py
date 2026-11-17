@@ -95,7 +95,7 @@ def test_repeated_identical_failure_is_reported_and_cleared(repo, capsys):
         assert cli.main(["rules", "check", str(repo), "--json"]) == 1
         results.append(json.loads(capsys.readouterr().out)["results"][0])
     assert [r["repeated"] for r in results] == [False, True]
-    assert "already failed" in results[1]["next_step"] and "Fix the code" in results[0]["next_step"]
+    assert "already failed" in results[1]["next_step"] and "If the change is wrong, fix it" in results[0]["next_step"]
     (repo / "pkg" / "limits.py").write_text(broken + "# different attempt\n", encoding="utf-8")
     cli.main(["rules", "check", str(repo), "--json"])
     assert json.loads(capsys.readouterr().out)["results"][0]["repeated"] is False
@@ -121,3 +121,22 @@ def test_a_working_tree_edit_to_an_approved_check_is_never_executed(repo, tmp_pa
     out = json.loads(capsys.readouterr().out)
     assert not marker.exists()
     assert [r["check"] for r in out["results"]] == ["clamp_limit(8.5) == DEFAULT_LIMIT"]  # the approved version ran
+
+
+def test_a_check_that_cannot_run_is_inconclusive_not_green(repo, capsys):
+    (repo / ".trace" / "RULES.md").write_text(RULES.replace("pkg/limits.py :: clamp_limit", "pkg/missing.py :: clamp_limit"), encoding="utf-8")
+    subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-qam", "rule on a missing file"], cwd=repo, check=True)
+    assert cli.main(["rules", "check", str(repo), "--all", "--json"]) == 3  # could not run: not verified
+    out = json.loads(capsys.readouterr().out)
+    assert out["verdict"] == "inconclusive" and out["inconclusive"] == 1 and out["blocking"] == 0 and out["override"] is False
+    assert cli.main(["rules", "check", str(repo), "--all", "--allow-inconclusive"]) == 0  # explicit, visible override
+    text = capsys.readouterr().out
+    assert "verdict: inconclusive" in text and "--allow-inconclusive" in text
+
+
+def test_verified_and_failing_verdicts(repo, capsys):
+    assert cli.main(["rules", "check", str(repo), "--all", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["verdict"] == "verified"
+    (repo / "pkg" / "limits.py").write_text(SOURCE.replace("        return DEFAULT_LIMIT\n", "        pass\n"), encoding="utf-8")
+    assert cli.main(["rules", "check", str(repo), "--json"]) == 1
+    assert json.loads(capsys.readouterr().out)["verdict"] == "failing"
