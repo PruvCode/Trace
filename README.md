@@ -340,15 +340,46 @@ Approved rules live in `.trace/RULES.md`, in Git, next to the code they govern:
   rules for files changed since `HEAD` (`--all` in CI) with the project's
   interpreter, in a subprocess with a timeout and a minimal environment.
   Approved checks are reviewed code, like the test suite. Each failure is
-  rerun once and classified: `flaky`, `environment` (could not run),
-  `regression_in_progress` (uncommitted change breaks the rule) or
-  `stale_or_regression` (committed code fails; a person decides whether
-  rule or code is wrong). Only the last two fail the command. Each failure
-  carries a `next:` step, commits touching the file since approval, the
-  rule's provenance, and `repeated` when the same file content already failed
-  the same check (state in `.agent-memory/rule-checks.json`). Rules with no
-  checks are listed as not verified. Write one bullet per requirement so each
-  clause has its own checks.
+  rerun once and classified:
+  - `regression_in_progress`: an uncommitted change fails the check.
+  - `stale_or_regression`: committed code fails; a person decides whether the
+    rule or the code is wrong.
+  - `missing_check`: the approved test no longer exists.
+  - `flaky` (failed, then passed) and `environment` (could not run):
+    **inconclusive**, meaning not verified. They are never reported as a pass.
+
+  Every run prints a `verdict`: `verified`, `failing`, `inconclusive` or
+  `nothing to check`. Exit codes:
+
+  | Exit code | Meaning |
+  |---|---|
+  | 0 | verified |
+  | 1 | failing |
+  | 3 | inconclusive |
+
+  `--allow-inconclusive` lets CI exit 0 anyway. The override is printed and
+  appears in the JSON as `override`, so it is never silent.
+
+  Each failure carries:
+  - a `next:` step;
+  - the commits touching the file since approval;
+  - the rule's provenance;
+  - `repeated`, when the same file content already failed the same check
+    (state in `.agent-memory/rule-checks.json`).
+
+  Rules with no checks are listed as not verified. Write one bullet per
+  requirement so each clause has its own checks.
+- **What checks are not.** A check result is evidence, not a verdict on
+  correctness:
+  - TRACE reports; it never edits code.
+  - Its guidance never asks for code to be bent to fit a disputed rule. If the
+    rule is wrong for a change, propose a rule change for review.
+  - A repeated identical failure says stop and escalate to a person.
+  - Repair loops belong to the agent, under its own budget.
+  - A rule can be withdrawn or replaced only by a reviewed change to
+    `.trace/RULES.md`.
+  - Lessons that don't reduce to a reliable check stay plain notes, with no
+    check.
 - **Propose from a fix (prototype).** `trace rules propose <commit>
   [--pythonpath src] [--later 5] [--write]` turns a fix commit that changed
   code and tests into a proposed rule:
