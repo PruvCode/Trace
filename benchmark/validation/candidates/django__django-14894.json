@@ -9,7 +9,7 @@
     "db_functions.comparison.test_coalesce.CoalesceTests.test_gt_two_expressions",
     "annotations.tests.NonAggregateAnnotationTestCase.test_empty_queryset_annotation"
   ],
-  "failure_reason": "checkout_failed: RuntimeError: worktree checkout failed for 9466fd7842: fatal: Unable to create 'C:/Users/pruth/AppData/Local/TraceSWECache/repos/django__django/.git/worktrees/django__django1/index.lock': File exists.\n\nAnother git process seems to be running in this repository, or the lock file may be stale",
+  "failure_reason": "checkout_failed: RuntimeError: worktree checkout failed for 9466fd7842: fatal: Unable to create '~/AppData/Local/TraceSWECache/repos/django__django/.git/worktrees/django__django1/index.lock': File exists.\n\nAnother git process seems to be running in this repository, or the lock file may be stale",
   "gold_patch_applies": false,
   "has_test_patch": false,
   "p2p_labels": [

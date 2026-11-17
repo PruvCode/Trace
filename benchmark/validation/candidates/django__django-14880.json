@@ -27,7 +27,7 @@
     "invalid_models_tests.test_relative_fields.AccessorClashTests.test_m2m_to_integer",
     "invalid_models_tests.test_relative_fields.AccessorClashTests.test_m2m_to_m2m"
   ],
-  "failure_reason": "checkout_failed: RuntimeError: worktree checkout failed for 402ae37873: fatal: Unable to create 'C:/Users/pruth/AppData/Local/TraceSWECache/repos/django__django/.git/worktrees/django__django1/index.lock': File exists.\n\nAnother git process seems to be running in this repository, or the lock file may be stale",
+  "failure_reason": "checkout_failed: RuntimeError: worktree checkout failed for 402ae37873: fatal: Unable to create '~/AppData/Local/TraceSWECache/repos/django__django/.git/worktrees/django__django1/index.lock': File exists.\n\nAnother git process seems to be running in this repository, or the lock file may be stale",
   "gold_patch_applies": false,
   "has_test_patch": false,
   "p2p_labels": [

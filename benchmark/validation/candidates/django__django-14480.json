@@ -35,7 +35,7 @@
     "aggregation_regress.tests.AggregationTests.test_filter_aggregates_negated_xor_connector",
     "aggregation_regress.tests.AggregationTests.test_filter_aggregates_xor_connector"
   ],
-  "failure_reason": "checkout_failed: RuntimeError: worktree checkout failed for 795da6306a: fatal: Unable to create 'C:/Users/pruth/AppData/Local/TraceSWECache/repos/django__django/.git/worktrees/django__django1/index.lock': File exists.\n\nAnother git process seems to be running in this repository, or the lock file may be stale",
+  "failure_reason": "checkout_failed: RuntimeError: worktree checkout failed for 795da6306a: fatal: Unable to create '~/AppData/Local/TraceSWECache/repos/django__django/.git/worktrees/django__django1/index.lock': File exists.\n\nAnother git process seems to be running in this repository, or the lock file may be stale",
   "gold_patch_applies": false,
   "has_test_patch": false,
   "p2p_labels": [

@@ -524,7 +524,7 @@
     "schema.tests.SchemaTests.test_unique_constraint_field_and_expression",
     "schema.tests.SchemaTests.test_unique_name_quoting"
   ],
-  "failure_reason": "checkout_failed: RuntimeError: worktree checkout failed for 68ef274bc5: fatal: Unable to create 'C:/Users/pruth/AppData/Local/TraceSWECache/repos/django__django/.git/worktrees/django__django1/index.lock': File exists.\n\nAnother git process seems to be running in this repository, or the lock file may be stale",
+  "failure_reason": "checkout_failed: RuntimeError: worktree checkout failed for 68ef274bc5: fatal: Unable to create '~/AppData/Local/TraceSWECache/repos/django__django/.git/worktrees/django__django1/index.lock': File exists.\n\nAnother git process seems to be running in this repository, or the lock file may be stale",
   "gold_patch_applies": false,
   "has_test_patch": false,
   "p2p_labels": [],

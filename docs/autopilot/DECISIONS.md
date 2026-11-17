@@ -1,6 +1,6 @@
 # Decisions
 
-**D1 — Isolated workspace = git worktree at C:\Users\pruth\trace-autonomous.** Outside OneDrive (no sync locks), shares object store so no clone of private DBs. WIP imported by `git diff --binary | git apply` plus verbatim copy of untracked files; verified by diff hash and sha256.
+**D1 — Isolated workspace = git worktree at ~\trace-autonomous.** Outside OneDrive (no sync locks), shares object store so no clone of private DBs. WIP imported by `git diff --binary | git apply` plus verbatim copy of untracked files; verified by diff hash and sha256.
 
 **D2 — Fixture sources copied from the original disk into the worktree (ignored, not committed).** HEAD (`clean-history`) tracks zero files under `fixtures/` (`.gitignore: fixtures/*/`); `clean-main` tracked toy/deps/history sources and gitlinks for the rest. A fresh clone of HEAD cannot run the benchmark/structural tests. Logged as defect DEF-1.
 

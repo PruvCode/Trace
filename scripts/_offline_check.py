@@ -12,8 +12,8 @@ import subprocess
 import time
 from pathlib import Path
 
-CLONE = Path(r"C:\Users\pruth\AppData\Local\TraceSWECache\repos\django__django")
-TRACE = Path(r"C:\Users\pruth\OneDrive\Desktop\Trace")
+CLONE = Path.home() / r"AppData\Local\TraceSWECache\repos\django__django"
+TRACE = Path.home() / r"OneDrive\Desktop\Trace"
 
 
 def git(args, env):

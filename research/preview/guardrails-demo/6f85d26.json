@@ -29,7 +29,7 @@
       "role": "before",
       "check": "tests/test_types.py::test_path_dash_no_byteswarning",
       "outcome": "fail",
-      "output": "^^^^^^^^^^^^\nE         BytesWarning: Comparison between bytes and string\nE         \nE       assert 1 == 0\nE        +  where 1 = CompletedProcess(args=['C:\\\\Users\\\\pruth\\\\Documents\\\\Codex\\\\2026-11-14\\\\referenced-chatgpt-conversation-this-is-an\\\\wo...                                               ^^^^^^^^^^^^^^^^^\\nBytesWarning: Comparison between bytes and string\\n').returncode\n\ntests\\test_types.py:149: AssertionError\n=========================== short test summary info ===========================\nFAILED tests/test_types.py::test_path_dash_no_byteswarning - AssertionError: ...\n1 failed in 0.70s\n"
+      "output": "^^^^^^^^^^^^\nE         BytesWarning: Comparison between bytes and string\nE         \nE       assert 1 == 0\nE        +  where 1 = CompletedProcess(args=['~\\\\Documents\\\\Codex\\\\2026-11-14\\\\referenced-chatgpt-conversation-this-is-an\\\\wo...                                               ^^^^^^^^^^^^^^^^^\\nBytesWarning: Comparison between bytes and string\\n').returncode\n\ntests\\test_types.py:149: AssertionError\n=========================== short test summary info ===========================\nFAILED tests/test_types.py::test_path_dash_no_byteswarning - AssertionError: ...\n1 failed in 0.70s\n"
     },
     {
       "revision": "6f85d26dcd50c1745e81040ed4f2b61f8bf293cf",

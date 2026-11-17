@@ -1,7 +1,7 @@
 {
   "repo": "django/django",
   "repo_slug": "django__django",
-  "cache_path": "C:/Users/pruth/AppData/Local/TraceSWECache/repos/django__django",
+  "cache_path": "~/AppData/Local/TraceSWECache/repos/django__django",
   "phase": "Option A conversion was already performed 2026-09-14 09:40-10:02; verified and hardened 11:00-11:20",
 
   "materialization": {

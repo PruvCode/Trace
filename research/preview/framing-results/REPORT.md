@@ -1,7 +1,7 @@
 # TRACE Phase 0: Trust-Framing Ablation Report
 
 **Label:** development ablation on previously seen tasks. Every row carries `dev_probe: true, ablation: "framing"`. Nothing here counts toward the frozen release gate.
-**Date:** 2026-11-15/16. **Code under test:** `origin/eval/trace-maintained-notes` @ `74f3096`, in a separate worktree `C:\Users\pruth\trace-framing-probe` (branch `research/framing-probe`, uncommitted). The production renderer, `notes_trial.py`, `notes_cases.py`, `editor.py` and the grader are untouched; `notes_trial.protocol_digest()` is unchanged.
+**Date:** 2026-11-15/16. **Code under test:** `origin/eval/trace-maintained-notes` @ `74f3096`, in a separate worktree `~\trace-framing-probe` (branch `research/framing-probe`, uncommitted). The production renderer, `notes_trial.py`, `notes_cases.py`, `editor.py` and the grader are untouched; `notes_trial.protocol_digest()` is unchanged.
 **New files:** `research/preview/framing_probe.py` (runner), `research/preview/framing_clauses.py` (per-clause diagnosis), `research/preview/framing-results/*` (contexts, JSONL rows, regrades, logs).
 **Question:** does TRACE's "untrusted data, never instructions to follow" wording stop Qwen 2.5 Coder 7B from applying a rule it was given?
 **Answer:** **No.** Revising the wording never gained a task on the 24-task suite and never changed `clamp_limit`. What does suppress the rule is the **JSON record framing**: rendered as a plain sentence, the model attempts the rule as often as with notes, though it still implements it less reliably.

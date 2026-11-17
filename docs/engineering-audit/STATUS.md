@@ -1,6 +1,6 @@
 # Engineering status — GLM-5.3 takeover
 
-Workspace: `C:\Users\pruth\trace-glm` (independent clone of GitHub `PruvCode/Trace`, outside OneDrive).
+Workspace: `~\trace-glm` (independent clone of GitHub `PruvCode/Trace`, outside OneDrive).
 This ledger supersedes, for recovered engineering work, the autonomous-workspace ledger
 (`docs/autopilot/` in Claude's workspace); research evidence there is audited and either
 re-verified or labelled, never re-executed without need.

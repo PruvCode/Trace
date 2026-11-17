@@ -2,13 +2,13 @@
 # Queued behind run_all.sh: waits for the full suite, then runs the prose follow-up,
 # regrades everything, and runs the per-clause diagnosis. Never overlaps Ollama use.
 set -euo pipefail
-cd /c/Users/pruth/trace-framing-probe
-S="C:/Users/pruth/AppData/Local/Temp/claude/7ddaedbc3ef3ec90/88b3784d-0d46-4b7d-8adc-055a92c4e482/scratchpad/framing-scratch"
-W='C:/Users/pruth/Documents/Codex/2026-11-14/referenced-chatgpt-conversation-this-is-an/work'
-WASI='C:/Users/pruth/Documents/Codex/2026-11-11/referenced-chatgpt-conversation-this-is-an/work/p5-cpython'
+cd $HOME/trace-framing-probe
+S="$HOME/AppData/Local/Temp/claude/7ddaedbc3ef3ec90/88b3784d-0d46-4b7d-8adc-055a92c4e482/scratchpad/framing-scratch"
+W="$HOME/Documents/Codex/2026-11-14/referenced-chatgpt-conversation-this-is-an/work"
+WASI="$HOME/Documents/Codex/2026-11-11/referenced-chatgpt-conversation-this-is-an/work/p5-cpython"
 PY="$W/trace-ci/Scripts/python.exe"
 R=research/preview/framing-results
-COMMON=(--trace C:/Users/pruth/TRACE-graph-source --click "$W/eval-click" --packaging "$W/eval-packaging"
+COMMON=(--trace $HOME/TRACE-graph-source --click "$W/eval-click" --packaging "$W/eval-packaging"
         --scratch "$S" --wasi "$WASI" --contexts $R/contexts.json)
 SMOKE=(--task trace:memory/store.py:clamp_limit --task click:src/click/formatting.py:iter_rows)
 

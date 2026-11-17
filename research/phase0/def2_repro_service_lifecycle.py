@@ -21,7 +21,7 @@ import sys
 import time
 from pathlib import Path
 
-WT = Path(r"C:\Users\pruth\trace-glm")
+WT = Path.home() / "trace-glm"
 sys.path.insert(0, str(WT))
 
 OPENCODE = Path(os.environ["TEMP"]) / "trace_tools" / "oc118" / "node_modules" / "opencode-ai" / "bin" / "opencode.exe"

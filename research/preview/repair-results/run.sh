@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
-cd /c/Users/pruth/trace-rules
-S="C:/Users/pruth/AppData/Local/Temp/claude/7ddaedbc3ef3ec90/88b3784d-0d46-4b7d-8adc-055a92c4e482/scratchpad/repair-scratch"
-W='C:/Users/pruth/Documents/Codex/2026-11-14/referenced-chatgpt-conversation-this-is-an/work'
-WASI='C:/Users/pruth/Documents/Codex/2026-11-11/referenced-chatgpt-conversation-this-is-an/work/p5-cpython'
+cd $HOME/trace-rules
+S="$HOME/AppData/Local/Temp/claude/7ddaedbc3ef3ec90/88b3784d-0d46-4b7d-8adc-055a92c4e482/scratchpad/repair-scratch"
+W="$HOME/Documents/Codex/2026-11-14/referenced-chatgpt-conversation-this-is-an/work"
+WASI="$HOME/Documents/Codex/2026-11-11/referenced-chatgpt-conversation-this-is-an/work/p5-cpython"
 PY="$W/trace-ci/Scripts/python.exe"
 R=research/preview/repair-results
-C=(--trace C:/Users/pruth/TRACE-graph-source --click "$W/eval-click" --packaging "$W/eval-packaging" --scratch "$S" --wasi "$WASI")
+C=(--trace $HOME/TRACE-graph-source --click "$W/eval-click" --packaging "$W/eval-packaging" --scratch "$S" --wasi "$WASI")
 "$PY" -m research.preview.repair_trial run "${C[@]}" --output $R/smoke-greedy.jsonl --run smoke-greedy \
   --task trace:memory/store.py:clamp_limit --task click:src/click/formatting.py:iter_rows
 echo "BATCH smoke done"

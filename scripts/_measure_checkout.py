@@ -14,11 +14,11 @@ import sys
 import time
 from pathlib import Path
 
-SCRATCH = Path(
-    r"C:\Users\pruth\AppData\Local\TraceSWECache\scratch\django__django"
+SCRATCH = Path.home() / (
+    r"AppData\Local\TraceSWECache\scratch\django__django"
 )
-LOCK = Path(
-    r"C:\Users\pruth\AppData\Local\TraceSWECache\repos\django__django"
+LOCK = Path.home() / (
+    r"AppData\Local\TraceSWECache\repos\django__django"
     r"\.git\worktrees\django__django\index.lock"
 )
 

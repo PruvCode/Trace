@@ -2,7 +2,7 @@
 
 **Status:** greedy run complete and independently regraded (120/120 reproduced, 0 mismatches).
 **Label:** development probe on the 24 previously seen maintained-notes tasks. Not held-out evidence. One seed at temperature 0.
-**Setup:** Qwen 2.5 Coder 7B (`dae161e2…`) on CPU via Ollama, `num_ctx` 2048, 400 output tokens, the frozen fenced prompt with editor v2 extraction and one format repair (`notes_trial.proposal`), WASI grader. Harness: `research/preview/graphify_trial.py`. Graphify `graphifyy` 0.9.111 in `C:\Users\pruth\graphify-eval\.venv`.
+**Setup:** Qwen 2.5 Coder 7B (`dae161e2…`) on CPU via Ollama, `num_ctx` 2048, 400 output tokens, the frozen fenced prompt with editor v2 extraction and one format repair (`notes_trial.proposal`), WASI grader. Harness: `research/preview/graphify_trial.py`. Graphify `graphifyy` 0.9.111 in `~\graphify-eval\.venv`.
 
 ## Arms
 
@@ -62,4 +62,4 @@ Graphify preservation failures: `is_git_path` (code) and `is_valid_pylock_path` 
 
 ## Files
 
-`contexts.json` (every prompt context), `retrieval.json` / `retrieval.txt`, `full-greedy.jsonl` (120 rows + header), `regrade-full-greedy.jsonl`, `summary-full-greedy.txt`, `run.log`. Workspace and graphs: `C:\Users\pruth\graphify-eval`.
+`contexts.json` (every prompt context), `retrieval.json` / `retrieval.txt`, `full-greedy.jsonl` (120 rows + header), `regrade-full-greedy.jsonl`, `summary-full-greedy.txt`, `run.log`. Workspace and graphs: `~\graphify-eval`.

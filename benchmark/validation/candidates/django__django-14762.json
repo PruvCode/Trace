@@ -8,7 +8,7 @@
     "contenttypes_tests.test_fields.GenericForeignKeyTests.test_get_object_cache_respects_deleted_objects",
     "prefetch_related.tests.GenericRelationTests.test_deleted_GFK"
   ],
-  "failure_reason": "checkout_failed: RuntimeError: worktree checkout failed for cdad96e633: fatal: Unable to create 'C:/Users/pruth/AppData/Local/TraceSWECache/repos/django__django/.git/worktrees/django__django1/index.lock': File exists.\n\nAnother git process seems to be running in this repository, or the lock file may be stale",
+  "failure_reason": "checkout_failed: RuntimeError: worktree checkout failed for cdad96e633: fatal: Unable to create '~/AppData/Local/TraceSWECache/repos/django__django/.git/worktrees/django__django1/index.lock': File exists.\n\nAnother git process seems to be running in this repository, or the lock file may be stale",
   "gold_patch_applies": false,
   "has_test_patch": false,
   "p2p_labels": [

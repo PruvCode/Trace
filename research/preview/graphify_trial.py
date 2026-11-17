@@ -41,7 +41,7 @@ from research.preview.effectiveness import request as ollama
 from research.preview.notes_cases import CASES, REPOS
 
 ARMS = ("no_memory", "notes", "trace", "graphify_code", "graphify_history")
-GRAPHIFY = Path("C:/Users/pruth/graphify-eval")
+GRAPHIFY = Path.home() / "graphify-eval"
 BUDGET = 750
 
 
