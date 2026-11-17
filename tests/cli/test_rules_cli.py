@@ -134,6 +134,16 @@ def test_a_check_that_cannot_run_is_inconclusive_not_green(repo, capsys):
     assert "verdict: inconclusive" in text and "--allow-inconclusive" in text
 
 
+def test_check_before_the_first_commit_has_nothing_to_check(tmp_path, capsys):
+    root = tmp_path / "fresh"
+    root.mkdir()
+    git(root, "init", "-q", "-b", "main")  # no commit yet: HEAD does not exist
+    (root / "app.py").write_text("x = 1\n", encoding="utf-8")
+    git(root, "add", "app.py")
+    assert cli.main(["rules", "check", str(root)]) == 0  # no approval ref, so no approved rules: not a crash
+    assert "verdict: nothing to check" in capsys.readouterr().out
+
+
 def test_verified_and_failing_verdicts(repo, capsys):
     assert cli.main(["rules", "check", str(repo), "--all", "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["verdict"] == "verified"

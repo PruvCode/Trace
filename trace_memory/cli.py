@@ -638,8 +638,15 @@ def cmd_search(args) -> int:
 
 
 def _changed_files(project: Path) -> list[str]:
-    tracked = task_library.local_git(project, "diff", "--name-only", "HEAD").decode("utf-8", "replace").split("\n")
-    untracked = task_library.local_git(project, "ls-files", "--others", "--exclude-standard").decode("utf-8", "replace").split("\n")
+    """Files that differ from HEAD, plus untracked files. Before the first commit there is no HEAD to diff
+    against, so everything staged counts as changed."""
+    git = lambda *args: task_library.local_git(project, *args).decode("utf-8", "replace").split("\n")
+    try:
+        git("rev-parse", "--verify", "--quiet", "HEAD")
+        tracked = git("diff", "--name-only", "HEAD")
+    except ValueError:  # unborn branch (fresh `git init`): no commit yet
+        tracked = git("diff", "--name-only", "--cached")
+    untracked = git("ls-files", "--others", "--exclude-standard")
     return sorted({path for path in tracked + untracked if path})
 
 
