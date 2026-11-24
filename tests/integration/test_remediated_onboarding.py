@@ -5,7 +5,10 @@ import os
 import sys
 from pathlib import Path
 
-from memory import source_files, structural
+import pytest
+from mcp.server.mcpserver.exceptions import ToolError
+
+from memory import mcp_server, message_context, opencode_service, source_files, structural
 from memory.task_library import local_git
 from research.phase6 import auth_debug_smoke
 from trace_memory import cli, project
@@ -71,3 +74,16 @@ def test_project_commands_reject_a_shared_memory_file(tmp_path, capsys, monkeypa
         assert "Private fixture" not in output.out
         assert original.read_bytes() == snapshot
     assert not (tmp_path / "borrowed.db").exists()
+
+    recalled = message_context.get_message_start_context(
+        borrowed, opencode_db_path=tmp_path / "unused.db", project_dir=other,
+        session_id="fixture", query="architecture decision",
+    )
+    assert not recalled["items"] and recalled["stats"]["reason"] == "memory-unavailable"
+    capture = opencode_service.get_service(other).capture_once()
+    assert capture["status"] == "error" and "refusing to open" in capture["message"]
+    monkeypatch.setattr(mcp_server, "_DB_PATH", borrowed)
+    monkeypatch.setattr(mcp_server, "_ROOT_PATH", other)
+    with pytest.raises(ToolError, match="project memory is unavailable"):
+        mcp_server.search_context("architecture decision")
+    assert original.read_bytes() == snapshot

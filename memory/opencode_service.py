@@ -313,6 +313,11 @@ class OpenCodeCaptureService:
             self.trace_db_path,
         )
 
+    def _trace_connection(self) -> sqlite3.Connection:
+        db = self.trace_db_path.absolute()
+        root = self.project_path if db.is_relative_to(self.project_path) else db.parent.resolve()
+        return store_mod.connect(store_mod.require_local_storage(root, db))
+
     def _get_service_dir(self) -> Path:
         return self._service_dir
 
@@ -440,7 +445,7 @@ class OpenCodeCaptureService:
             raise OpenCodeSchemaError(f"Schema validation failed: {e}")
 
     def _ensure_trace_schema(self) -> None:
-        conn = store_mod.connect(self.trace_db_path)
+        conn = self._trace_connection()
         try:
             store_mod.init_schema(conn)
         finally:
@@ -448,7 +453,7 @@ class OpenCodeCaptureService:
 
     def _load_cursors(self) -> dict | None:
         """Persisted cursors, or None when capture has never run for this project."""
-        conn = store_mod.connect(self.trace_db_path)
+        conn = self._trace_connection()
         try:
             cursors = store_mod.get_all_monitor_cursors(conn, self._cursor_scope)
         finally:
@@ -468,7 +473,7 @@ class OpenCodeCaptureService:
             }
 
     def _save_cursors(self, cursors: dict) -> None:
-        conn = store_mod.connect(self.trace_db_path)
+        conn = self._trace_connection()
         try:
             store_mod.set_monitor_cursors(conn, self._cursor_scope, cursors)
         finally:
@@ -512,7 +517,7 @@ class OpenCodeCaptureService:
             self._log("OpenCode database layout changed; reloading capture state")
             vars(state).update(vars(self._prepare_state()))
         durable = (dict(state.cursors), set(state.processed), state.captured)
-        trace = store_mod.connect(self.trace_db_path)
+        trace = self._trace_connection()
         self._batch_conn = trace
         failure: CaptureError | None = None
         try:
@@ -862,7 +867,7 @@ class OpenCodeCaptureService:
         """Run ``fn(conn, autocommit)`` in the current pass's transaction, or standalone."""
         if self._batch_conn is not None:
             return fn(self._batch_conn, False)
-        conn = store_mod.connect(self.trace_db_path)
+        conn = self._trace_connection()
         try:
             return fn(conn, True)
         finally:

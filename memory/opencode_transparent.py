@@ -583,7 +583,7 @@ class OpenCodeTransparentAdapter(CaptureAdapter):
         from memory import opencode_plugin as opencode_plugin_mod
         from memory.opencode_service import DISABLED_FILE
 
-        require_local_paths(project_path, project_mod.db_path(project_path))
+        project_mod.require_local_db(project_path)
         _check_service_paths(project_path)
         opencode_plugin_mod.check_install_targets(project_path)
         marker = integration_marker(project_path)

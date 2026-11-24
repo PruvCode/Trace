@@ -86,9 +86,18 @@ def _connect(*, refresh: bool = True) -> sqlite3.Connection:
             "structural database not found; index the workspace first"
             " (memory.structural.index_workspace)"
         )
+    from trace_memory.project import TraceUserError
+
+    db = _DB_PATH.absolute()
+    project = _project_root()
+    root = project.resolve() if project is not None else db.parent.resolve()
+    try:
+        store_mod.require_local_storage(root if db.is_relative_to(root) else db.parent.resolve(), db)
+    except (OSError, TraceUserError) as exc:
+        raise ToolError("TRACE project memory is unavailable") from exc
     if refresh:
         _ensure_structural_fresh()
-    return store_mod.connect(_DB_PATH)
+    return store_mod.connect(db)
 
 
 @server.tool()
