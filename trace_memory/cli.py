@@ -657,14 +657,14 @@ def cmd_search(args) -> int:
 def _changed_files(project: Path) -> list[str]:
     """Files that differ from HEAD, plus untracked files. Before the first commit there is no HEAD to diff
     against, so everything staged counts as changed."""
-    git = lambda *args: task_library.local_git(project, *args).decode("utf-8", "replace").split("\n")
     try:
-        git("rev-parse", "--verify", "--quiet", "HEAD")
-        tracked = git("diff", "--name-only", "HEAD")
+        task_library.local_git(project, "rev-parse", "--verify", "--quiet", "HEAD")
+        base = "HEAD"
     except ValueError:  # unborn branch (fresh `git init`): no commit yet
-        tracked = git("diff", "--name-only", "--cached")
-    untracked = git("ls-files", "--others", "--exclude-standard")
-    return sorted({path for path in tracked + untracked if path})
+        base = "--cached"
+    tracked = task_library.local_git(project, "diff", "--name-only", "--relative", "-z", base, "--")
+    untracked = task_library.local_git(project, "ls-files", "--others", "--exclude-standard", "-z", "--")
+    return sorted({os.fsdecode(path) for path in (tracked + untracked).split(b"\0") if path})
 
 
 def cmd_rules(args) -> int:
@@ -730,7 +730,7 @@ def cmd_rules(args) -> int:
                     and previous.get(result.identity) == result.digest)
         if result.classification == "regression_in_progress" and result.digest:
             state[result.identity] = result.digest
-        changes = (rule_checks.changes_since(project, loaded.ref, result.rule.path)
+        changes = (rule_checks.changes_since(project, loaded.commit, result.rule.path)
                    if result.classification in rule_checks.BLOCKING else [])
         report.append((result, repeated, changes, rule_checks.next_step(result, repeated=repeated, changes=changes)))
     if state_path_safe and state_file.parent.is_dir() and (state or previous):

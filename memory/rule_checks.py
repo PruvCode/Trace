@@ -241,8 +241,8 @@ def subprocess_executor(
 def _uncommitted(root: Path, path: str) -> bool:
     """True when the governed file is untracked or differs from HEAD (git failure counts as changed)."""
     try:
-        task_library.local_git(root, "ls-files", "--error-unmatch", "--", path)
-        task_library.local_git(root, "diff", "--quiet", "HEAD", "--", path)
+        task_library.local_git(root, "--literal-pathspecs", "ls-files", "--error-unmatch", "--", path)
+        task_library.local_git(root, "--literal-pathspecs", "diff", "--quiet", "HEAD", "--", path)
         return False
     except ValueError:
         return True
@@ -327,7 +327,7 @@ def changes_since(root: Path, ref: str | None, path: str, limit: int = 5) -> lis
     if not ref:
         return []
     try:
-        log = task_library.local_git(root, "log", "--oneline", f"-{limit}", f"{ref}..HEAD", "--", path)
+        log = task_library.local_git(root, "--literal-pathspecs", "log", "--oneline", f"-{limit}", f"{ref}..HEAD", "--", path)
     except ValueError:
         return []
     return [line for line in log.decode("utf-8", "replace").splitlines() if line.strip()]

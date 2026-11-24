@@ -44,3 +44,30 @@ def test_same_metadata_different_content_refreshes_symbols(tmp_path, monkeypatch
     monkeypatch.setattr(structural.source_files, "inventory", lambda _: snapshot)
     assert project.find_definitions(tmp_path, "alpha") == []
     assert project.find_definitions(tmp_path, "bravo")[0]["file"] == "app.py"
+
+
+def test_project_commands_reject_a_shared_memory_file(tmp_path, capsys, monkeypatch):
+    owner = tmp_path / "owner"
+    other = tmp_path / "other"
+    owner.mkdir()
+    other.mkdir()
+    project.init_project(owner)
+    monkeypatch.chdir(owner)
+    assert cli.main(["record", "--type", "decision",
+                     "--message", "Private fixture architecture decision"]) == 0
+    capsys.readouterr()
+    original = project.db_path(owner)
+    snapshot = original.read_bytes()
+    borrowed = project.db_path(other)
+    borrowed.parent.mkdir()
+    os.link(original, borrowed)
+
+    monkeypatch.chdir(other)
+    for args in (["context", "architecture decision"], ["init"], ["find", "entrypoint"],
+                 ["privacy"], ["backup", str(tmp_path / "borrowed.db")]):
+        assert cli.main(args) == 2
+        output = capsys.readouterr()
+        assert "regular project-local files" in output.err
+        assert "Private fixture" not in output.out
+        assert original.read_bytes() == snapshot
+    assert not (tmp_path / "borrowed.db").exists()

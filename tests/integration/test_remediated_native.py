@@ -12,7 +12,7 @@ from threading import Timer
 import pytest
 
 from trace_memory import cli, project
-from trace_memory.native import HOOK_HOSTS
+from trace_memory.native import HOOK_HOSTS, MAX_PAYLOAD_BYTES
 
 
 def hook(root, host, session, text, turn="1"):
@@ -63,6 +63,23 @@ def test_contention_retries_and_reports_exhaustion(tmp_path, capsys):
     hook(tmp_path, "codex", "exhausted", "A private synthetic prompt under a persistent lock.")
     hook(tmp_path, "codex", "exhausted", "A private synthetic prompt under a persistent lock.")
     assert [role for session, role, _ in rows(tmp_path) if session == "codex:exhausted"] == ["system", "user"]
+
+
+def test_invalid_native_payloads_are_visible_without_retaining_content(tmp_path, capsys):
+    install(tmp_path, "codex", capsys)
+    for payload in ('{"private fixture content"', '"private fixture content"', 'x' * (MAX_PAYLOAD_BYTES + 1)):
+        result = subprocess.run(
+            [sys.executable, "-m", "trace_memory.native", "hook", "codex", str(tmp_path), "UserPromptSubmit"],
+            input=payload, capture_output=True, text=True, encoding="utf-8", timeout=20, check=True,
+        )
+        assert json.loads(result.stdout) == {}
+        assert result.stderr.strip() == "TRACE native capture unavailable (invalid_payload)"
+        assert rows(tmp_path) == []
+        health = project.privacy_info(tmp_path)["hosts"]["codex"]
+        assert health["last_failure"]["error"] == "invalid_payload" and health["last_saved"] is None
+    hook(tmp_path, "codex", "after-rejection", "Fixture password=synthetic-guard-931.")
+    assert "***REDACTED***" in rows(tmp_path)[-1][2]
+    assert "synthetic-guard-931" not in rows(tmp_path)[-1][2]
 
 
 @pytest.mark.parametrize("host", HOOK_HOSTS)

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import stat
 from itertools import combinations
 from pathlib import Path
 
@@ -172,6 +173,27 @@ CREATE TABLE IF NOT EXISTS task_sessions (
     task_id TEXT NOT NULL REFERENCES tasks(id)
 );
 """
+
+
+def require_local_storage(root: Path, db: Path) -> Path:
+    """Validate a project's database and SQLite sidecars before opening them."""
+    from memory.opencode_files import require_local_paths
+    from trace_memory.project import TraceUserError
+
+    paths = (db, *(db.with_name(db.name + suffix) for suffix in ("-wal", "-shm", "-journal")))
+    require_local_paths(root, *paths)
+    for path in paths:
+        try:
+            info = path.stat()
+        except FileNotFoundError:
+            continue
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+            raise TraceUserError(
+                f"refusing to open {path}",
+                "TRACE memory must use regular project-local files without additional hard links.",
+                "Use a separate database or restore a copy of a TRACE backup inside this project.",
+            )
+    return db
 
 
 def connect(db_path: Path) -> sqlite3.Connection:

@@ -21,7 +21,6 @@ from tree_sitter import Language, Parser, Query, QueryCursor
 from memory import code_graph, entity_graph, source_files, web_structure
 from memory import store as store_mod
 from memory.graph_model import Definition, Fragment
-from memory.opencode_files import require_local_paths
 
 _DEFS_PATTERN = """
 ((function_definition name: (identifier) @fname) @fnode)
@@ -253,8 +252,7 @@ def index_workspace(root: Path, db_path: Path) -> dict:
     """Publish one complete structural snapshot without changing episodic rows."""
     root = root.resolve()
     db_path = db_path.absolute()
-    require_local_paths(root if db_path.is_relative_to(root) else db_path.parent.resolve(),
-                        db_path, Path(str(db_path) + "-wal"), Path(str(db_path) + "-shm"))
+    store_mod.require_local_storage(root if db_path.is_relative_to(root) else db_path.parent.resolve(), db_path)
     files = source_files.inventory(root)
     conn = store_mod.connect(db_path)
     try:
@@ -315,7 +313,7 @@ def is_structural_fresh(project_root: Path) -> bool:
     """Check if structural memory is up to date."""
     project_root = project_root.resolve()
     db = project_root / ".agent-memory" / "memory.db"
-    require_local_paths(project_root, db, Path(str(db) + "-wal"), Path(str(db) + "-shm"))
+    store_mod.require_local_storage(project_root, db)
     if not db.exists():
         return False
     conn = store_mod.connect(db)

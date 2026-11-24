@@ -88,9 +88,13 @@ def is_initialized(project: Path) -> bool:
     return db_path(project).exists()
 
 
+def require_local_db(project: Path) -> Path:
+    return store_mod.require_local_storage(project.resolve(), db_path(project))
+
+
 def require_db(project: Path) -> Path:
     """Return the database path or raise a helpful error (exit 2)."""
-    db = db_path(project)
+    db = require_local_db(project)
     if not db.exists():
         raise TraceUserError(
             f"no TRACE memory here: {project}",
@@ -170,7 +174,7 @@ def privacy_info(project: Path) -> dict:
     from memory import opencode_plugin
     from trace_memory import native
 
-    database = db_path(project)
+    database = require_local_db(project)
     marker = integration_marker(project)
     legacy = opencode_plugin.plugin_path(project)
     modern = opencode_plugin.plugin_v2_dir(project) / "index.js"
@@ -217,12 +221,12 @@ def preview_context(project: Path, session_id: str | None, query: str | None, *,
     from memory import synthetic
     from memory.opencode_files import integration_marker, require_local_paths
 
-    database = db_path(project)
+    database = require_local_db(project)
     if agent != "opencode":
         from memory import dialogue
         from trace_memory import native
 
-        if not native.hook_enabled(project, agent) or not native.require_local_db(project).is_file():
+        if not native.hook_enabled(project, agent) or not database.is_file():
             return ""
         session = session_id or ""
         if session and not session.startswith(f"{agent}:"):
@@ -840,7 +844,7 @@ def get_recent_context(
     limit: int = 10,
 ) -> list[dict]:
     """Get relevant historical context for a new session."""
-    database = db_path(project)
+    database = require_local_db(project)
     if not database.is_file():
         return []
     with closing(store_mod.connect(database)) as conn:

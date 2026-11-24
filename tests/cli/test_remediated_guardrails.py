@@ -123,3 +123,27 @@ def test_actual_failure_beats_infrastructure_error_on_retry(repo):
     tries = iter([("fail", "assertion failed"), ("error", "runner closed")])
     result = rule_checks.run(repo, [rule], lambda _rule, _check: next(tries))
     assert rule_checks.verdict(result) == "failing"
+
+
+def test_changed_rules_use_project_relative_literal_paths(repo, capsys):
+    nested = repo / "projects" / "auth"
+    nested.mkdir(parents=True)
+    governed = nested / "café[1].py"
+    governed.write_text("COUNT = 1\n", encoding="utf-8")
+    (nested / "auth.py").write_text("COUNT = 1\n", encoding="utf-8")
+    approved = save(nested, "## café[1].py\n- Check counter.\n  checks:\n    - py: COUNT == 1\n"
+                            "## auth.py\n- Check sibling.\n  checks:\n    - py: COUNT == 1\n")
+    (repo / "app.py").write_text("COUNT = 2\n", encoding="utf-8")
+    args = ["rules", "check", str(nested), "--json", "--strict", "--ref", approved]
+    assert cli.main(args) == 0
+    assert json.loads(capsys.readouterr().out)["selected"] == 0
+
+    governed.write_text("COUNT = 2\n", encoding="utf-8")
+    assert cli.main(args) == 1
+    report = json.loads(capsys.readouterr().out)
+    assert report["selected"] == 1 and report["results"][0]["scope"] == governed.name
+    assert report["results"][0]["classification"] == "regression_in_progress"
+
+    git(nested, "add", "--", governed.name)
+    assert cli.main(args) == 1
+    assert json.loads(capsys.readouterr().out)["results"][0]["scope"] == governed.name

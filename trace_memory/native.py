@@ -6,7 +6,6 @@ import argparse
 import json
 import os
 import sqlite3
-import stat
 import sys
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -14,7 +13,7 @@ from pathlib import Path
 
 from memory.opencode_files import atomic_write_text, require_local_paths
 from memory.opencode_service import LockHandle, SERVICE_DIR_NAME
-from trace_memory.project import TraceUserError, db_path
+from trace_memory.project import TraceUserError, require_local_db
 
 HOOK_HOSTS = ("codex", "claude", "antigravity")
 MAX_PAYLOAD_BYTES = 256 * 1024
@@ -22,20 +21,6 @@ MAX_PAYLOAD_BYTES = 256 * 1024
 
 def receipt_path(project: Path, host: str) -> Path:
     return project / SERVICE_DIR_NAME / f"integration-{host}.json"
-
-
-def require_local_db(project: Path) -> Path:
-    db = db_path(project)
-    paths = (db, *(db.with_name(db.name + suffix) for suffix in ("-wal", "-shm", "-journal")))
-    require_local_paths(project, *paths)
-    for path in paths:
-        try:
-            info = path.stat()
-        except FileNotFoundError:
-            continue
-        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
-            raise ValueError("TRACE memory must use regular project-local files")
-    return db
 
 
 def active(project: Path, host: str) -> bool:
@@ -122,7 +107,7 @@ def _read_diagnostic(project: Path, host: str, status: str) -> dict | None:
             row = json.loads(handle.read(1024))
         time = datetime.fromisoformat(row["time"]).isoformat()
         error = row["error"]
-        if error not in (None, "database_busy", "database_error", "capture_lock"):
+        if error not in (None, "database_busy", "database_error", "capture_lock", "invalid_payload"):
             return None
         return {"status": status, "time": time, "error": error}
     except (OSError, ValueError, KeyError, TypeError, TraceUserError):
@@ -232,10 +217,13 @@ def _hook(host: str, project: Path, event: str) -> dict:
     if not hook_enabled(project, host):
         return {}
     raw = sys.stdin.buffer.read(MAX_PAYLOAD_BYTES + 1)
-    if len(raw) > MAX_PAYLOAD_BYTES:
-        return {}
-    payload = json.loads(raw)
+    try:
+        payload = json.loads(raw) if len(raw) <= MAX_PAYLOAD_BYTES else None
+    except (UnicodeError, json.JSONDecodeError, RecursionError):
+        payload = None
     if not isinstance(payload, dict):
+        _diagnostic(project, host, "failed", "invalid_payload")
+        print("TRACE native capture unavailable (invalid_payload)", file=sys.stderr)
         return {}
     try:
         with capture_lock(project):

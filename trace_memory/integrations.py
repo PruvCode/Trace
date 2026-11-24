@@ -16,7 +16,8 @@ from pathlib import Path
 from memory.opencode_files import atomic_write_text, integration_marker, require_local_paths
 from memory.opencode_service import DISABLED_FILE, LockHandle, default_opencode_db_path, get_service
 from trace_memory import project as projects
-from trace_memory.native import HOOK_HOSTS, privacy_state, receipt_path, require_local_db
+from trace_memory.native import HOOK_HOSTS, privacy_state, receipt_path
+from trace_memory.project import require_local_db
 
 HOSTS = (*HOOK_HOSTS, "opencode")
 NAME = "trace-memory"
