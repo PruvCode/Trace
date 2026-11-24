@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -98,12 +99,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("privacy", help="show capture, recall, and test recording settings")
     p.add_argument("--project", default=".", help="project directory (default: current directory)")
+    p.add_argument("--json", action="store_true", help="return per-host privacy state as JSON")
     p.set_defaults(func=cmd_privacy)
 
     p = sub.add_parser("preview", help="show the memory block TRACE would include in a new request")
     p.add_argument("--project", default=".", help="project directory (default: current directory)")
     p.add_argument("--session", help="current session ID, for task binding and exclusion")
     p.add_argument("--query-stdin", action="store_true", help="read a query from standard input")
+    p.add_argument("--agent", choices=integrations.HOSTS, default="opencode", help="preview this host's recall path")
     p.set_defaults(func=cmd_preview)
 
     p = sub.add_parser("obsidian", help="export a human-readable project memory snapshot to an Obsidian vault")
@@ -210,6 +213,8 @@ def build_parser() -> argparse.ArgumentParser:
             action.add_argument("--python", default=None, help="interpreter for checks (default: TRACE_RULES_PYTHON or this Python)")
             action.add_argument("--allow-inconclusive", action="store_true",
                                 help="exit 0 when checks could not run or were flaky (printed as an override; those rules stay unverified)")
+            action.add_argument("--strict", action="store_true",
+                                help="require a pinned approval commit or an origin tracking ref and an approved rules file")
         action.set_defaults(func=cmd_rules)
     propose = rule_actions.add_parser("propose", help="draft a rule from a fix commit and validate its checks against history")
     propose.add_argument("commit", help="the fix commit (must change code and tests)")
@@ -284,9 +289,10 @@ def build_parser() -> argparse.ArgumentParser:
     monitor_sub.set_defaults(func=cmd_monitor)
 
     # Persistent service subcommands
-    service_sub = sub.add_parser("service", help="persistent OpenCode capture service (survives CLI exit)")
+    service_sub = sub.add_parser("service", help="inspect, pause, or resume capture for a host")
     service_sub.add_argument("action", choices=["start", "stop", "status", "restart"], help="service action")
     service_sub.add_argument("--project", default=".", help="project directory (default: current directory)")
+    service_sub.add_argument("--agent", choices=integrations.HOSTS, default="opencode", help="host to control")
     service_sub.set_defaults(func=cmd_service)
 
     test_capture = sub.add_parser("test-capture", help="opt in to local OpenCode pytest outcome capture")
@@ -312,7 +318,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("history", help="show deterministic git facts for a path/symbol")
     _project_arg(p)
-    p.add_argument("--path", default=None, help="file path relative to the repo")
+    p.add_argument("--path", dest="history_path", default=None, help="file path relative to the TRACE project")
     p.add_argument("--symbol", default=None, help="only commits touching this symbol")
     _limit_arg(p)
     p.set_defaults(func=cmd_history)
@@ -344,7 +350,7 @@ def cmd_init(args) -> int:
     print(f"  Local database: {stats['db']}")
     hint = project_mod.gitignore_hint(project)
     if hint:
-        print("  (Add the TRACE directories listed below to .gitignore before committing)")
+        print("  (Review the Git privacy notice below before committing)")
     else:
         print("  (git-ignored, or not inside a git repository)")
     print()
@@ -420,13 +426,22 @@ def cmd_status(args) -> int:
 def cmd_privacy(args) -> int:
     project = project_mod.resolve_project(args.project)
     info = project_mod.privacy_info(project)
+    if args.json:
+        print(json.dumps(info, sort_keys=True))
+        return EXIT_OK
     memory_status = "initialized" if info["initialized"] else "not initialized"
     print(f"Project memory ({memory_status}): {info['database']}")
     print(f"OpenCode capture: {info['capture']}")
-    print(f"Automatic recall: {info['automatic_recall']}")
+    print(f"OpenCode · Automatic recall: {info['automatic_recall']}")
+    for host, state in info["hosts"].items():
+        if host == "opencode":
+            continue
+        print(f"{host}: capture {state['capture']}, recall {state['recall']}")
+        if failure := state.get("last_failure"):
+            print(f"  Last capture failure: {failure['error']} at {failure['time']}")
     print("Selected test recording: " + ("opted in" if info["selected_test_capture_opt_in"] else "off"))
     print("Use 'trace preview' to inspect the memory TRACE can include in a new request.")
-    print("Use 'trace service stop' to pause capture or 'trace teardown opencode' to stop capture and recall.")
+    print("Use 'trace service stop --agent HOST' to pause capture. For native hosts it also pauses automatic recall.")
     return EXIT_OK
 
 
@@ -435,7 +450,7 @@ def cmd_preview(args) -> int:
 
     project = project_mod.resolve_project(args.project)
     query = read_query(sys.stdin) if args.query_stdin else None
-    text = project_mod.preview_context(project, args.session, query)
+    text = project_mod.preview_context(project, args.session, query, agent=args.agent)
     if text:
         print(text)
     else:
@@ -522,6 +537,8 @@ def cmd_report(args) -> int:
         lines.append(f"  branch: {(git.get('branch') or '?')} @ {(git.get('head') or '?')[:12]}")
         for entry in git.get("recent", []):
             lines.append(f"    {entry}")
+        if git.get("error"):
+            lines.append(f"  History unavailable ({git['error']})")
     else:
         lines.append("Git: not a git repository (git memory unavailable here)")
     lines.append("")
@@ -653,11 +670,12 @@ def _changed_files(project: Path) -> list[str]:
 def cmd_rules(args) -> int:
     from memory import rule_checks
     from memory import rules as rules_mod
+    from memory.opencode_files import atomic_write_text, require_local_paths
 
     project = _resolve(args)
     loaded = rules_mod.load(project, ref=args.ref)
     for error in loaded.errors:
-        print(f"warning: {error}", file=sys.stderr)
+        print(f"warning: {redact_mod.redact_text(error)}", file=sys.stderr)
     if args.rules_action == "list":
         approved = rules_mod.scoped(loaded.approved, args.file)
         proposed = rules_mod.scoped(loaded.proposed, args.file)
@@ -678,16 +696,32 @@ def cmd_rules(args) -> int:
         for rule in loaded.removed_locally:
             print(f"note: approved rule removed only in the working tree, still enforced: {rule.scope}")
         return EXIT_OK
+    authority_errors = list(loaded.approval_errors)
+    requested_ref = args.ref or os.environ.get("TRACE_RULES_REF")
+    if loaded.commit is None and (args.all or args.strict or requested_ref or (project / rules_mod.RULES_PATH).exists()):
+        authority_errors.append("no usable approval ref for this verification")
+    strict_ref_ok = bool(loaded.commit and (loaded.ref == loaded.commit
+                                          or loaded.ref.startswith("refs/remotes/origin/")))
+    if args.strict and not strict_ref_ok:
+        authority_errors.append("strict verification requires a full approval commit or an origin tracking ref")
+    if args.strict and not loaded.has_approved_file:
+        authority_errors.append("the approval commit does not contain a readable rules file")
+
     files = None if args.all else (args.file or _changed_files(project))
     in_scope = rules_mod.scoped(loaded.approved, files) if files != [] else []
-    selected = [rule for rule in in_scope if rule.checks]
-    results = rule_checks.run(project, selected, rule_checks.subprocess_executor(project, args.python))
+    selected = [rule for rule in in_scope if rule.checks and (strict_ref_ok or not args.strict)]
+    results = rule_checks.run(project, selected, rule_checks.subprocess_executor(project, args.python, detailed=True))
     blocking = rule_checks.blocking(results)
     # Last failing file digest per check, for uncommitted work only: the same content failing again is a repeat.
     state_file = project_mod.memory_dir(project) / "rule-checks.json"
+    state_path_safe = False
     try:
+        require_local_paths(project, state_file)
+        state_path_safe = True
         previous = json.loads(state_file.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    except (OSError, ValueError, project_mod.TraceUserError):
+        previous = {}
+    if not isinstance(previous, dict):
         previous = {}
     state = {key: value for key, value in previous.items() if key not in {r.identity for r in results}}
     report = []
@@ -699,21 +733,36 @@ def cmd_rules(args) -> int:
         changes = (rule_checks.changes_since(project, loaded.ref, result.rule.path)
                    if result.classification in rule_checks.BLOCKING else [])
         report.append((result, repeated, changes, rule_checks.next_step(result, repeated=repeated, changes=changes)))
-    if state_file.parent.is_dir() and (state or previous):
-        state_file.write_text(json.dumps(state, indent=1, sort_keys=True), encoding="utf-8")
+    if state_path_safe and state_file.parent.is_dir() and (state or previous):
+        try:
+            require_local_paths(project, state_file)
+            atomic_write_text(state_file, json.dumps(state, indent=1, sort_keys=True))
+        except (OSError, ValueError, project_mod.TraceUserError) as exc:
+            print(f"warning: could not save repeat-check state ({type(exc).__name__})", file=sys.stderr)
     uncovered = [rule.scope for rule in in_scope if not rule.checks]
     unsure = rule_checks.inconclusive(results)
     outcome = rule_checks.verdict(results)
+    if authority_errors and not blocking:
+        outcome = "inconclusive"
+    override = bool(args.allow_inconclusive and unsure and not blocking and not authority_errors)
+    errors = redact_mod.redact_value([*loaded.errors, *[issue for issue in authority_errors if issue not in loaded.errors]])
+    attempts = [attempt for result in results for attempt in result.attempts]
     if args.json:
         print(json.dumps({"ref": loaded.ref, "commit": loaded.commit, "verdict": outcome, "blocking": len(blocking),
-                          "inconclusive": len(unsure), "override": bool(args.allow_inconclusive and unsure), "uncovered": uncovered,
+                          "inconclusive": len(unsure), "override": override,
+                          "override_requested": args.allow_inconclusive, "uncovered": uncovered,
+                          "selected": len(results), "checked": sum(any(a.passed or a.failed for a in r.attempts) for r in results),
+                          "skipped": sum(a.skipped for a in attempts),
+                          "execution_errors": sum(a.errors for a in attempts), "errors": errors,
                           "results": [{**r.as_record(), "repeated": repeated, "changes_since_approval": changes,
                                        "next_step": step} for r, repeated, changes, step in report]}, indent=2))
     else:
         passed = sum(r.outcome == "pass" for r in results)
         print(f"{len(results)} checks from {len(selected)} approved rules: {passed} passed, {len(results) - passed} not passed")
         print(f"verdict: {outcome}" + (f" ({len(unsure)} check(s) could not run or changed result on rerun: not verified)" if unsure else ""))
-        if unsure and args.allow_inconclusive:
+        for error in authority_errors:
+            print(f"approval error: {redact_mod.redact_text(error)}")
+        if override:
             print("override: inconclusive checks allowed by --allow-inconclusive (these rules were NOT verified)")
         for result, repeated, _, step in report:
             if result.outcome != "pass":
@@ -726,7 +775,7 @@ def cmd_rules(args) -> int:
             print(f"not run (proposed, not approved): {', '.join(skipped)}")
     if blocking:
         return EXIT_ERROR
-    return EXIT_INCONCLUSIVE if unsure and not args.allow_inconclusive else EXIT_OK
+    return EXIT_INCONCLUSIVE if authority_errors or (unsure and not override) else EXIT_OK
 
 
 def cmd_rules_propose(args) -> int:
@@ -1015,6 +1064,13 @@ def cmd_monitor(args) -> int:
 
 def cmd_service(args) -> int:
     project = project_mod.resolve_project(args.project)
+    if args.agent != "opencode":
+        from trace_memory import native
+        try:
+            return _print_rows([native.service(project, args.agent, args.action)], "")
+        except (OSError, ValueError) as exc:
+            raise project_mod.TraceUserError("could not change native capture state", str(exc),
+                                             "Check 'trace doctor' and retry.") from exc
     if args.action == "start":
         result = project_mod.start_opencode_service(project)
     elif args.action == "stop":
@@ -1096,7 +1152,7 @@ def cmd_history(args) -> int:
     project = _resolve(args)
     return _print_rows(
         project_mod.project_history(
-            project, path=args.path, symbol=args.symbol, limit=args.limit
+            project, path=args.history_path, symbol=args.symbol, limit=args.limit
         ),
         "no commits found",
     )

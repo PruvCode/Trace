@@ -259,7 +259,7 @@ def export(project: Path, vault: Path, focus: str | None) -> tuple[Path, Path, P
     if len(files) > MAX_FILES:
         raise ValueError(f"TRACE code maps support up to {MAX_FILES:,} visible project files")
     structural.ensure_structural_memory(project)
-    fingerprint = structural._fingerprint(files)
+    fingerprint = structural._fingerprint(project, files)
     with closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True, timeout=5)) as conn:
         conn.row_factory = sqlite3.Row
         conn.execute("BEGIN")

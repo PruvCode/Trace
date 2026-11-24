@@ -155,6 +155,59 @@ def _query_terms(text: str, limit: int = 16) -> list[str]:
     return [w[:-2] if len(w) >= 6 else w for w in words if w not in _STOP][:limit]
 
 
+def _usable_message(conn: sqlite3.Connection, msg: transcript_mod.TranscriptMessage) -> bool:
+    return bool(msg.content.strip() and msg.role in ("user", "assistant")
+                and not msg.metadata.get("incomplete")
+                and msg.metadata.get("part_type") not in transcript_mod.NON_CONVERSATIONAL_PART_TYPES
+                and not synthetic_mod.is_synthetic_memory_text(msg.content)
+                and not transcript_mod.session_parent(conn, msg.session_id))
+
+
+def search_context(conn: sqlite3.Connection, query: str, limit: int = 10) -> list[dict]:
+    """Rank active unassigned findings and conversations for explicit lookup."""
+    if not query.strip():
+        return []
+    query = query[:2000]
+    events = episodic_mod.search_events(conn, query=query, limit=store_mod.MAX_LIMIT, natural=True,
+                                       unassigned_only=True, active_only=True)
+    messages = transcript_mod.search_messages(
+        conn, query=query, limit=store_mod.MAX_LIMIT, natural=True, unassigned_only=True,
+        conversation_only=True, exclude_superseded=list(episodic_mod.superseded_map(conn)),
+    )
+    candidates = [
+        (event.search_tier, order, {
+            "kind": "event", "id": event.id, "type": event.type, "timestamp": event.timestamp,
+            "source": event.source, "file": event.file, "symbol": event.symbol,
+            "evidence_refs": event.evidence_refs, "content": _finding_text(event.payload),
+        })
+        for order, event in enumerate(events) if not _is_captured_tool_activity(event.payload)
+    ]
+    candidates.extend(
+        (msg.search_tier, order, {**msg.as_record(), "kind": "transcript"})
+        for order, msg in enumerate(messages) if _usable_message(conn, msg)
+    )
+    results = []
+    seen = set()
+    remaining = MAX_CHARS
+    for _, _, row in sorted(candidates, key=lambda candidate: candidate[:2]):
+        row = redact_mod.redact_value(row)
+        match = " ".join(row["content"].casefold().split())
+        if not match or match in seen:
+            continue
+        row["content"] = _truncate(row["content"], MAX_ITEM_CHARS)[0]
+        size = len(json.dumps(row)) + 1
+        if size > remaining and row.get("metadata"):
+            row["metadata"] = {}
+            size = len(json.dumps(row)) + 1
+        if size <= remaining:
+            results.append(row)
+            seen.add(match)
+            remaining -= size
+        if len(results) >= min(MAX_ITEMS, store_mod.clamp_limit(limit)):
+            break
+    return results
+
+
 def _relevant_messages(conn: sqlite3.Connection, query: str, exclude_session_id: str | None,
                        limit: int = MAX_RELEVANT, *, task_id: str | None = None,
                        retired: list[int] | None = None, symbols: tuple[str, ...] = ()) -> list[dict]:
@@ -172,7 +225,9 @@ def _relevant_messages(conn: sqlite3.Connection, query: str, exclude_session_id:
     if retired:
         scope["exclude_superseded"] = retired
     try:
-        hits = transcript_mod.search_messages(conn, query=" OR ".join(prefixes), limit=store_mod.MAX_LIMIT, **scope)
+        match = " OR ".join(prefixes) if symbols else query
+        hits = transcript_mod.search_messages(conn, query=match, natural=not symbols,
+                                              limit=store_mod.MAX_LIMIT, **scope)
         if len(prefixes) > 1 and len(hits) == store_mod.MAX_LIMIT:
             # Preserve a matching explicit decision when short routine messages fill the FTS shortlist.
             decisions = transcript_mod.search_messages(
@@ -190,14 +245,9 @@ def _relevant_messages(conn: sqlite3.Connection, query: str, exclude_session_id:
         )
 
     out: list[dict] = []
-    for msg in sorted(hits, key=score, reverse=True):
+    for msg in sorted(hits, key=lambda message: (message.search_tier, -score(message))):
         content = (msg.content or "").strip()
-        if (msg.session_id == exclude_session_id or not content
-                or msg.role not in ("user", "assistant")
-                or msg.metadata.get("incomplete")
-                or msg.metadata.get("part_type") in transcript_mod.NON_CONVERSATIONAL_PART_TYPES
-                or synthetic_mod.is_synthetic_memory_text(content)
-                or transcript_mod.session_parent(conn, msg.session_id)):
+        if msg.session_id == exclude_session_id or not _usable_message(conn, msg):
             continue
         if named and (not named.intersection(re.findall(r"[a-z0-9_]+", content.lower()))
                       or (msg.role != "user" and not _DECISION.search(content))):
@@ -370,18 +420,21 @@ def _source_matches(conn, project, task_id, query, retired, file=None):
 
 def _scoped_findings(conn, project, task_id, query, *, exact=None, file=None, retired=()) -> list[dict]:
     terms = _query_terms(query or "")
-    match = " OR ".join(f"{term}*" for term in terms)
+    match = query if terms else None
+    if terms and task_id is not None:
+        # Bound tasks rank local evidence and failure history above generic word overlap.
+        match = " OR ".join(f"{term}*" for term in terms)
     exact_only = exact is not None
     if exact is None:
         exact, _ = _source_matches(conn, project, task_id, query, retired, file)
     if task_id is None and not match and not exact:
         return []
     options = {"task_id": task_id, "unassigned_only": task_id is None, "limit": 25, "file": file, "normalize_file": True}
-    hits = episodic_mod.search_events(conn, query=match, **options) if match and not exact_only else []
+    hits = episodic_mod.search_events(conn, query=match, natural=True, **options) if match and not exact_only else []
     matched = {event.id for event in hits}
     candidates = episodic_mod.search_events(conn, ids=list(exact), **{**options, "file": None, "limit": 30}) if exact else []
     if match and not exact_only:
-        candidates += episodic_mod.search_events(conn, query=match, decision_only=True, **options)
+        candidates += episodic_mod.search_events(conn, query=match, natural=True, decision_only=True, **options)
         candidates += hits
     if task_id is not None and not exact_only:
         candidates += episodic_mod.search_events(conn, newest_first=True, **options)
@@ -526,20 +579,22 @@ def format_block(items: list[dict]) -> str:
     return "\n".join(["<TRACE MEMORY>", *synthetic_mod.render_records(items), "</TRACE MEMORY>"])
 
 
-def approved_notes(project_root: Path | None, query: str | None) -> str:
-    """Approved rules the request names, as plain notes; "" when none or on any error.
-
-    Disabled with ``TRACE_NOTES_FIRST=0``. Proposed (unapproved) rules are never returned.
-    """
+def _approved_rules(project_root: Path | None, query: str | None) -> list[rules_mod.Rule]:
     if os.environ.get("TRACE_NOTES_FIRST") == "0" or not query or project_root is None:
-        return ""
+        return []
     root = Path(project_root)
     if not (root / rules_mod.RULES_PATH).is_file():
-        return ""
+        return []
     try:
-        return rules_mod.render_notes(rules_mod.mentioned(rules_mod.load(root).approved, query))
-    except Exception:  # noqa: BLE001 - session start is fail-open
-        return ""
+        approved = rules_mod.load(root)
+        return [] if approved.approval_errors else rules_mod.mentioned(approved.approved, query)
+    except (OSError, ValueError):
+        return []
+
+
+def approved_notes(project_root: Path | None, query: str | None) -> str:
+    """Approved rules the request names, rendered as plain notes."""
+    return rules_mod.render_notes(_approved_rules(project_root, query))
 
 
 def get_session_start_context(
@@ -576,12 +631,18 @@ def get_session_start_context(
     }
     if notes_first:
         db_guess = Path(trace_db_path)
-        notes = approved_notes(project_root or (db_guess.resolve().parent.parent
-                                                if db_guess.parent.name == ".agent-memory" else None), query)
-        if notes:
+        rules = _approved_rules(project_root or (db_guess.resolve().parent.parent
+                                if db_guess.parent.name == ".agent-memory" else None), query)
+        if rules:
+            selected = rules[:max(0, min(MAX_ITEMS, max_items))]
+            notes = rules_mod.render_notes(selected)
+            while selected and len(notes) > max_chars:
+                selected.pop()
+                notes = rules_mod.render_notes(selected)
             stats["notes"] = True
             stats["latency_ms"] = round((time.perf_counter() - started) * 1000, 1)
-            return {"items": [], "text": notes, "notes": notes, "truncated": False, "stats": stats}
+            return {"items": [], "text": notes, "notes": notes,
+                    "truncated": len(selected) < len(rules), "stats": stats}
     try:
         db_path = Path(trace_db_path)
         if not db_path.exists():
@@ -622,7 +683,8 @@ def get_session_start_context(
                     prior_sessions = list(dict.fromkeys(item["session"] for item in messages))
                     max_chars = min(max_chars, MAX_TASK_CHARS)
                 else:
-                    findings = _recent_findings(conn, root, retired=retired)
+                    ranked = _scoped_findings(conn, root, None, query, retired=retired) if query else []
+                    findings = list(reversed(ranked)) if ranked else _recent_findings(conn, root, retired=retired)
                     tail_limit = MAX_TASK_TAIL if relevant else MAX_TAIL_MESSAGES
                     messages, prior_sessions = _tail_messages(conn, exclude_session_id, tail_limit, retired=retired)
                     if relevant:

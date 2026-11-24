@@ -14,6 +14,7 @@ EXPECTED_TOOLS = {
     "search_symbols",
     "record_event",
     "search_events",
+    "search_context",
     "get_git_history",
     "get_rules",
     "get_task_context",

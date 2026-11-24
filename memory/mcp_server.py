@@ -13,12 +13,12 @@ Usage:
 from __future__ import annotations
 
 import argparse
+from contextlib import closing
 import asyncio
 import os
 import sqlite3
 import sys
 from collections.abc import Callable
-from dataclasses import asdict
 from pathlib import Path
 
 from mcp.server.mcpserver import MCPServer
@@ -210,6 +210,7 @@ def search_events(
                 commit=commit,
                 limit=limit,
                 task_id=task_id,
+                natural=True,
             )
         ]
     finally:
@@ -225,6 +226,13 @@ def get_evidence(reference: str, task_id: str | None = None, offset: int = 0) ->
         return evidence_mod.expand(conn, root.resolve() if root else None, reference, task_id=task_id, offset=offset)
     finally:
         conn.close()
+
+
+@server.tool()
+def search_context(query: str, limit: int = 10) -> list[dict]:
+    """Search active unassigned findings and conversations, returning bounded historical data."""
+    with closing(_connect(refresh=False)) as conn:
+        return session_context_mod.search_context(conn, query, limit)
 
 
 @server.tool()
@@ -262,10 +270,12 @@ def get_rules(path: str | None = None, symbol: str | None = None) -> str:
 
 def _repo() -> Path:
     _check_integration()
-    if _REPO_PATH is None or not (_REPO_PATH / ".git").exists():
+    if _REPO_PATH is None:
         raise RuntimeError(
             "git repo not configured; start the server with --repo <git repo>"
         )
+    if _ROOT_PATH is not None and _ROOT_PATH.resolve().is_relative_to(_REPO_PATH.resolve()):
+        return _ROOT_PATH
     return _REPO_PATH
 
 
@@ -317,13 +327,14 @@ def search_transcripts(
     conn = _connect()
     try:
         return [
-            redact_mod.redact_value(asdict(msg))
+            redact_mod.redact_value(msg.as_record())
             for msg in transcript_mod.search_messages(
                 conn,
                 session_id=session_id,
                 role=role,
                 query=query,
                 limit=limit,
+                natural=True,
             )
         ]
     finally:
@@ -342,7 +353,7 @@ def get_transcript_session(
     conn = _connect()
     try:
         return [
-            redact_mod.redact_value(asdict(msg))
+            redact_mod.redact_value(msg.as_record())
             for msg in transcript_mod.get_session_messages(conn, session_id, limit)
         ]
     finally:

@@ -6,6 +6,7 @@ import os
 import re
 import sqlite3
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
 
@@ -134,6 +135,32 @@ def is_git_path(value: object) -> bool:
     )
 
 
+@dataclass(frozen=True)
+class GitScope:
+    """A local Git worktree and the TRACE project's prefix within it."""
+
+    root: Path
+    prefix: str
+
+    def object_path(self, path: str) -> str:
+        if not is_git_path(path):
+            raise ValueError("Use a project-relative Git file path")
+        return self.prefix + path
+
+    def project_path(self, path: str) -> str | None:
+        return path[len(self.prefix):] if path.startswith(self.prefix) else None
+
+
+def git_scope(project: Path) -> GitScope | None:
+    project = project.resolve()
+    try:
+        root = Path(os.fsdecode(local_git(project, "rev-parse", "--show-toplevel").rstrip(b"\r\n"))).resolve()
+        relative = project.relative_to(root)
+    except (ValueError, OSError, RuntimeError):
+        return None
+    return GitScope(root, "" if relative == Path(".") else relative.as_posix() + "/")
+
+
 def task_context_file(file: str | None) -> str | None:
     if file is None:
         return None
@@ -165,6 +192,7 @@ def evidence_links(
     if not isinstance(evidence, list) or len(evidence) > MAX_EVIDENCE:
         raise ValueError(f"evidence must be a list of up to {MAX_EVIDENCE} references")
     links = {}
+    scope = None
     for entry in evidence:
         if not isinstance(entry, dict):
             raise ValueError("each evidence reference must be an object")
@@ -180,16 +208,18 @@ def evidence_links(
             if not is_commit(commit):
                 raise ValueError("Git evidence requires a full commit hash")
             if not is_git_path(path):
-                raise ValueError("Git evidence requires a repository-relative file path")
+                raise ValueError("Git evidence requires a project-relative file path")
             if redact.redact_text(path) != path:
                 raise ValueError("Git evidence path contains sensitive text")
-            if project_root is None or not (project_root / ".git").exists():
-                raise ValueError("Git evidence requires the TRACE project to be a Git repository root")
+            if scope is None and project_root is not None:
+                scope = git_scope(project_root)
+            if scope is None:
+                raise ValueError("Git evidence requires the TRACE project to be in a Git worktree")
             commit = commit.lower()
             link = (None, commit, path)
             if link in links:
                 continue
-            if not _git_file_exists(project_root, commit, path):
+            if not _git_file_exists(scope.root, commit, scope.object_path(path)):
                 raise ValueError("Git evidence file does not exist at that commit in this project")
             links[link] = None
         else:

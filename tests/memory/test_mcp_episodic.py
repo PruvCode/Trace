@@ -21,6 +21,7 @@ EXPECTED_TOOLS = [
     "get_transcript_session",
     "record_event",
     "record_transcript_message",
+    "search_context",
     "search_events",
     "search_symbols",
     "search_transcripts",

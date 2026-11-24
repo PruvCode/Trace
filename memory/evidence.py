@@ -32,14 +32,16 @@ def git_objects(
     valid = list(dict.fromkeys(
         (commit, path) for commit, path in keys if task_library.is_commit(commit) and task_library.is_git_path(path)
     ))
-    if not valid or project is None or not (project / ".git").exists():
+    scope = task_library.git_scope(project) if valid and project is not None else None
+    if scope is None:
         return {}
     requests = ["HEAD"]
     for commit, path in valid:
-        requests.extend((commit, f"{commit}:{path}", f"HEAD:{path}"))
+        object_path = scope.object_path(path)
+        requests.extend((commit, f"{commit}:{object_path}", f"HEAD:{object_path}"))
     try:
         lines = task_library.local_git(
-            project, "cat-file", "--batch-check=%(objectname) %(objecttype) %(objectsize)",
+            scope.root, "cat-file", "--batch-check=%(objectname) %(objecttype) %(objectsize)",
             data=("\n".join(requests) + "\n").encode("utf-8"),
         ).splitlines()
     except (ValueError, UnicodeError):

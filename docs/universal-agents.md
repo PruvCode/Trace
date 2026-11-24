@@ -56,6 +56,9 @@ raw host transcript files alone.
 | --- | --- |
 | `trace doctor` | Reports local registration, detected binaries, and pending or changed configuration. Check hook trust and MCP approval in the host. |
 | `trace status` | Shows the project’s stored memory and OpenCode capture status. |
+| `trace privacy --json` | Shows each host's project-level capture and recall state and the latest native write diagnostics. |
+| `trace preview --agent codex --query-stdin` | Previews the supplied request using the selected native host's recall logic and budget. Use `--session` to exclude that session. |
+| `trace service stop --agent codex` | Pauses TRACE hooks and managed MCP for Codex in this project. Claude Code and Antigravity use the same control. `start` resumes. OpenCode's service stop pauses its capture monitor while it retains recall. |
 | `trace update --all` | Refreshes registered integrations with the TRACE interpreter running the command. Install the reviewed package version first. |
 | `trace rollback --agent codex` | Restores the previous TRACE-managed registrations from before an update, or removes them after a first install. Claude Code and Antigravity use the same mechanism. |
 | `trace rollback --agent opencode` | Runs legacy OpenCode teardown. To restore an older OpenCode integration, run its setup from the reviewed older package. |
@@ -77,8 +80,18 @@ before enabling capture. The local MCP connection uses stdio, and the host may
 send recalled excerpts to its model provider. Recall labels historical text as
 untrusted. Set `TRACE_DISABLE_HOOKS=1` in the host environment to pause Codex,
 Claude Code, and Antigravity capture and automatic recall for that process.
-OpenCode capture can be paused with `trace service stop`. Uninstall to remove
-both automatic recall and the managed MCP registration for a host.
+OpenCode capture can be paused with `trace service stop`. Uninstall removes
+the managed hooks and MCP registration for a host. Reset pauses enrolled
+native hosts, even if the project is initialized again. Resume them explicitly
+with `trace service start --agent HOST`. Doctor reports the configuration
+and project-level state. Hook approval and environment overrides in a running
+host also affect what it executes.
+
+Native hooks retry transient SQLite contention for a bounded period. If a
+write still fails, the hook reports the failure and privacy diagnostics
+retain an error category and timestamp. These diagnostics contain no
+transcript text. A later replay of the same source can save the event
+without a duplicate.
 
 Before updating a project with important history, use `trace backup PATH` to
 save a consistent snapshot. Integration rollback changes configuration only.

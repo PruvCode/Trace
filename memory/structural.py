@@ -176,13 +176,19 @@ PARSER_VERSION = 2
 CODE_SUFFIXES = (".py", *web_structure.WEB_SUFFIXES)
 
 
-def _fingerprint(files) -> str:
-    inputs = [
-        (name, info.st_mtime_ns, info.st_ctime_ns, info.st_size)
-        if Path(name).suffix.lower() in CODE_SUFFIXES or Path(name).name == "package.json" else (name,)
-        for name, info in files.items()
-    ]
-    return hashlib.sha256(json.dumps([INDEX_VERSION, inputs], ensure_ascii=True).encode("ascii")).hexdigest()
+def _fingerprint(root: Path, files, observed: dict[str, str | None] | None = None) -> str:
+    inputs = []
+    for name in files:
+        if Path(name).suffix.lower() in CODE_SUFFIXES or Path(name).name == "package.json":
+            if observed is not None:
+                digest = observed[name]
+            else:
+                source = source_files.read_source(root, name)
+                digest = hashlib.sha256(source).hexdigest() if source is not None else None
+            inputs.append((name, digest))
+        else:
+            inputs.append((name,))
+    return hashlib.sha256(json.dumps([INDEX_VERSION, PARSER_VERSION, inputs], ensure_ascii=True).encode("ascii")).hexdigest()
 
 
 def _parse(path: str, source: bytes, suffix: str) -> Fragment:
@@ -250,7 +256,6 @@ def index_workspace(root: Path, db_path: Path) -> dict:
     require_local_paths(root if db_path.is_relative_to(root) else db_path.parent.resolve(),
                         db_path, Path(str(db_path) + "-wal"), Path(str(db_path) + "-shm"))
     files = source_files.inventory(root)
-    fingerprint = _fingerprint(files)
     conn = store_mod.connect(db_path)
     try:
         store_mod.init_schema(conn)
@@ -258,14 +263,16 @@ def index_workspace(root: Path, db_path: Path) -> dict:
             "SELECT file, source_hash, payload FROM structural_fragments WHERE parser_version=?", (PARSER_VERSION,)
         )}
         fragments, hashes, reparsed = {}, {}, set()
+        observed: dict[str, str | None] = {}
         for name in files:
             suffix = Path(name).suffix.lower()
             if suffix not in CODE_SUFFIXES:
                 continue
             source = source_files.read_source(root, name)
             if source is None:
+                observed[name] = None
                 continue
-            digest = hashes[name] = hashlib.sha256(source).hexdigest()
+            digest = observed[name] = hashes[name] = hashlib.sha256(source).hexdigest()
             old_hash, data = cache.get(name, (None, None))
             if old_hash == digest:
                 try:
@@ -275,13 +282,17 @@ def index_workspace(root: Path, db_path: Path) -> dict:
                     pass
             fragments[name] = _parse(name, source, suffix)
             reparsed.add(name)
-        packages = code_graph.read_packages(root, [path for path in files if Path(path).name == "package.json"])
+        manifests = {path: source_files.read_source(root, path) for path in files if Path(path).name == "package.json"}
+        observed.update({path: hashlib.sha256(data).hexdigest() if data is not None else None
+                         for path, data in manifests.items()})
+        fingerprint = _fingerprint(root, files, observed)
+        packages = code_graph.read_packages(manifests)
         resolutions = code_graph.resolve(fragments, packages)
         links = code_graph.legacy_links(resolutions)
         nodes, edges, unresolved = entity_graph.build(list(files), fragments, packages, resolutions)
         with conn:
             conn.execute("BEGIN IMMEDIATE")
-            if _fingerprint(source_files.inventory(root)) != fingerprint:
+            if _fingerprint(root, source_files.inventory(root)) != fingerprint:
                 raise ValueError("source files changed during indexing; rerun TRACE")
             _publish_legacy(conn, fragments, hashes, reparsed, links)
             entity_graph.publish(conn, nodes, edges)
@@ -296,8 +307,8 @@ def index_workspace(root: Path, db_path: Path) -> dict:
 
 def get_current_fingerprint(project_root: Path) -> dict:
     """Fingerprint working files so edits do not need a Git commit."""
-    return {"git_tree_hash": None,
-            "file_mtimes": _fingerprint(source_files.inventory(project_root.resolve()))}
+    root = project_root.resolve()
+    return {"git_tree_hash": None, "file_mtimes": _fingerprint(root, source_files.inventory(root))}
 
 
 def is_structural_fresh(project_root: Path) -> bool:

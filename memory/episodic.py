@@ -80,9 +80,11 @@ class Event:
     task_id: str | None = None
     evidence: list[dict] = field(default_factory=list)
     evidence_refs: list[str] = field(default_factory=list)
+    search_tier: int = field(default=0, repr=False, compare=False)
 
     def as_record(self) -> dict:
         record = asdict(self)
+        del record["search_tier"]
         if self.task_id is None:
             del record["task_id"]
         if not self.evidence:
@@ -318,6 +320,7 @@ def _row_to_event(row: sqlite3.Row, superseded: dict[int, int], evidence: dict[i
         task_id=row["task_id"] if "task_id" in row.keys() else None,
         evidence=[{k: v for k, v in link.items() if k != "reference"} for link in links],
         evidence_refs=[link["reference"] for link in links if link["reference"]],
+        search_tier=row["search_tier"] if "search_tier" in row.keys() else 0,
     )
 
 
@@ -361,6 +364,8 @@ def search_events(
     decision_only: bool = False,
     captured_failure_only: bool = False,
     normalize_file: bool = False,
+    natural: bool = False,
+    active_only: bool = False,
 ) -> list[Event]:
     """Narrow bounded retrieval.
 
@@ -387,6 +392,10 @@ def search_events(
         params.append(task_id)
     elif unassigned_only and store_mod.has_task_schema(conn):
         clauses.append("e.task_id IS NULL")
+    superseded = superseded_map(conn, task_id)
+    if active_only:
+        clauses.append("e.id NOT IN (SELECT value FROM json_each(?)) AND e.source <> 'capture'")
+        params.append(json.dumps(list(superseded)))
     if type is not None:
         if type not in EVENT_TYPES:
             raise ValueError(f"unknown event type filter {type!r}")
@@ -403,21 +412,22 @@ def search_events(
         clauses.append("replace(e.file, char(92), '/') = ?" if normalize_file else "e.file = ?")
         params.append(file.replace("\\", "/") if normalize_file else file)
     join = ""
+    tier, ranking = "0", ()
     order = "e.id DESC" if newest_first else "e.id"
     if query is not None and query.strip():
         join = " JOIN events_fts ON events_fts.rowid = e.id"
         clauses.append("events_fts MATCH ?")
-        params.append(store_mod.fts_query(query))
-        order = "bm25(events_fts), e.id DESC"
+        match, tier, ranking = store_mod.fts_search(query, "events_fts", natural=natural)
+        params.append(match)
+        order = "search_tier, bm25(events_fts), e.id DESC"
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     try:
         rows = conn.execute(
-            "SELECT e.*"
+            f"SELECT e.*, {tier} AS search_tier"
             f" FROM events e{join} {where} ORDER BY {order} LIMIT ?",
-            (*params, store_mod.clamp_limit(limit)),
+            (*ranking, *params, store_mod.clamp_limit(limit)),
         ).fetchall()
     except sqlite3.OperationalError as exc:
         raise store_mod.SearchQueryError(f"event search failed: {exc}") from exc
-    superseded = superseded_map(conn, task_id)
     evidence = _evidence_by_event(conn, rows)
     return [_row_to_event(row, superseded, evidence) for row in rows]

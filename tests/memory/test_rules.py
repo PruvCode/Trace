@@ -174,7 +174,10 @@ def test_mentioned_prefers_the_named_function_then_the_named_file():
                                                               "Keep every public function free of I/O"]
     assert texts("Tidy pkg/limits.py") == ["Keep every public function free of I/O"]  # file rules only
     assert texts("Fix parse_quota in pkg/limits.py") == ["Keep every public function free of I/O"]  # no rule for it
-    assert texts("clamp_limit is wrong") == ["Reject fractional floats by returning DEFAULT_LIMIT", "Other file's rule"]
+    assert texts("clamp_limit is wrong") == []  # ambiguous without a path
+    assert texts("Fix clamp_limit in sibling/limits.py") == []
+    assert texts("Fix clamp_limit in archive/pkg/limits.py") == []
+    assert texts("Fix sibling.clamp_limit") == []
     assert texts("my_clamp_limit2 and clamp_limits") == []  # whole words only
     assert texts("unrelated request") == []
 
@@ -253,12 +256,13 @@ def test_pythonpath_puts_the_tree_first(tmp_path):
     assert rule_checks.subprocess_executor(tmp_path, pythonpath=("src",))(rule, rule.checks[0]) == ("pass", "")
 
 
-def test_a_vanished_pytest_check_blocks_as_missing_not_environment(repo):
+def test_a_vanished_pytest_check_is_inconclusive_with_specific_guidance(repo):
     rule = rules.Rule("pkg/limits.py", None, "r", (rules.Check("pytest", "tests/test_limits.py::test_gone"),))
     gone = lambda r, c: ("error", "no tests ran\nERROR: not found: tests/test_limits.py::test_gone\n(no match in any of [<Module test_limits.py>])")
     broken = lambda r, c: ("error", "ERROR tests/test_limits.py - ImportError\nERROR: not found: tests/test_limits.py::test_gone")
     vanished = rule_checks.run(repo, [rule], gone)[0]
-    assert vanished.classification == "missing_check" and rule_checks.blocking([vanished]) == [vanished]
+    assert vanished.classification == "missing_check" and rule_checks.inconclusive([vanished]) == [vanished]
+    assert rule_checks.verdict([vanished]) == "inconclusive"
     assert "no longer exists" in rule_checks.next_step(vanished)
     assert rule_checks.run(repo, [rule], broken)[0].classification == "environment"  # the module failed to collect
 

@@ -302,11 +302,13 @@ def test_missing_path_helpful(capsys):
     assert "WHAT" in err and "HOW" in err
 
 
-def test_init_suggests_gitignore_in_git_repo(sample_project, capsys):
+def test_init_suggests_local_git_excludes(sample_project, capsys):
     subprocess.run(["git", "init"], cwd=str(sample_project),
                    capture_output=True, check=True)
     assert run_cli("init", str(sample_project)) == 0
-    assert ".gitignore" in capsys.readouterr().out
+    captured = capsys.readouterr()
+    assert "Git privacy notice" in captured.out
+    assert "/.agent-memory/" in captured.err and ".git/info/exclude" in captured.err
 
 
 def test_init_quiet_when_gitignored(sample_project, capsys):
@@ -316,16 +318,17 @@ def test_init_quiet_when_gitignored(sample_project, capsys):
     ignore.write_text(".agent-memory/\n", encoding="utf-8")
     assert run_cli("init", str(sample_project)) == 0
     output = capsys.readouterr().err
-    assert "add .trace-service/ to .gitignore" in output
+    assert "/.trace-service/" in output and ".git/info/exclude" in output
+    assert "/.agent-memory/" not in output
     assert ignore.read_text(encoding="utf-8") == ".agent-memory/\n"
     ignore.write_text(".agent-memory/\n.trace-service/\n", encoding="utf-8")
     assert run_cli("init", str(sample_project)) == 0
-    assert ".gitignore" not in capsys.readouterr().out
+    assert "Git privacy notice" not in capsys.readouterr().out
 
 
 def test_init_quiet_outside_git_repo(sample_project, capsys):
     assert run_cli("init", str(sample_project)) == 0
-    assert ".gitignore" not in capsys.readouterr().out
+    assert "Git privacy notice" not in capsys.readouterr().out
 
 
 def test_mcp_server_reaches_cli_database(sample_project, tmp_path):

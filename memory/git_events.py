@@ -27,6 +27,7 @@ from pathlib import Path
 
 from memory import store as store_mod
 from memory import structural as structural_mod
+from memory import task_library
 
 GIT_TIMEOUT = 60
 HUNK_HEADER = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
@@ -40,21 +41,21 @@ class FileChange:
 
 
 def _git(repo: Path, *args: str) -> str:
-    proc = subprocess.run(
-        ["git", *args],
-        cwd=str(repo),
-        capture_output=True,
-        text=True,
-        timeout=GIT_TIMEOUT,
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(f"git {' '.join(args)} failed: {proc.stderr.strip()}")
-    return proc.stdout
+    try:
+        return task_library.local_git(repo, *args, timeout=GIT_TIMEOUT).decode("utf-8", errors="replace")
+    except ValueError as exc:
+        raise RuntimeError(f"local Git {args[0]} failed") from exc
 
 
 def list_commits(repo: Path, path: str | None = None, max_commits: int = 50) -> list[str]:
     """SHAs newest-first, optionally restricted to a path. Bounded."""
-    args = ["rev-list", "--topo-order", "-n", str(max(1, max_commits)), "HEAD"]
+    try:
+        task_library.local_git(repo, "rev-parse", "--verify", "--quiet", "HEAD")
+    except ValueError as exc:
+        if isinstance(exc.__cause__, subprocess.CalledProcessError) and exc.__cause__.returncode == 1:
+            return []
+        raise RuntimeError("local Git could not resolve HEAD") from exc
+    args = ["--literal-pathspecs", "rev-list", "--topo-order", "-n", str(max(1, max_commits)), "HEAD"]
     if path:
         args += ["--", path]
     out = _git(repo, *args).strip()
@@ -73,12 +74,13 @@ def commit_message(repo: Path, sha: str) -> tuple[str, str]:
 
 def commit_files(repo: Path, sha: str) -> list[FileChange]:
     """Changed files with added/deleted line counts (--root for first commit)."""
-    out = _git(repo, "diff-tree", "--numstat", "-r", "--no-commit-id", "--root", sha)
+    out = _git(repo, "diff-tree", "--numstat", "-z", "-r", "-m", "--first-parent",
+               "--no-renames", "--no-commit-id", "--root", sha)
     changes: list[FileChange] = []
-    for line in out.splitlines():
+    for line in out.split("\0"):
         if not line.strip():
             continue
-        parts = line.split("\t")
+        parts = line.split("\t", 2)
         if len(parts) != 3:
             continue
         added_raw, deleted_raw, path = parts
@@ -93,15 +95,10 @@ def commit_files(repo: Path, sha: str) -> list[FileChange]:
 
 
 def _show(repo: Path, sha: str, path: str) -> bytes | None:
-    proc = subprocess.run(
-        ["git", "show", f"{sha}:{path}"],
-        cwd=str(repo),
-        capture_output=True,
-        timeout=GIT_TIMEOUT,
-    )
-    if proc.returncode != 0:
+    try:
+        return task_library.local_git(repo, "show", f"{sha}:{path}", timeout=GIT_TIMEOUT)
+    except ValueError:
         return None
-    return proc.stdout
 
 
 def _new_side_ranges(diff_text: str) -> list[tuple[int, int]]:
@@ -137,7 +134,8 @@ def changed_symbols(repo: Path, sha: str, path: str) -> list[str]:
         return []
     if before is None:
         return sorted({s.name for s in symbols})
-    diff = _git(repo, "diff", "-U0", "--no-color", f"{sha}^", sha, "--", path)
+    diff = _git(repo, "--literal-pathspecs", "diff", "--no-ext-diff", "--no-textconv",
+                "-U0", "--no-color", f"{sha}^", sha, "--", path)
     ranges = _new_side_ranges(diff)
     if not ranges:
         return []
@@ -159,13 +157,24 @@ def get_git_history(
 ) -> list[dict]:
     """Per-commit Git facts, newest-first, bounded. Symbol filter is
     post-attribution (a commit qualifies only if the symbol is attributed)."""
+    scope = task_library.git_scope(repo)
+    if scope is None:
+        raise ValueError("not a git repository or worktree")
+    pathspec = scope.object_path(path.replace("\\", "/")) if path is not None else scope.prefix
     entries: list[dict] = []
-    for sha in list_commits(repo, path, max_commits):
-        subject, body = commit_message(repo, sha)
-        files = commit_files(repo, sha)
+    for sha in list_commits(scope.root, pathspec, max_commits):
+        changes = commit_files(scope.root, sha)
+        files = [(change, name) for change in changes
+                 if (name := scope.project_path(change.path)) is not None]
+        if scope.prefix and not files:
+            continue
+        if len(files) != len(changes):
+            subject, body = "Commit also changes paths outside this project", ""
+        else:
+            subject, body = commit_message(scope.root, sha)
         attributed: set[str] = set()
-        for change in files:
-            attributed.update(changed_symbols(repo, sha, change.path))
+        for change, _ in files:
+            attributed.update(changed_symbols(scope.root, sha, change.path))
         symbols = sorted(attributed)
         if symbol is not None and symbol not in symbols:
             continue
@@ -175,8 +184,8 @@ def get_git_history(
                 "subject": subject,
                 "message": body,
                 "files": [
-                    {"path": f.path, "added": f.added, "deleted": f.deleted}
-                    for f in files
+                    {"path": name, "added": f.added, "deleted": f.deleted}
+                    for f, name in files
                 ],
                 "changed_symbols": symbols,
             }
@@ -184,3 +193,17 @@ def get_git_history(
         if len(entries) >= store_mod.clamp_limit(limit):
             break
     return entries
+
+
+def scoped_log(scope: task_library.GitScope, limit: int = 5) -> list[str]:
+    """Summaries for a nested project without mixed-commit descriptions."""
+    lines = []
+    for sha in list_commits(scope.root, scope.prefix, limit):
+        files = commit_files(scope.root, sha)
+        if not any(scope.project_path(change.path) is not None for change in files):
+            continue
+        subject = ("Commit also changes paths outside this project"
+                   if any(scope.project_path(change.path) is None for change in files)
+                   else commit_message(scope.root, sha)[0])
+        lines.append(f"{sha[:7]} {subject}")
+    return lines

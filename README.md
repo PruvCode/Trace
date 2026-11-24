@@ -4,12 +4,8 @@
 
 TRACE 0.1.x is an experimental research preview.
 
-```powershell
-git clone https://github.com/PruvCode/Trace.git TRACE
-cd TRACE
-python -m pip install -c constraints.txt .
-trace install --all --project "PATH_TO_YOUR_PROJECT"
-```
+[Install on Windows, macOS, or Linux](#installation), or start with the
+[offline auth walkthrough](examples/auth-debug) after installing.
 
 ## Why TRACE?
 
@@ -60,10 +56,47 @@ Session N records findings → Session N+1 retrieves them. See
 
 ## Installation
 
-From an existing TRACE installation, run `trace install --all` inside the project you want to enable.
-Use `trace doctor` to inspect the result. Start a new agent session and review
-the generated hooks and MCP entry in the host when prompted. Each enabled host
-uses the same project database.
+### Install from source
+
+You need Git and Python 3.11 or newer. Keep the virtual environment available
+after setup because the agent hooks use its interpreter.
+
+**Windows PowerShell**
+
+```powershell
+git clone https://github.com/PruvCode/Trace.git TRACE
+cd TRACE
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -c constraints.txt .
+.\.venv\Scripts\trace.exe install --all --project "PATH_TO_YOUR_PROJECT"
+.\.venv\Scripts\trace.exe doctor --project "PATH_TO_YOUR_PROJECT"
+```
+
+**macOS and Linux**
+
+```sh
+git clone https://github.com/PruvCode/Trace.git TRACE
+cd TRACE
+python3 -m venv .venv
+.venv/bin/python -m pip install -c constraints.txt .
+.venv/bin/trace install --all --project "PATH_TO_YOUR_PROJECT"
+.venv/bin/trace doctor --project "PATH_TO_YOUR_PROJECT"
+```
+
+To run `trace` without its full path, activate the virtual environment
+with `.\.venv\Scripts\Activate.ps1` in PowerShell or
+`. .venv/bin/activate` in POSIX shells on macOS/Linux. Start a new agent session
+and review the generated hooks and MCP registration. Each enabled host uses
+the same database inside the selected TRACE project.
+
+### Install from a wheel
+
+Install a wheel from a reviewed build using the virtual environment's Python.
+With the matching source checkout available, run
+`python -m pip install -c constraints.txt PATH_TO_TRACE_WHEEL` from that
+checkout after activating the environment. Then run `trace install --all`
+inside the project. The [universal guide](docs/universal-agents.md) also
+documents a portable `uv tool` setup.
 
 For setup from a reviewed wheel, supported host behavior, privacy controls,
 update and rollback, see [TRACE for coding agents](docs/universal-agents.md).
@@ -81,23 +114,11 @@ The installer fetches a pinned copy of Git for Windows if Git is missing.
 Open a new PowerShell window and run `trace --version` or `trace-opencode`.
 Enable capture separately inside each project that should use TRACE.
 
-### Install from source or wheel
-
-TRACE requires Python 3.11 or newer. Install from a reviewed source checkout in a dedicated environment.
-
-```powershell
-git clone https://github.com/PruvCode/Trace.git TRACE
-cd TRACE
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-python -m pip install -c constraints.txt .
-```
-
-For development with pytest:
-
-```powershell
-python -m pip install -c constraints.txt -e ".[dev]"
-```
+Keep the TRACE project directory distinct from the enclosing Git worktree.
+For a nested project, TRACE stores its database in that project, scopes Git
+history to its files, and takes project-relative paths for `history --path`
+and Git evidence. `trace doctor` flags memory that is tracked, staged, or
+eligible for Git staging.
 
 ## OpenCode legacy setup and automatic capture
 
@@ -325,8 +346,10 @@ Approved rules live in `.trace/RULES.md`, in Git, next to the code they govern:
   Even with a remote, `origin/HEAD` and `origin/main` are local refs that any
   process with a shell can rewrite (`git update-ref`), so on a developer
   machine approved rules carry the same trust as `CLAUDE.md`. The trust anchor
-  is `trace rules check --all` in CI on a fresh checkout of the protected
-  branch. Agent findings and transcripts never become rules automatically.
+  is `trace rules check --all --strict --ref APPROVED_COMMIT --json` in CI.
+  Provide the full commit hash from the trusted base and ensure its objects
+  are fetched before the check. Agent findings and transcripts stay separate
+  from approved rules.
 - **What the agent sees.** When a request names a rule's function (or a
   file-level rule's file), the session-start hook injects the bare approved
   sentence, exactly as a maintained notes file would give it, instead of the
@@ -344,21 +367,21 @@ Approved rules live in `.trace/RULES.md`, in Git, next to the code they govern:
   - `regression_in_progress`: an uncommitted change fails the check.
   - `stale_or_regression`: committed code fails; a person decides whether the
     rule or the code is wrong.
-  - `missing_check`: the approved test no longer exists.
-  - `flaky` (failed, then passed) and `environment` (could not run):
-    **inconclusive**, meaning not verified. They are never reported as a pass.
+  - `missing_check`, `flaky` and `environment` are inconclusive. Skipped
+    and expected-failure pytest cases cannot verify a rule.
 
   Every run prints a `verdict`: `verified`, `failing`, `inconclusive` or
   `nothing to check`. Exit codes:
 
   | Exit code | Meaning |
   |---|---|
-  | 0 | verified |
+  | 0 | verified, nothing to check, or an explicitly overridden inconclusive run |
   | 1 | failing |
   | 3 | inconclusive |
 
-  `--allow-inconclusive` lets CI exit 0 anyway. The override is printed and
-  appears in the JSON as `override`, so it is never silent.
+  `--allow-inconclusive` can override an inconclusive execution outcome.
+  Failures and approval-source errors retain their nonzero exits. JSON
+  includes the verdict, executed and skipped counts, and override status.
 
   Each failure carries:
   - a `next:` step;
@@ -395,8 +418,8 @@ Approved rules live in `.trace/RULES.md`, in Git, next to the code they govern:
   - `--write` appends the block to `.trace/RULES.md` as a *proposed* rule, with
     `fails-before`/`passes-after` provenance, and keeps the full report in
     `.agent-memory/guardrails/<sha>.json`. Approval is still a reviewed merge.
-  - An approved check whose test was later renamed or removed blocks as
-    `missing_check`, so a guardrail never silently stops guarding.
+  - An approved check whose test was later renamed or removed is reported as
+    `missing_check` and makes the verdict inconclusive.
 - **Inspect.** `trace rules list [--file PATH] [--json]`,
   `trace rules check [--all] [--json]`, `trace preview --query-stdin` (what would be
   injected).
@@ -772,8 +795,10 @@ are environmental, not assertion failures in TRACE logic.
   Dynamic dispatch, custom aliases, and ambiguous bindings can remain unresolved.
 - Same-named methods on different classes can conflate in call edges;
   symbol attribution from diffs is best-effort overlap, not proof.
-- Automatic capture and injection cover OpenCode only (see the compatibility
-  matrix). Other agents require manual transcript recording via CLI or MCP.
+- Automatic capture and injection depend on the host. Codex and Claude Code
+  have native prompt and reply hooks. OpenCode uses a monitor and plugin.
+  Antigravity native capture covers prompts, with model-visible recall still
+  unverified. See the [host matrix](docs/universal-agents.md#host-support).
 - Session resolution fails open: continued/stale sessions, TUI multi-session
   use, and concurrent same-project runs may receive no automatic injection
   rather than a wrong one.

@@ -24,14 +24,13 @@ and classified:
 - ``stale_or_regression``: fails deterministically on committed code. Only a
   person can decide whether the rule or the code is wrong.
 - ``missing_check``: the approved pytest check no longer exists (the test was
-  renamed or removed). The rule is no longer enforced until its check is
-  updated through review, so this blocks like a failure.
+  renamed or removed). Verification is inconclusive until its check is updated.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from hashlib import sha256
+from hashlib import file_digest
 import json
 import os
 from pathlib import Path
@@ -46,12 +45,21 @@ from memory.rules import Check, Rule
 TIMEOUT = 120
 MAX_OUTPUT = 2000
 OUTCOMES = ("pass", "fail", "error")
-BLOCKING = ("regression_in_progress", "stale_or_regression", "missing_check")
-INCONCLUSIVE = ("flaky", "environment")  # neither verified nor failed: never reported as a pass
+BLOCKING = ("regression_in_progress", "stale_or_regression")
+INCONCLUSIVE = ("flaky", "environment", "missing_check")
 _NOT_FOUND = ("ERROR: not found:", "no match in any of", "file or directory not found")
 
-# An executor runs one check and returns (outcome, output); outcome is one of OUTCOMES.
-Executor = Callable[[Rule, Check], tuple[str, str]]
+@dataclass(frozen=True)
+class Execution:
+    outcome: str
+    output: str = ""
+    passed: int = 0
+    failed: int = 0
+    skipped: int = 0
+    errors: int = 0
+
+
+Executor = Callable[[Rule, Check], Execution | tuple[str, str]]
 
 
 @dataclass(frozen=True)
@@ -62,6 +70,7 @@ class CheckResult:
     output: str
     classification: str | None = None  # set for failures only
     digest: str | None = None  # SHA-256 of the governed file when the check ran
+    attempts: tuple[Execution, ...] = ()
 
     @property
     def identity(self) -> str:
@@ -70,7 +79,11 @@ class CheckResult:
     def as_record(self) -> dict:
         return {"scope": self.rule.scope, "rule": self.rule.text, "kind": self.check.kind, "check": self.check.value,
                 "outcome": self.outcome, "classification": self.classification, "output": self.output,
-                "digest": self.digest}
+                "digest": self.digest, "attempts": [
+                    {"outcome": attempt.outcome, "passed": attempt.passed, "failed": attempt.failed,
+                     "skipped": attempt.skipped, "errors": attempt.errors}
+                    for attempt in self.attempts
+                ]}
 
 
 def _environment() -> dict:
@@ -84,7 +97,7 @@ def _tail(text: str) -> str:
 
 
 _PY_PROBE = r"""
-import importlib, importlib.util, json, sys
+import importlib, importlib.util, inspect, json, sys
 from pathlib import Path
 root, path, expression = sys.argv[1:4]
 target = Path(root, path)
@@ -106,13 +119,60 @@ except BaseException as exc:
     raise SystemExit(0)
 try:
     value = eval(compile(expression, "<rule check>", "eval"), vars(module))
-    print(json.dumps({"outcome": "pass" if value else "fail", "output": "" if value else f"evaluated to {value!r}"}))
+    if inspect.isawaitable(value) or inspect.isgenerator(value) or inspect.isasyncgen(value):
+        if inspect.iscoroutine(value):
+            value.close()
+        print(json.dumps({"outcome": "error", "output": "check returned an unevaluated awaitable or generator"}))
+    else:
+        passed = bool(value)
+        print(json.dumps({"outcome": "pass" if passed else "fail", "output": "" if passed else f"evaluated to {value!r}"}))
+except ImportError as exc:
+    print(json.dumps({"outcome": "error", "output": f"{type(exc).__name__}: {exc}"}))
 except BaseException as exc:
     print(json.dumps({"outcome": "fail", "output": f"{type(exc).__name__}: {exc}"}))
 """
 
 
-def subprocess_executor(root: Path, python: str | None = None, *, pythonpath: tuple[str, ...] = ()) -> Executor:
+_PYTEST_PROBE = r"""
+import json, os, sys
+from collections import defaultdict
+import pytest
+
+class Capture:
+    selected = set()
+    reports = defaultdict(list)
+    def pytest_collection_finish(self, session):
+        self.selected = {item.nodeid for item in session.items}
+    def pytest_runtest_logreport(self, report):
+        self.reports[report.nodeid].append(report)
+
+capture = Capture()
+sys.path.insert(0, os.getcwd())
+status = int(pytest.main(["-q", "-p", "no:cacheprovider", sys.argv[1]], plugins=[capture]))
+counts = {"passed": 0, "failed": 0, "skipped": 0, "errors": 0}
+for node in capture.selected:
+    reports = capture.reports[node]
+    if any(report.failed for report in reports if report.when == "call"):
+        counts["failed"] += 1
+    elif any(report.failed for report in reports):
+        counts["errors"] += 1
+    elif any(report.skipped or hasattr(report, "wasxfail") for report in reports):
+        counts["skipped"] += 1
+    elif len(reports) == 3 and {report.when for report in reports} == {"setup", "call", "teardown"} and all(
+            report.passed for report in reports):
+        counts["passed"] += 1
+    else:
+        counts["errors"] += 1
+if not capture.selected or (status != 0 and not counts["failed"] and not counts["errors"]):
+    counts["errors"] += 1
+print("TRACE_PYTEST_RESULT=" + json.dumps(counts))
+raise SystemExit(status)
+"""
+
+
+def subprocess_executor(
+    root: Path, python: str | None = None, *, pythonpath: tuple[str, ...] = (), detailed: bool = False,
+) -> Executor:
     """Run ``py:`` checks against the governed file and ``pytest:`` checks with the project's runner.
 
     ``pythonpath`` lists repository-relative source roots (e.g. ``src``) to put first on
@@ -124,31 +184,58 @@ def subprocess_executor(root: Path, python: str | None = None, *, pythonpath: tu
         environment["PYTHONPATH"] = os.pathsep.join(str(root / entry) for entry in pythonpath)
     inside = root.resolve()
 
-    def run(rule: Rule, check: Check) -> tuple[str, str]:
+    def execute(rule: Rule, check: Check) -> Execution:
         target = check.value.split("::")[0] if check.kind == "pytest" else rule.path
         if not (root / target).resolve().is_relative_to(inside):
-            return "error", f"{target} resolves outside the repository; not run"
+            return Execution("error", f"{target} resolves outside the repository; not run", errors=1)
         if check.kind == "py":
-            command = [interpreter, "-c", _PY_PROBE, str(root), rule.path, check.value]
+            command = [interpreter, "-P", "-c", _PY_PROBE, str(root), rule.path, check.value]
         else:
-            command = [interpreter, "-m", "pytest", "-q", "-p", "no:cacheprovider", check.value]
+            command = [interpreter, "-P", "-c", _PYTEST_PROBE, check.value]
         try:
             done = subprocess.run(command, cwd=root, env=environment, capture_output=True, text=True,
                                   timeout=TIMEOUT, encoding="utf-8", errors="replace")
         except subprocess.TimeoutExpired:
-            return "error", f"timed out after {TIMEOUT} s"
+            return Execution("error", f"timed out after {TIMEOUT} s", errors=1)
         except OSError as exc:
-            return "error", f"could not start {interpreter}: {exc}"
+            return Execution("error", _tail(f"could not start {interpreter}: {exc}"), errors=1)
+        lines = done.stdout.rstrip().splitlines()
         if check.kind == "py":
             try:
-                result = json.loads(done.stdout.strip().splitlines()[-1])
-                return result["outcome"], _tail(result["output"])
+                result = json.loads(lines[-1])
+                outcome = result["outcome"]
+                if done.returncode != 0 or outcome not in OUTCOMES:
+                    raise ValueError("invalid Python check result")
+                return Execution(outcome, _tail(result["output"]), int(outcome == "pass"),
+                                 int(outcome == "fail"), errors=int(outcome == "error"))
             except (IndexError, ValueError, KeyError, TypeError):
-                return "error", _tail(done.stderr or done.stdout)
-        output = _tail((done.stdout or "") + (done.stderr or ""))
-        return ("pass" if done.returncode == 0 else "fail" if done.returncode == 1 else "error"), output
+                return Execution("error", _tail(done.stderr or done.stdout or "no Python check result"), errors=1)
+        if not lines or not lines[-1].startswith("TRACE_PYTEST_RESULT="):
+            return Execution("error", _tail(done.stderr or done.stdout or "no pytest check result"), errors=1)
+        output = _tail("\n".join(lines[:-1]) + "\n" + done.stderr)
+        try:
+            counts = json.loads(lines[-1].split("=", 1)[1])
+            if not isinstance(counts, dict) or set(counts) != {"passed", "failed", "skipped", "errors"} or any(
+                type(value) is not int or value < 0 for value in counts.values()
+            ):
+                raise ValueError("invalid pytest counts")
+        except (TypeError, ValueError):
+            return Execution("error", "invalid pytest check result", errors=1)
+        if counts["failed"]:
+            outcome = "fail"
+        elif done.returncode == 0 and counts["passed"] and not (counts["skipped"] or counts["errors"]):
+            outcome = "pass"
+        else:
+            outcome = "error"
+            if not counts["skipped"] and not counts["errors"]:
+                counts["errors"] = 1
+        return Execution(outcome, output, **counts)
 
-    return run
+    def pair(rule: Rule, check: Check) -> tuple[str, str]:
+        result = execute(rule, check)
+        return result.outcome, result.output
+
+    return execute if detailed else pair
 
 
 def _uncommitted(root: Path, path: str) -> bool:
@@ -168,35 +255,53 @@ def _vanished(output: str, check: Check) -> bool:
 
 def _digest(root: Path, path: str) -> str | None:
     try:
-        return sha256((root / path).read_bytes()).hexdigest()
-    except OSError:
+        target = root / path
+        if not target.resolve().is_relative_to(root.resolve()) or not target.is_file():
+            return None
+        with target.open("rb") as handle:
+            return file_digest(handle, "sha256").hexdigest()
+    except (OSError, RuntimeError):
         return None
 
 
 def run(root: Path, rules: list[Rule], executor: Executor) -> list[CheckResult]:
     """Execute every check of the given (approved) rules and classify failures."""
     results = []
+
+    def execute(rule: Rule, check: Check) -> Execution:
+        result = executor(rule, check)
+        if isinstance(result, Execution):
+            return result
+        outcome, output = result
+        if outcome not in OUTCOMES:
+            return Execution("error", f"executor returned {outcome!r}", errors=1)
+        return Execution(outcome, output, int(outcome == "pass"), int(outcome == "fail"),
+                         errors=int(outcome == "error"))
+
     for rule in rules:
         digest = _digest(root, rule.path)
         for check in rule.checks:
-            outcome, output = executor(rule, check)
-            if outcome not in OUTCOMES:
-                outcome, output = "error", f"executor returned {outcome!r}"
+            first = execute(rule, check)
+            outcome, output = first.outcome, first.output
+            attempts = (first,)
             classification = None
-            if outcome != "pass":
-                again, again_output = executor(rule, check)
-                if again == "pass":
+            if first.skipped and outcome == "error" and not first.errors:
+                classification = "environment"
+            elif outcome != "pass":
+                second = execute(rule, check)
+                attempts += (second,)
+                if second.outcome == "pass":
                     classification = "flaky"
-                elif check.kind == "pytest" and "error" in (outcome, again) and _vanished(output, check):
+                elif "fail" in (outcome, second.outcome):
+                    outcome = "fail"
+                    output = first.output if first.outcome == "fail" else second.output
+                    classification = "regression_in_progress" if _uncommitted(root, rule.path) else "stale_or_regression"
+                elif check.kind == "pytest" and _vanished(output, check):
                     classification = "missing_check"
-                elif "error" in (outcome, again):
-                    classification = "environment"
-                    output = output or again_output
-                elif _uncommitted(root, rule.path):
-                    classification = "regression_in_progress"
                 else:
-                    classification = "stale_or_regression"
-            results.append(CheckResult(rule, check, outcome, output, classification, digest))
+                    classification = "environment"
+                    output = output or second.output
+            results.append(CheckResult(rule, check, outcome, output, classification, digest, attempts))
     return results
 
 

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from itertools import combinations
 from pathlib import Path
 
 DEFAULT_LIMIT = 10
@@ -542,6 +543,54 @@ def fts_query(query: str) -> str:
     if not cleaned:
         raise SearchQueryError(f"search query {query!r} has no searchable terms")
     return " ".join(cleaned)
+
+
+def _word_forms(word: str) -> tuple[str, str]:
+    """Small English inflection fallback without broad identifier prefixes."""
+    if word.endswith("ies") and len(word) > 4:
+        return word, word[:-3] + "y"
+    if word.endswith(("ches", "shes", "xes", "sses", "zes")):
+        return word, word[:-2]
+    if word.endswith("s") and not word.endswith(("ss", "us", "is")):
+        return word, word[:-1]
+    if word.endswith("y") and word[-2] not in "aeiou":
+        return word, word[:-1] + "ies"
+    return word, word + ("es" if word.endswith(("s", "x", "z", "ch", "sh")) else "s")
+
+
+def fts_search(query: str, table: str, *, natural: bool) -> tuple[str, str, tuple[str, ...]]:
+    """Build a bounded match and score tiers for episodic and transcript search."""
+    exact = fts_query(query)
+    words = [word.strip(".,!?") for word in query.split(maxsplit=8) if any(ch.isalnum() for ch in word)]
+    if (not natural or len(query) > 512 or not 2 <= len(words) <= 8
+            or not all(all(part.isalpha() for part in word.split("-"))
+                       and word not in {"AND", "OR", "NOT"} for word in words)):
+        return exact, "0", ()
+    tier = (
+        f"CASE WHEN {table}.rowid IN (SELECT rowid FROM {table} WHERE {table} MATCH ?) THEN 0 "
+        f"WHEN {table}.rowid IN (SELECT rowid FROM {table} WHERE {table} MATCH ?) THEN 1 ELSE 2 END"
+    )
+    phrase = '"' + " ".join(words) + '"'
+    if len(words) == 2 and words[0].casefold() in {"find", "recall", "show", "locate", "retrieve"}:
+        # A lookup verb plus one name explicitly asks for that name.
+        return f"({exact}) OR ({fts_query(words[1])})", tier, (phrase, exact)
+
+    stop = {"about", "and", "can", "for", "how", "into", "that", "the", "this", "was", "what", "with"}
+    forms = []
+    seen = set()
+    for word in " ".join(words).replace("-", " ").casefold().split():
+        if len(word) >= 3 and word not in stop:
+            variants = _word_forms(word)
+            if not seen.intersection(variants):
+                forms.append("(" + " OR ".join(fts_query(part) for part in variants) + ")")
+                seen.update(variants)
+                if len(forms) == 8:
+                    break
+    if len(forms) < 2:
+        return exact, "0", ()
+
+    partial = " OR ".join(f"({left} AND {right})" for left, right in combinations(forms, 2))
+    return f"({exact}) OR ({partial})", tier, (phrase, exact)
 
 
 def search_symbols(conn: sqlite3.Connection, query: str, limit: int = 10) -> list[dict]:

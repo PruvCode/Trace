@@ -16,7 +16,7 @@ from pathlib import Path
 from memory.opencode_files import atomic_write_text, integration_marker, require_local_paths
 from memory.opencode_service import DISABLED_FILE, LockHandle, default_opencode_db_path, get_service
 from trace_memory import project as projects
-from trace_memory.native import HOOK_HOSTS, receipt_path, require_local_db
+from trace_memory.native import HOOK_HOSTS, privacy_state, receipt_path, require_local_db
 
 HOSTS = (*HOOK_HOSTS, "opencode")
 NAME = "trace-memory"
@@ -418,7 +418,8 @@ def _doctor(project: Path, host: str) -> dict:
     else:
         status = "drift" if drift else "configured"
     return {"status": status, "binary": binary, "files": list(_paths(host)), "approval": "check in host",
-            "runtime": str(executable), "runtime_current": entries == _entries(host, project)}
+            "runtime": str(executable), "runtime_current": entries == _entries(host, project),
+            **privacy_state(project, host)}
 
 
 def cli(args) -> int:
@@ -456,6 +457,11 @@ def cli(args) -> int:
     else:
         with _lock(project):
             process()
-    print(_json(results), end="")
     problems = {"error", "pending", "drift", "runtime-missing", "memory-missing"}
-    return int(any(result["status"] in problems for result in results.values()))
+    failed = any(result["status"] in problems for result in results.values())
+    if action in ("doctor", "install"):
+        hint = projects.gitignore_hint(project)
+        if hint:
+            results["git_privacy"] = {"status": "warning", "detail": hint}
+    print(_json(results), end="")
+    return int(failed)

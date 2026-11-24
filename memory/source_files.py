@@ -9,7 +9,7 @@ from pathlib import Path
 from memory.task_library import local_git
 
 SKIP_DIRS = frozenset({
-    ".git", ".hg", ".agent-memory", ".obsidian", ".venv", ".pytest_cache",
+    ".git", ".hg", ".agent-memory", ".trace-service", ".obsidian", ".venv", ".pytest_cache",
     ".hypothesis", "__pycache__", "node_modules", ".astro", ".next", "dist",
 })
 PRIVATE_SUFFIXES = frozenset({".key", ".pem", ".pfx", ".p12", ".sqlite", ".sqlite3", ".db"})

@@ -71,6 +71,9 @@ jobs:
               subprocess.run([str(python), "-m", "pip", "install", "-c", str(source / "constraints.txt"), str(wheel)],
                              cwd=root, check=True)
               subprocess.run([str(python), "-m", "pip", "check"], cwd=root, check=True)
+              subprocess.run([sys.executable, "-m", "research.phase6.auth_debug_smoke",
+                              "--python", str(python), "--scratch", str(root / "auth-debug-smoke")],
+                             cwd=source, check=True)
               project = root / "project"
               project.mkdir()
               subprocess.run([str(trace), "--version"], cwd=project, check=True)
