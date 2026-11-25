@@ -40,6 +40,7 @@ from pathlib import Path
 from typing import Any
 
 from memory import session_context as session_context_mod
+from memory import store as store_mod
 from memory import synthetic as synthetic_mod
 
 # A session row newer than this is plausibly the session currently firing
@@ -129,16 +130,25 @@ def get_message_start_context(
     stats["reason"] = resolution["reason"]
     if not resolution["ok"]:
         return {"items": [], "text": "", "truncated": False, "stats": stats}
+    from trace_memory.project import TraceUserError
+
+    project = Path(project_dir).resolve()
+    db = Path(trace_db_path).absolute()
+    try:
+        store_mod.require_local_storage(project if db.is_relative_to(project) else db.parent.resolve(), db)
+    except (OSError, TraceUserError):
+        stats["reason"] = "memory-unavailable"
+        return {"items": [], "text": "", "truncated": False, "stats": stats}
     stats["resolved"] = True
     stats["currentSession"] = resolution["session_id"]
     result = session_context_mod.get_session_start_context(
-        trace_db_path,
+        db,
         exclude_session_id=resolution["session_id"],
         max_items=max_items,
         max_chars=max_chars,
         query=query,
         use_bound_task=use_bound_task,
-        project_root=Path(project_dir).resolve(),
+        project_root=project,
         notes_first=True,
     )
     stats["message_items"] = sum(1 for i in result["items"] if i.get("kind") == "message")

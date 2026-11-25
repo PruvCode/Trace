@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 
 from memory import redact as redact_mod
@@ -35,6 +35,12 @@ class TranscriptMessage:
     content: str
     timestamp: str
     metadata: dict = field(default_factory=dict)
+    search_tier: int = field(default=0, repr=False, compare=False)
+
+    def as_record(self) -> dict:
+        row = asdict(self)
+        del row["search_tier"]
+        return row
 
 
 def utcnow_iso() -> str:
@@ -135,6 +141,7 @@ def _row_to_message(row: sqlite3.Row) -> TranscriptMessage:
         content=row["content"],
         timestamp=row["timestamp"],
         metadata=json.loads(row["metadata"]),
+        search_tier=row["search_tier"] if "search_tier" in row.keys() else 0,
     )
 
 
@@ -150,6 +157,8 @@ def search_messages(
     exclude_session_id: str | None = None,
     decision_only: bool = False,
     exclude_superseded: list[int] | None = None,
+    natural: bool = False,
+    conversation_only: bool = False,
 ) -> list[TranscriptMessage]:
     """Narrow bounded retrieval.
 
@@ -162,6 +171,8 @@ def search_messages(
 
     clauses: list[str] = []
     params: list = []
+    if conversation_only:
+        clauses.append("tm.role IN ('user', 'assistant')")
     if exclude_superseded and store_mod.has_evidence_schema(conn):
         ids = json.dumps(exclude_superseded)
         clauses.append(_ACTIVE_EVIDENCE)
@@ -187,22 +198,23 @@ def search_messages(
         clauses.append("tm.session_id <> ?")
         params.append(exclude_session_id)
     join = ""
+    tier, ranking = "0", ()
     order = "tm.id"
     if query is not None and query.strip():
         join = " JOIN transcript_messages_fts ON transcript_messages_fts.rowid = tm.id"
         clauses.append("transcript_messages_fts MATCH ?")
-        match = store_mod.fts_query(query)
+        match, tier, ranking = store_mod.fts_search(query, "transcript_messages_fts", natural=natural)
         if decision_only:
             cues = store_mod.fts_query(" OR ".join(DECISION_WORDS))
             match = f"({match}) AND content : ({cues})"
         params.append(match)
-        order = "bm25(transcript_messages_fts), tm.id DESC"
+        order = "search_tier, bm25(transcript_messages_fts), tm.id DESC"
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     try:
         rows = conn.execute(
-            "SELECT tm.id, tm.session_id, tm.role, tm.content, tm.timestamp, tm.metadata"
+            f"SELECT tm.id, tm.session_id, tm.role, tm.content, tm.timestamp, tm.metadata, {tier} AS search_tier"
             f" FROM transcript_messages tm{join} {where} ORDER BY {order} LIMIT ?",
-            (*params, store_mod.clamp_limit(limit)),
+            (*ranking, *params, store_mod.clamp_limit(limit)),
         ).fetchall()
     except sqlite3.OperationalError as exc:
         raise store_mod.SearchQueryError(f"transcript search failed: {exc}") from exc

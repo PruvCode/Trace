@@ -6,10 +6,9 @@ import ast
 import json
 import posixpath
 from collections import defaultdict
-from pathlib import Path, PurePosixPath
+from pathlib import PurePosixPath
 from typing import NamedTuple
 
-from memory import source_files
 from memory.graph_model import Fragment, Observation
 from memory.web_structure import WEB_SUFFIXES
 
@@ -45,11 +44,11 @@ def _entry(value) -> str | None:
     return None
 
 
-def read_packages(root: Path, manifests: list[str]) -> dict[str, dict]:
+def read_packages(manifests: dict[str, bytes | None]) -> dict[str, dict]:
     packages = {}
-    for path in manifests:
+    for path, source in manifests.items():
         try:
-            manifest = json.loads(source_files.read_source(root, path) or b"{}")
+            manifest = json.loads(source or b"{}")
         except (ValueError, UnicodeError, RecursionError):
             continue
         if not isinstance(manifest, dict) or not isinstance(manifest.get("name"), str):

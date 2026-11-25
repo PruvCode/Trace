@@ -62,15 +62,10 @@ def _recent(conn: sqlite3.Connection, task_id: str | None) -> list[tuple[episodi
 
 
 def _git_history(project: Path) -> list[str]:
-    if not (project / ".git").exists():
+    git = project_mod.git_summary(project)
+    if not git["is_repo"]:
         return ["Git history is unavailable for this project."]
-    try:
-        history = task_library.local_git(
-            project, "--no-pager", "log", "-5", "--format=%h %s",
-        ).decode("utf-8", errors="replace").splitlines()
-    except ValueError:
-        return ["Git history is unavailable for this project."]
-    return [f"- {_text(line, 160)}" for line in history] or ["No commits recorded."]
+    return [f"- {_text(line, 160)}" for line in git["recent"]] or ["No commits recorded."]
 
 
 def _entries(project: Path, rows, objects, visible: set[int]) -> list[str]:

@@ -207,9 +207,10 @@ for the code under evaluation. The installed wheel passed native Codex and
 Claude Code capture and cross-agent recall in both directions using loopback
 providers. Native OpenCode capture, context and evidence checks also passed.
 These checks cover supported local message payloads and hook behavior.
-Antigravity model-visible recall and general IDE or hosted behavior remain
-unverified. The retrieval and coding trials used local models and authored
-histories only.
+The comparison did not exercise signed-in Antigravity, IDE, or hosted
+sessions. See [Antigravity verification](../universal-agents.md#antigravity-verification)
+for the later Windows App audit. The retrieval and coding trials used local
+models and authored histories only.
 
 A subsequent [Windows CI run](https://github.com/PruvCode/Trace/actions/runs/43619946981)
 found a race on repeated OpenCode setup. The installer checked the monitor's

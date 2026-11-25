@@ -1,13 +1,19 @@
 # TRACE install, upgrade, and rollback
 
-TRACE 0.1.x is a research preview. Use a reviewed source checkout or a wheel built from that checkout. Install into a Python 3.11 virtual environment and keep the environment in place while OpenCode uses TRACE. Integration commands store the environment's Python path.
+TRACE 0.1.x is an experimental research preview. Use a reviewed source
+checkout or a wheel built from that checkout. Keep the virtual environment
+in place while any host uses it. Integration commands store the
+environment's Python path. See the [preview changelog](../CHANGELOG.md).
 
 For the cross-platform installer and multi-agent lifecycle, follow
-[TRACE for coding agents](universal-agents.md). The steps below cover legacy OpenCode setup.
+[TRACE for coding agents](universal-agents.md). The steps below cover
+legacy OpenCode setup. Review the
+[rule approval model](../README.md#project-rules-approved-engineering-notes)
+before making executable checks a CI requirement.
 
 ## Install and verify
 
-For the Windows x64 bundle, use the [one-command installer](../README.md#windows-x64-preview-bundle).
+If you have a reviewed Windows x64 bundle, use the [one-command installer](../README.md#windows-x64-preview-bundle).
 It installs into a versioned directory under `%LOCALAPPDATA%\TRACE`. After an
 upgrade, rerun project setup from the new version to refresh the Python path
 in OpenCode. Earlier installations remain available while projects reference them.
@@ -38,7 +44,7 @@ Install the new package before the first command if your old version has no `tra
 
 Run `trace teardown opencode` before uninstalling the Python package. Teardown stops capture and removes recognized TRACE integration entries and plugins. The memory database, unrelated configuration, and disable markers remain. Current TRACE plugins and integration-managed MCP servers check the integration marker even while still loaded. Restart OpenCode to unload the plugin and refresh its tool list. If teardown reports a config it could not edit, remove only TRACE's entries by hand.
 
-Reset waits for the capture lock and leaves memory in place if capture cannot stop. A successful reset disables automatic injection and the integration MCP server until the integration is set up again. To test a rollback, create an empty project and initialize it with the version you plan to restore. Place a copy of the pre-upgrade snapshot at `.agent-memory/memory.db` in that disposable project while TRACE and OpenCode are closed. Open the copy with the earlier version and verify its memory. Keep the upgraded database and the backup separate. Copying a live SQLite database file by itself can omit committed WAL data.
+Reset waits for the capture locks and leaves memory in place if capture cannot stop. It disables OpenCode injection and its managed MCP server until setup. It pauses enrolled native hosts until an explicit `trace service start --agent HOST`, even after `trace init`. To test a rollback, create an empty project and initialize it with the version you plan to restore. Place a copy of the pre-upgrade snapshot at `.agent-memory/memory.db` in that disposable project while TRACE and OpenCode are closed. Open the copy with the earlier version and verify its memory. Keep the upgraded database and the backup separate. Copying a live SQLite database file by itself can omit committed WAL data.
 
 For CLI and MCP use, follow the supported versions in the [compatibility matrix](../README.md#compatibility-matrix). For benchmark evidence, see the [Phase 5 comparison protocol](../research/phase5/COMPARISON.md).
 

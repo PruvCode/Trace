@@ -1,66 +1,42 @@
-# Example: continuing an auth investigation across sessions
+# Continue an auth investigation across sessions
 
-A tiny walkthrough of the core TRACE loop. No benchmark, no API keys, no
-network. Everything below runs locally with the `trace` CLI.
+Run the example from a disposable TRACE checkout with the [CLI installed](../../README.md#installation).
+The commands work in PowerShell and in macOS/Linux shells and run offline.
+Keep the checkout's Git history so the history step can query it.
 
-Setup — use this example directory as the project:
+## 1. Index the example and record what you learn
 
-```powershell
+From the checkout root, enter the example directory and initialize TRACE there.
+
+```sh
 cd examples/auth-debug
 trace init
+trace find get_session_timeout
+trace callers get_session_timeout
+trace record --type investigation --symbol get_session_timeout --message "Timeout flows through get_session_timeout and refresh_token"
+trace record --type decision --symbol get_session_timeout --message "Keep the default at 30 minutes until the login rollout"
 ```
 
-Expected output (numbers may vary slightly):
+The definition and caller come from `auth.py`. Each record command prints
+an ID. The memory database is `examples/auth-debug/.agent-memory/memory.db`
+relative to the checkout root.
 
-```text
-TRACE initialized: ...\examples\auth-debug
-  database:   ...\examples\auth-debug\.agent-memory\memory.db
-  files:      1
-  symbols:    2
-  relations:  2
-  next: connect an agent with 'trace mcp', inspect with 'trace status'
+## 2. Recover the decision in a new session
+
+From the same example directory, run these commands in a new terminal or process.
+
+```sh
+trace events --query "rollout"
+trace context "rollout"
+trace history --path auth.py
+trace report
 ```
 
-## Session 1 — investigate, record findings
+Both search commands return the rollout decision. `trace context` can also
+return matching transcript messages when the project has any. The history
+command selects commits touching `auth.py`, using a path relative to the
+example directory. Its file list stays inside the example. The report
+recognizes the worktree and shows the two recorded events.
 
-You (or your agent) look at the timeout handling and record what you learn:
-
-```powershell
-trace find get_session_timeout .
-trace callers get_session_timeout .
-
-trace record --type investigation --symbol get_session_timeout `
-  --message "timeout flows auth.get_session_timeout -> refresh_token"
-
-trace record --type decision --symbol get_session_timeout `
-  --message "keep default 30 minutes; revisit after login rollout"
-```
-
-## Session 2 — a new session retrieves the context
-
-Later (a new agent session, a new terminal, a new day), the context is
-still there:
-
-```powershell
-trace events --symbol get_session_timeout .
-```
-
-```text
-{"commit": null, "file": null, "id": 1, "payload": {"message": "timeout flows ..."}, ...}
-{"commit": null, "file": null, "id": 2, "payload": {"message": "keep default ..."}, ...}
-```
-
-An MCP-connected agent does the same thing through `search_events` /
-`find_definition` instead of the CLI, so findings survive across sessions
-without pasting transcripts around.
-
-## Inspect and clean up
-
-```powershell
-trace status .
-trace report .
-trace reset . --yes   # deletes .agent-memory for this example only
-```
-
-Memory is per-project: initializing this example never touches memory from
-any other directory.
+An MCP client can use `search_context`, `search_events`, `find_definition`,
+and `get_git_history` against this same project.

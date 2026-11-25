@@ -38,6 +38,7 @@ import re
 from memory import redact as redact_mod
 from memory import synthetic
 from memory import task_library
+from memory.opencode_files import require_local_paths
 
 RULES_PATH = ".trace/RULES.md"
 MAX_RULE_CHARS = 300
@@ -83,6 +84,8 @@ class RuleSet:
     proposed: list[Rule] = field(default_factory=list)
     removed_locally: list[Rule] = field(default_factory=list)  # approved, but deleted in the working tree
     errors: list[str] = field(default_factory=list)
+    approval_errors: list[str] = field(default_factory=list)
+    has_approved_file: bool = False
     ref: str | None = None
     commit: str | None = None
 
@@ -200,7 +203,9 @@ def approval_ref(root: Path, override: str | None = None) -> tuple[str, str] | N
         if not ref:
             continue
         try:
-            commit = task_library.local_git(root, "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}").decode().strip()
+            commit = task_library.local_git(
+                root, "rev-parse", "--verify", "--quiet", "--end-of-options", f"{ref}^{{commit}}",
+            ).decode("ascii").strip()
         except ValueError:
             continue
         if task_library.is_commit(commit):
@@ -208,11 +213,14 @@ def approval_ref(root: Path, override: str | None = None) -> tuple[str, str] | N
     return None
 
 
-def _at(root: Path, commit: str) -> str | None:
-    try:
-        return task_library.local_git(root, "show", f"{commit}:{RULES_PATH}").decode("utf-8")
-    except (ValueError, UnicodeDecodeError):
+def _at(scope: task_library.GitScope, commit: str) -> str | None:
+    path = scope.object_path(RULES_PATH)
+    entry = task_library.local_git(scope.root, "--literal-pathspecs", "ls-tree", "-z", commit, "--", path)
+    if not entry:
         return None
+    if not entry.startswith((b"100644 blob ", b"100755 blob ")):
+        raise ValueError("approved rules must be a regular Git blob")
+    return task_library.local_git(scope.root, "cat-file", "blob", f"{commit}:{path}").decode("utf-8")
 
 
 def load(root: Path, *, ref: str | None = None) -> RuleSet:
@@ -221,10 +229,17 @@ def load(root: Path, *, ref: str | None = None) -> RuleSet:
     authority = approval_ref(root, ref)
     if authority is not None:
         result.ref, result.commit = authority
-        approved_text = _at(root, result.commit)
-        if approved_text is not None:
-            result.approved, errors = parse(approved_text)
-            result.errors += [f"{result.ref}:{RULES_PATH} {error}" for error in errors]
+        scope = task_library.git_scope(root)
+        try:
+            if scope is None:
+                raise ValueError("worktree unavailable")
+            approved_text = _at(scope, result.commit)
+            if approved_text is not None:
+                result.has_approved_file = True
+                result.approved, errors = parse(approved_text)
+                result.approval_errors.extend(f"{result.ref}:{RULES_PATH} {error}" for error in errors)
+        except ValueError as exc:
+            result.approval_errors.append(f"could not read {result.ref}:{RULES_PATH}: {exc}")
         if result.ref.startswith("refs/heads/"):
             result.errors.append(f"approval ref is the local branch {result.ref}: any local commit counts as approval; "
                                  "set origin/HEAD or TRACE_RULES_REF to a protected remote branch")
@@ -232,9 +247,14 @@ def load(root: Path, *, ref: str | None = None) -> RuleSet:
         result.errors.append("no approval ref found (default branch); every rule is treated as proposed")
     local_file = root / RULES_PATH
     local: list[Rule] = []
-    if local_file.is_file():
-        local, errors = parse(local_file.read_text(encoding="utf-8"))
-        result.errors += [f"{RULES_PATH} {error}" for error in errors]
+    if os.path.lexists(local_file):
+        try:
+            require_local_paths(root, local_file)
+            local, errors = parse(local_file.read_text(encoding="utf-8"))
+            result.errors += [f"{RULES_PATH} {error}" for error in errors]
+        except (ValueError, OSError, RuntimeError) as exc:
+            result.errors.append(f"could not read working-tree {RULES_PATH}: {exc}")
+    result.errors.extend(result.approval_errors)
     approved_keys = {rule.key for rule in result.approved}
     local_keys = {rule.key for rule in local}
     result.proposed = [rule for rule in local if rule.key not in approved_keys]
@@ -253,20 +273,33 @@ def scoped(rules: list[Rule], paths: list[str] | None = None, symbols: list[str]
 
 
 def mentioned(rules: list[Rule], text: str) -> list[Rule]:
-    """Rules whose function or file the request names.
-
-    A symbol-scoped rule matches only when its function name appears as a word
-    and its file is named (or no rule's file is); naming a file does not pull in
-    rules for other functions in it. File-scoped rules match on their file.
-    """
+    """Match explicit paths and qualified names, or an unambiguous bare name."""
     text = text.replace("\\", "/")
-    paths = {rule.path for rule in rules if rule.path in text}
-
-    def named(rule: Rule) -> bool:
-        word = re.escape(rule.symbol.split(".")[-1])
-        return re.search(rf"(?<!\w){word}(?!\w)", text) is not None and (not paths or rule.path in paths)
-
-    return [rule for rule in rules if (named(rule) if rule.symbol else rule.path in paths)]
+    tokens = {token.rstrip(".").removeprefix("./") for token in re.findall(r"[\w./-]+", text)}
+    paths = {token for token in tokens if "/" in token or re.search(
+        r"\.(?:py|js|jsx|ts|tsx|astro|html|css|json|md|toml|ya?ml|go|rs|rb|java|sql|sh|txt)$", token, re.I
+    )}
+    # Paths containing spaces must match as a whole, including their boundary.
+    for rule in rules:
+        if " " in rule.path and re.search(rf"(?<![\w/.-]){re.escape(rule.path)}(?![\w/.-])", text):
+            paths.add(rule.path)
+    tokens -= paths
+    eligible = [rule for rule in rules if not paths or rule.path in paths]
+    by_bare: dict[str, set[tuple[str, str]]] = {}
+    for rule in eligible:
+        if rule.symbol:
+            by_bare.setdefault(rule.symbol.rsplit(".", 1)[-1], set()).add((rule.path, rule.symbol))
+    result = []
+    for rule in eligible:
+        if rule.symbol is None:
+            if rule.path in paths:
+                result.append(rule)
+            continue
+        bare = rule.symbol.rsplit(".", 1)[-1]
+        if (("." in rule.symbol and rule.symbol in tokens)
+                or (bare in tokens and len(by_bare[bare]) == 1)):
+            result.append(rule)
+    return result
 
 
 def render_notes(rules: list[Rule]) -> str:

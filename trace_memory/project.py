@@ -16,10 +16,8 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
-import subprocess
 import sys
 from contextlib import closing, contextmanager
-from dataclasses import asdict
 from pathlib import Path
 from uuid import uuid4
 
@@ -90,9 +88,13 @@ def is_initialized(project: Path) -> bool:
     return db_path(project).exists()
 
 
+def require_local_db(project: Path) -> Path:
+    return store_mod.require_local_storage(project.resolve(), db_path(project))
+
+
 def require_db(project: Path) -> Path:
     """Return the database path or raise a helpful error (exit 2)."""
-    db = db_path(project)
+    db = require_local_db(project)
     if not db.exists():
         raise TraceUserError(
             f"no TRACE memory here: {project}",
@@ -170,8 +172,9 @@ def privacy_info(project: Path) -> dict:
     """Report project-local capture and recall settings without reading transcript text."""
     from memory.opencode_files import integration_marker, require_local_paths
     from memory import opencode_plugin
+    from trace_memory import native
 
-    database = db_path(project)
+    database = require_local_db(project)
     marker = integration_marker(project)
     legacy = opencode_plugin.plugin_path(project)
     modern = opencode_plugin.plugin_v2_dir(project) / "index.js"
@@ -196,23 +199,39 @@ def privacy_info(project: Path) -> dict:
         capture_state = capture.status(cleanup_stale=False)["status"]
     else:
         capture_state = "stopped"
+    recall_state = "disabled" if disabled else ("plugin installed" if initialized and installed else "not configured")
+    hosts = {"opencode": {"capture": capture_state, "recall": recall_state, "enrolled": installed}}
+    for host in native.HOOK_HOSTS:
+        try:
+            hosts[host] = native.privacy_state(project, host)
+        except (OSError, ValueError, TraceUserError):
+            hosts[host] = {"capture": "error", "recall": "error", "enrolled": False}
     return {
         "database": str(database),
         "initialized": initialized,
         "capture": capture_state,
-        "automatic_recall": "disabled" if disabled else (
-            "plugin installed" if initialized and installed else "not configured"
-        ),
+        "automatic_recall": recall_state,
+        "hosts": hosts,
         "selected_test_capture_opt_in": test_capture,
     }
 
 
-def preview_context(project: Path, session_id: str | None, query: str | None) -> str:
+def preview_context(project: Path, session_id: str | None, query: str | None, *, agent: str = "opencode") -> str:
     """Render the block TRACE would assemble for a new request."""
     from memory import synthetic
     from memory.opencode_files import integration_marker, require_local_paths
 
-    database = db_path(project)
+    database = require_local_db(project)
+    if agent != "opencode":
+        from memory import dialogue
+        from trace_memory import native
+
+        if not native.hook_enabled(project, agent) or not database.is_file():
+            return ""
+        session = session_id or ""
+        if session and not session.startswith(f"{agent}:"):
+            session = f"{agent}:{session}"
+        return dialogue.recall(database, session, query or "")
     marker = integration_marker(project)
     require_local_paths(project, database, marker)
     if marker.exists():
@@ -437,6 +456,7 @@ def search_project_events(
                 commit=commit,
                 limit=limit,
                 task_id=task_id,
+                natural=True,
             )
         except ValueError as exc:
             raise TraceUserError(
@@ -452,33 +472,34 @@ def search_project_events(
 
 def _git(project: Path, *args: str) -> str | None:
     try:
-        proc = subprocess.run(
-            ["git", *args],
-            cwd=str(project),
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-    except (OSError, subprocess.SubprocessError):
+        return task_library.local_git(project, *args).decode("utf-8", errors="replace").strip()
+    except ValueError:
         return None
-    if proc.returncode != 0:
-        return None
-    return proc.stdout.strip()
 
 
 def git_summary(project: Path) -> dict:
     """Best-effort local git facts (never raises; empty when not a repo)."""
     project = project.resolve()
-    if not (project / ".git").exists():
+    scope = task_library.git_scope(project)
+    if scope is None:
         return {"is_repo": False}
-    branch = _git(project, "rev-parse", "--abbrev-ref", "HEAD")
-    head = _git(project, "rev-parse", "HEAD")
-    log = _git(project, "log", "--oneline", "-5")
+    branch = _git(scope.root, "symbolic-ref", "--short", "HEAD")
+    head = _git(scope.root, "rev-parse", "--verify", "HEAD")
+    error = None
+    try:
+        if scope.prefix:
+            recent = git_events_mod.scoped_log(scope)
+        else:
+            log = _git(scope.root, "log", "--oneline", "-5", "HEAD")
+            recent = log.splitlines() if log else []
+    except RuntimeError as exc:
+        recent, error = [], str(exc)
     return {
         "is_repo": True,
         "branch": branch,
         "head": head,
-        "recent": log.splitlines() if log else [],
+        "recent": recent,
+        "error": error,
     }
 
 
@@ -491,50 +512,37 @@ def project_history(
 ) -> list[dict]:
     """Deterministic git facts via the existing git_events module."""
     project = project.resolve()
-    if not (project / ".git").exists():
-        raise TraceUserError(
-            f"not a git repository: {project}",
-            "'trace history' reads git history, which needs a .git directory.",
-            "Run it inside a git project, or use 'trace events' for "
-            "recorded session memory instead.",
-        )
     try:
         return git_events_mod.get_git_history(
             project, path=path, symbol=symbol, limit=limit
         )
-    except RuntimeError as exc:
+    except (ValueError, RuntimeError) as exc:
         raise TraceUserError(
             f"cannot read git history: {exc}",
-            "git reported an error for this repository.",
-            "Check 'git -C \"{}\" log' works, then retry.".format(project),
+            "History needs a local Git worktree and a valid project-relative path.",
+            "Check 'git -C \"{}\" status', then retry.".format(project),
         ) from exc
 
 
 def gitignore_hint(project: Path) -> str | None:
     """One-line reminder to keep local memory out of git, or None.
 
-    Best-effort and never raises: returns the hint only when the project
-    is a git repository and at least one TRACE directory is not ignored.
+    Report tracked memory and missing local excludes without editing Git.
     """
     project = project.resolve()
-    if not (project / ".git").exists():
+    scope = task_library.git_scope(project)
+    if scope is None:
         return None
-    missing = []
-    for directory in (MEMORY_DIRNAME, opencode_service_mod.SERVICE_DIR_NAME):
-        try:
-            proc = subprocess.run(
-                ["git", "check-ignore", "-q", f"{directory}/"],
-                cwd=str(project),
-                capture_output=True,
-                timeout=5,
-            )
-        except (OSError, subprocess.SubprocessError):
-            return None
-        if proc.returncode == 1:
-            missing.append(f"{directory}/")
-    if not missing:
-        return None
-    return f"note: add {', '.join(missing)} to .gitignore to keep TRACE files out of git"
+    folders = (MEMORY_DIRNAME, opencode_service_mod.SERVICE_DIR_NAME)
+    paths = tuple(scope.object_path(folder) + "/" for folder in folders)
+    hints = []
+    if _git(scope.root, "--literal-pathspecs", "ls-files", "--cached", "--", *paths):
+        hints.append("TRACE data is already tracked or staged. Review the Git index before sharing.")
+    missing = [path for path in paths if not _git(scope.root, "check-ignore", "--no-index", "--", path)]
+    if missing:
+        exclude_file = _git(scope.root, "rev-parse", "--git-path", "info/exclude") or ".git/info/exclude"
+        hints.append(f"Add {', '.join('/' + path for path in missing)} to {exclude_file} from the Git worktree root.")
+    return " ".join(hints) or None
 
 
 def transcript_files(project: Path) -> list[str]:
@@ -602,6 +610,7 @@ def search_transcript_messages(
                 role=role,
                 query=query,
                 limit=limit,
+                natural=True,
             )
         except ValueError as exc:
             raise TraceUserError(
@@ -611,7 +620,7 @@ def search_transcript_messages(
             ) from exc
     finally:
         conn.close()
-    return [asdict(m) for m in messages]
+    return [m.as_record() for m in messages]
 
 
 def get_transcript_session(
@@ -635,7 +644,7 @@ def get_transcript_session(
             ) from exc
     finally:
         conn.close()
-    return [asdict(m) for m in messages]
+    return [m.as_record() for m in messages]
 
 
 def list_transcript_sessions(
@@ -745,6 +754,7 @@ def reset_project(project: Path) -> dict:
     import shutil
 
     from memory.opencode_files import atomic_write_text, integration_marker, require_local_paths
+    from trace_memory import native
 
     project = project.resolve()
     mem = memory_dir(project)
@@ -758,23 +768,25 @@ def reset_project(project: Path) -> dict:
             service.get("message", "capture has not stopped"),
             "Wait for capture to stop and run reset again.",
         )
-    if not mem.exists():
-        return {"project": str(project), "removed": False, "service": service}
-    lock = opencode_service_mod.LockHandle(
-        project / opencode_service_mod.SERVICE_DIR_NAME / opencode_service_mod.LOCK_FILE,
-    )
-    if not lock.acquire():
-        raise TraceUserError(
-            "could not reset project memory",
-            "the capture lock is in use.",
-            "Wait for capture to stop and run reset again.",
-        )
     try:
-        require_local_paths(project, mem, db, marker)
-        atomic_write_text(marker, "disabled by TRACE reset\n")
-        shutil.rmtree(mem, ignore_errors=False)
-    finally:
-        lock.release()
+        with native.capture_lock(project, wait=5):
+            lock = opencode_service_mod.LockHandle(
+                project / opencode_service_mod.SERVICE_DIR_NAME / opencode_service_mod.LOCK_FILE,
+            )
+            if not lock.acquire():
+                raise TimeoutError("the OpenCode capture lock is in use")
+            try:
+                require_local_paths(project, mem, db, marker)
+                native.pause_enrolled_hosts(project)
+                atomic_write_text(marker, "disabled by TRACE reset\n")
+                if not mem.exists():
+                    return {"project": str(project), "removed": False, "service": service}
+                shutil.rmtree(mem, ignore_errors=False)
+            finally:
+                lock.release()
+    except (OSError, ValueError) as exc:
+        raise TraceUserError("could not reset project memory", str(exc),
+                             "Wait for capture or memory access to stop and run reset again.") from exc
     return {"project": str(project), "removed": True, "db_was": str(db), "service": service}
 
 
@@ -832,19 +844,11 @@ def get_recent_context(
     limit: int = 10,
 ) -> list[dict]:
     """Get relevant historical context for a new session."""
-    project = project.resolve()
-    adapter = opencode_capture_mod.create_opencode_adapter()
-    results = adapter.get_recent_context(project, query, limit)
-    return [
-        {
-            "role": r.role,
-            "content": r.content,
-            "timestamp": r.timestamp,
-            "session_id": r.session_id,
-            "metadata": r.metadata,
-        }
-        for r in results
-    ]
+    database = require_local_db(project)
+    if not database.is_file():
+        return []
+    with closing(store_mod.connect(database)) as conn:
+        return session_context_mod.search_context(conn, query, limit)
 
 
 def start_opencode_monitoring(project: Path) -> dict:

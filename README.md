@@ -4,23 +4,20 @@
 
 TRACE 0.1.x is an experimental research preview.
 
-```powershell
-git clone https://github.com/PruvCode/Trace.git TRACE
-cd TRACE
-python -m pip install -c constraints.txt .
-trace install --all --project "PATH_TO_YOUR_PROJECT"
-```
+[Install on Windows, macOS, or Linux](#installation), or start with the
+[offline auth walkthrough](examples/auth-debug) after installing. See the
+[preview changelog](CHANGELOG.md) for the release changes.
 
 ## Why TRACE?
 
-Coding agents forget everything between sessions. Every new session
-re-discovers the same definitions, re-investigates the same bugs, and
-re-makes the same decisions.
+When a coding session ends, its findings can be hard to recover. A later
+session may have to rediscover definitions, repeat an investigation, or ask
+for a decision again.
 
 TRACE records four kinds of memory locally — what the code **is**, what
-**happened**, what **changed**, and what **was discussed** — and exposes them to agents through MCP.
-Its strongest differentiator: **TRACE doesn't ask you to believe that
-memory works. It gives you the infrastructure to measure it.**
+**happened**, what **changed**, and what **was discussed** — and exposes them
+to agents through MCP. The benchmark measures whether retrieval helps
+under a specified set of tasks and conditions.
 
 ## How it works
 
@@ -29,7 +26,7 @@ memory works. It gives you the infrastructure to measure it.**
 | Structural | What IS this codebase? (definitions, callers, symbols) | tree-sitter index of your code |
 | Episodic | What HAPPENED? (investigations, attempts, decisions) | recorded by agents / you, per session |
 | Git | What CHANGED? (commits, files, touched symbols) | deterministic facts from local git history |
-| Transcript | What was DISCUSSED? (conversations, sessions) | recorded by agents / you, per session |
+| Transcript | What was DISCUSSED? (conversations, sessions) | supported host integrations or explicit records |
 
 ```
 your project                    agent (any MCP-compatible client)
@@ -38,7 +35,7 @@ your project                    agent (any MCP-compatible client)
 .agent-memory/memory.db  ◄── stdio ── MCP server
 (SQLite + FTS5, local)        find_definition / find_callers /
                               search_symbols / record_event /
-                              search_events / get_git_history /
+                              search_events / search_context / get_git_history /
                               record_transcript_message /
                               search_transcripts / get_transcript_session /
                               get_task_context / get_evidence
@@ -54,23 +51,66 @@ Session N records findings → Session N+1 retrieves them. See
 - **Agent layer** — Codex, Claude Code, Antigravity, OpenCode, and local stdio MCP clients.
 - **TRACE memory layer** — structural, episodic, Git, and transcript services over one interface.
 - **Local storage** — one SQLite + FTS5 database per project (`.agent-memory/memory.db`). Agents can send retrieved records to their configured provider.
-- **Automatic OpenCode path** — a monitor captures sessions into memory; a plugin injects bounded prior-session context into every model request.
+- **Automatic host integrations** — supported hooks or a host plugin capture new activity and can supply bounded prior-session context to later requests.
 - **MCP explicit-query path** — project memory and evidence tools over stdio.
 - **Benchmark/research subsystem** — isolated baseline-vs-memory runs with mechanical evaluation ([interactive diagram](docs/architecture/trace-architecture.html), [memory flow](docs/architecture/trace-memory-flow.html), [benchmark flow](docs/architecture/trace-benchmark-flow.html)).
 
 ## Installation
 
-From an existing TRACE installation, run `trace install --all` inside the project you want to enable.
-Use `trace doctor` to inspect the result. Start a new agent session and review
-the generated hooks and MCP entry in the host when prompted. Each enabled host
-uses the same project database.
+### Install from source
+
+You need Git and Python 3.11 or newer. Keep the virtual environment available
+after setup because the agent hooks use its interpreter.
+
+**Windows PowerShell**
+
+```powershell
+git clone https://github.com/PruvCode/Trace.git TRACE
+cd TRACE
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -c constraints.txt .
+.\.venv\Scripts\trace.exe install --all --project "PATH_TO_YOUR_PROJECT"
+.\.venv\Scripts\trace.exe doctor --project "PATH_TO_YOUR_PROJECT"
+```
+
+**macOS and Linux**
+
+```sh
+git clone https://github.com/PruvCode/Trace.git TRACE
+cd TRACE
+python3 -m venv .venv
+.venv/bin/python -m pip install -c constraints.txt .
+.venv/bin/trace install --all --project "PATH_TO_YOUR_PROJECT"
+.venv/bin/trace doctor --project "PATH_TO_YOUR_PROJECT"
+```
+
+To run `trace` without its full path, activate the virtual environment
+with `.\.venv\Scripts\Activate.ps1` in PowerShell or
+`. .venv/bin/activate` in POSIX shells on macOS/Linux. Start a new agent session
+and review the generated hooks and MCP registration. Each enabled host uses
+the same database inside the selected TRACE project.
+
+### Install from a wheel
+
+Install a wheel from a reviewed build using the virtual environment's Python.
+With the matching source checkout available, run
+`python -m pip install -c constraints.txt PATH_TO_TRACE_WHEEL` from that
+checkout after activating the environment. Then run `trace install --all`
+inside the project. The [universal guide](docs/universal-agents.md) also
+documents a portable `uv tool` setup.
 
 For setup from a reviewed wheel, supported host behavior, privacy controls,
 update and rollback, see [TRACE for coding agents](docs/universal-agents.md).
 
+For a project inside a Git worktree, TRACE stores its database in the
+selected project and scopes Git history to its files. Use project-relative
+paths for `history --path` and Git evidence. `trace doctor` flags memory
+that is tracked, staged, or eligible for Git staging.
+
 ### Windows x64 preview bundle
 
-Extract `TRACE-Windows-x64.zip` and run one command from the extracted folder:
+If you have a reviewed `TRACE-Windows-x64.zip` bundle, extract it and run this
+command from the extracted folder.
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Install-TRACE.ps1
@@ -80,24 +120,6 @@ The bundle includes TRACE, its own Python and dependencies, and OpenCode.
 The installer fetches a pinned copy of Git for Windows if Git is missing.
 Open a new PowerShell window and run `trace --version` or `trace-opencode`.
 Enable capture separately inside each project that should use TRACE.
-
-### Install from source or wheel
-
-TRACE requires Python 3.11 or newer. Install from a reviewed source checkout in a dedicated environment.
-
-```powershell
-git clone https://github.com/PruvCode/Trace.git TRACE
-cd TRACE
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-python -m pip install -c constraints.txt .
-```
-
-For development with pytest:
-
-```powershell
-python -m pip install -c constraints.txt -e ".[dev]"
-```
 
 ## OpenCode legacy setup and automatic capture
 
@@ -241,63 +263,55 @@ while keeping recorded events and transcripts.
 
 ## Agent Integration
 
-TRACE exposes memory over [MCP](https://modelcontextprotocol.io/) (stdio,
-local process). Any MCP-compatible agent can use it:
+| Capability | How it works |
+|---|---|
+| Persistent local memory | The project database keeps saved events and transcript records across sessions. Git evidence is read from the local worktree's repository. |
+| Explicit search and recording | The CLI or a connected local [MCP](https://modelcontextprotocol.io/) client can query or write project records. Use `search_context` for relevant active events and messages, or `search_events` and `get_evidence` for a particular record. |
+| Native automatic capture | Enabled integrations write supported host activity into the project database. Which events they save depends on the host. |
+| Automatic context delivery | Enabled integrations can supply selected prior context to the host without an MCP call. Delivery depends on the host, active integration, session scope and recall budget. |
+| Executable engineering rules | TRACE reads check definitions from the selected Git approval source. Follow the [approval model](#project-rules-approved-engineering-notes) before relying on those checks in CI. |
 
-1. Run `trace init` in your project.
-2. Run `trace setup opencode --transparent` (or `trace setup opencode` for manual capture).
-3. The agent can now call the memory tools via MCP; everything it records
-   persists in `<project>/.agent-memory/memory.db` for the next session.
-
-With the OpenCode integration, both directions are automatic: the background monitor captures sessions,
-and the project-local plugin adds bounded prior-session memory to every
-model request as one labeled contextual message — the agent does not need
-to call any retrieval tool for the previous session to be available.
-OpenCode setup enables the four memory tools used in prior trials
-(`record_event`, `search_events`, `search_transcripts`,
-`get_transcript_session`) plus `get_evidence` for expanding references.
-`trace mcp` prints the full server configuration for other clients, and `trace`
-commands cover the rest.
-
-Supported: any agent that speaks MCP over stdio and can spawn a local
-command (e.g. OpenCode with MCP configured) can use explicit MCP querying.
-The automatic zero-touch workflow (capture + injection with no manual
-commands) has been run on the OpenCode versions in the compatibility matrix.
-Other agents do not inherit it unless a corresponding integration exists, and
-untested clients should be treated as experimental.
+Use `trace install --all` for detected supported hosts or select one with
+`trace install --agent HOST`. For another stdio client, run `trace init`
+and copy the local server command printed by `trace mcp` into the client.
+Approve hooks and tools in the host where required. See
+[host support](docs/universal-agents.md#host-support) for evidence by version.
 
 ## Memory Storage
 
-- One database per project: `<project>/.agent-memory/memory.db`
-  (SQLite + FTS5). Projects never share memory.
-- Add `.agent-memory/` to your project's `.gitignore` (`trace init`
-  reminds you inside git repositories) so local memory stays local.
+- Each initialized project has its own SQLite + FTS5 database at
+  `<project>/.agent-memory/memory.db`. Use a separate project root for
+  each memory scope.
+- Keep `.agent-memory/`, `.trace-service/`, and backups out of Git.
+  `trace init` and `trace doctor` flag project storage that Git could stage
+  or is already tracking.
 - Structural rows are rebuilt deterministically on `trace index`;
   episodic events are append-only until you run `trace reset`.
-- All queries are parameterized and result-bounded (default 10, max 50).
-- Automatic session-start retrieval policy: the newest 10 user/assistant
-  messages — from the most recent prior session first, older sessions only
-  fill unused budget, subagent sessions skipped — plus up to 5 recent
-  recorded findings, capped at 20 items / 4000 characters (oldest messages
-  yield first; long messages keep head and tail), project-scoped,
-  deterministically ordered, fail-open, with best-effort secret redaction.
+- Explicit searches bound their results. CLI and MCP context search apply
+  an additional size cap.
+- Automatic recall selects a bounded set using available request and task
+  signals, then uses recency to fill space. Native Codex, Claude Code and
+  Antigravity hooks use up to four items and 3,000 characters of project
+  context. OpenCode uses a separate budget. Unrelated newer sessions can
+  displace older context. Use explicit search for a specific older record.
 - Recorded findings can carry a lifecycle (stored in the event payload; older
   events stay valid): `status` is `hypothesis`, `observed` or `verified`, and
   `supersedes` names earlier event ids a finding replaces
   (`trace record --status verified --supersedes 12`, or the MCP
-  `record_event` tool's `status`/`supersedes` arguments). Only a person
-  using the CLI can record `verified`; the MCP tool rejects it, and rejects
-  `source` values other than `agent`, so an agent's claim cannot outrank
-  other history or pose as a Git fact. New sessions are
+  `record_event` tool's `status`/`supersedes` arguments). The CLI accepts
+  `verified` for user-reviewed records. The MCP tool rejects that status
+  and requires `source` to be `agent`. The CLI relies on local access
+  controls for who can write records. New sessions are
   shown only current findings, with hypotheses and verified findings
   labeled; superseded ones stay searchable (`superseded_by` in
   `search_events`). A finding linked to a `file` is flagged
   "may be stale" when that file changed or disappeared after it was
   recorded; unrelated changes never flag it. Earlier transcript messages
   carry no lifecycle: they are shown as history, labeled by session.
-- Search matches each word literally (so `refresh-token` and `v1.2.3` work),
-  ranks best match first with newer entries breaking ties, and reports a
-  query with no searchable words as an error rather than "no results".
+- Natural-language event and transcript searches rank qualified partial
+  matches. For example, `session timeout bug` can find `timeout for sessions`.
+  Identifiers, quoted phrases and explicit search syntax retain literal or
+  structured matching.
 - Injected synthetic memory is labeled `[TRACE PROJECT MEMORY - ...]` and
   is never re-captured as ordinary transcript memory.
 - Inspect with `trace status` / `trace report`, or open the SQLite file
@@ -316,17 +330,23 @@ Approved rules live in `.trace/RULES.md`, in Git, next to the code they govern:
   <!-- why: trace:event=42 -->
 ```
 
-- **Approval.** A rule is approved when the same rule (scope, text, checks)
-  is in `.trace/RULES.md` on the default branch (`origin/HEAD`, else local
-  `main`/`master`; override with `TRACE_RULES_REF`). Anything else is
-  *proposed*: listed, never injected, never executed. TRACE cannot see branch
-  protection, so approval is only as strong as the review policy on that
-  branch. With no remote, any local commit counts, and `trace rules` warns.
-  Even with a remote, `origin/HEAD` and `origin/main` are local refs that any
-  process with a shell can rewrite (`git update-ref`), so on a developer
-  machine approved rules carry the same trust as `CLAUDE.md`. The trust anchor
-  is `trace rules check --all` in CI on a fresh checkout of the protected
-  branch. Agent findings and transcripts never become rules automatically.
+- **Approval.** TRACE takes rule definitions from the committed
+  `.trace/RULES.md` at the selected approval ref, scoped to the project.
+  It tries the ref supplied by `--ref` or `TRACE_RULES_REF` first. By
+  default it tries the local remote-tracking default branch, then local
+  `main` or `master`. Working-tree-only changes are proposals. Local and
+  remote-tracking refs are mutable, and TRACE cannot verify GitHub protection,
+  the identity of an approver, or how the ref was populated.
+- **CI trust.** To enforce a reviewed policy, fetch the trusted base commit
+  and pass its full SHA to
+  `trace rules check --all --strict --ref APPROVED_COMMIT --json`. Obtain
+  that SHA from the protected base in trusted workflow metadata. Strict
+  mode checks whether TRACE can read the selected authority. Review and
+  protection are repository controls. Without them, approval means only
+  that a rule was found at the selected Git revision. Check for covered
+  executable rules where verification is required, since
+  `nothing to check` also exits zero. TRACE's preview CI runs its own tests
+  and wheel checks. It has no approved-rule enforcement job.
 - **What the agent sees.** When a request names a rule's function (or a
   file-level rule's file), the session-start hook injects the bare approved
   sentence, exactly as a maintained notes file would give it, instead of the
@@ -339,26 +359,28 @@ Approved rules live in `.trace/RULES.md`, in Git, next to the code they govern:
 - **What checks verify.** `trace rules check` runs the checks of approved
   rules for files changed since `HEAD` (`--all` in CI) with the project's
   interpreter, in a subprocess with a timeout and a minimal environment.
-  Approved checks are reviewed code, like the test suite. Each failure is
-  rerun once and classified:
+  A check can import or run code from the working tree under test. Run
+  checks in an environment appropriate for that code. The subprocess is
+  not a security sandbox. TRACE ordinarily retries an executable failure
+  once and classifies the result:
   - `regression_in_progress`: an uncommitted change fails the check.
   - `stale_or_regression`: committed code fails; a person decides whether the
     rule or the code is wrong.
-  - `missing_check`: the approved test no longer exists.
-  - `flaky` (failed, then passed) and `environment` (could not run):
-    **inconclusive**, meaning not verified. They are never reported as a pass.
+  - `missing_check`, `flaky` and `environment` are inconclusive. Skipped
+    and expected-failure pytest cases cannot verify a rule.
 
   Every run prints a `verdict`: `verified`, `failing`, `inconclusive` or
   `nothing to check`. Exit codes:
 
   | Exit code | Meaning |
   |---|---|
-  | 0 | verified |
+  | 0 | verified, nothing to check, or an explicitly overridden inconclusive run |
   | 1 | failing |
   | 3 | inconclusive |
 
-  `--allow-inconclusive` lets CI exit 0 anyway. The override is printed and
-  appears in the JSON as `override`, so it is never silent.
+  `--allow-inconclusive` can override an inconclusive execution outcome.
+  Failures and approval-source errors retain their nonzero exits. JSON
+  includes the verdict, executed and skipped counts, and override status.
 
   Each failure carries:
   - a `next:` step;
@@ -395,13 +417,15 @@ Approved rules live in `.trace/RULES.md`, in Git, next to the code they govern:
   - `--write` appends the block to `.trace/RULES.md` as a *proposed* rule, with
     `fails-before`/`passes-after` provenance, and keeps the full report in
     `.agent-memory/guardrails/<sha>.json`. Approval is still a reviewed merge.
-  - An approved check whose test was later renamed or removed blocks as
-    `missing_check`, so a guardrail never silently stops guarding.
+  - An approved check whose test was later renamed or removed is reported as
+    `missing_check` and makes the verdict inconclusive.
 - **Inspect.** `trace rules list [--file PATH] [--json]`,
   `trace rules check [--all] [--json]`, `trace preview --query-stdin` (what would be
   injected).
-- **Disable.** `TRACE_NOTES_FIRST=0` restores the previous session-start
-  output exactly. Deleting `.trace/RULES.md` turns rules off.
+- **Disable.** `TRACE_NOTES_FIRST=0` switches automatic delivery back to
+  ordinary memory context. To withdraw an executable rule, change it in the
+  selected approval source through your review process. Deleting the
+  working-tree copy leaves committed checks at that source in effect.
 
 ## Task library
 
@@ -428,9 +452,10 @@ Attach evidence when recording an event:
 
 - `--transcript-evidence MESSAGE_ID` links a message in this project's TRACE
   database. Find its ID with `trace transcript search`.
-- `--git-evidence FULL_COMMIT:repo/relative/file.py` links a file at a commit
-  already present in the project’s local Git repository. Use the Git root as
-  the TRACE project for this option.
+- `--git-evidence FULL_COMMIT:project/relative/file.py` links a file at a commit
+  already present in the local Git repository. Resolve the path from the
+  TRACE project root, including when TRACE is initialized within a Git
+  worktree subfolder.
 
 Both flags are repeatable, up to ten references total. TRACE stores links
 without copying transcript text or Git file contents into the event. A link
@@ -683,10 +708,10 @@ accordingly.
 ## Privacy
 
 TRACE stores project memory in `<project>/.agent-memory/memory.db`. Its
-capture, indexing, and MCP services run locally. OpenCode can include
-retrieved messages and findings in requests to your chosen model
-provider. The benchmark's real-model adapters can also call a configured
-provider.
+capture, indexing, and MCP services run locally. An agent host can send
+explicitly retrieved excerpts or automatically delivered context to its
+configured model provider. The benchmark's real-model adapters can also
+call a configured provider.
 
 Run `trace privacy` to see where memory lives, whether the capture service
 is running or paused, whether the recall plugin is installed, and whether
@@ -696,7 +721,10 @@ for an existing OpenCode session's task binding and `--query-stdin` to read
 a prospective request from UTF-8 standard input. This previews TRACE's
 part of a request using current memory. The plugin can cache a block for
 an already-running session. `trace service stop` pauses capture while
-preserving recall. `trace teardown opencode` disables both.
+preserving OpenCode recall. `trace teardown opencode` disables both for
+OpenCode. For Codex, Claude Code, or Antigravity, use
+`trace service stop --agent HOST` to pause native capture, automatic
+delivery, and the integration-managed MCP server for this project.
 
 Keep `.agent-memory/`, `.trace-service/`, and backups out of source control and in a directory
 you control. The database and its snapshots are ordinary SQLite files.
@@ -716,27 +744,31 @@ daily TRACE use.
 
 ## Supported Platforms
 
-Developed on Windows (PowerShell 5.1); intended to work on Linux/macOS
-with Python 3.11+. Git-history features need a git repository. Temporary
+Source and wheel installation are available on Windows, Linux, and macOS
+with Python 3.11+. Git-history features need a Git worktree. Temporary
 and run directories should live outside cloud-synced folders (OneDrive,
 etc.) for performance.
 
 ### Compatibility matrix
 
-The OpenCode checks ran native Windows binaries with fresh
-profiles and a scripted local provider. They exercise transport and
-capture behavior. Coding effectiveness is measured separately.
+The historical OpenCode checks used native Windows binaries and a scripted
+local provider. The [audit candidate CI] exercised installed wheels with
+pinned local clients on three operating systems. The signed-in Antigravity
+check used a separate Windows desktop session. These checks measure
+integration behavior. Coding effectiveness is measured separately.
 
-| Surface | Phase 6 evidence |
+[audit candidate CI]: https://github.com/PruvCode/Trace/actions/runs/45384510737
+
+| Surface | Verification |
 |---|---|
 | OpenCode 1.18.32 | Native capture, user-channel injection, model-facing MCP tools and teardown verified |
 | OpenCode 2.1.4 and 2.2.5 with `--standalone` | Native capture, user-channel injection, five-tool MCP connection and teardown verified. The provider’s tool list omitted TRACE’s named evidence tool in the checked requests |
 | OpenCode 2.1.4 and 2.2.5 managed service | Native capture, injection, evidence retrieval through the model-facing MCP tool, and immediate teardown verified in isolated profiles |
+| Antigravity App 2.34.0 on Windows | Signed-in native prompt capture, tool-free context delivery in a fresh conversation, and explicit MCP recording and search verified |
+| Antigravity native CLI 1.5.9 on Windows | Synthetic prompt capture and workspace MCP registration verified |
 | Other OpenCode versions | Unverified |
 | Other MCP clients | Explicit TRACE tools verified over stdio. Individual clients may require configuration |
-| Windows, Python 3.11 | Installed wheel, upgrade, backup, rollback and deterministic tests verified |
-| Linux, Python 3.11 | CI passed on the audited base. Current wheel and suite checks are configured in CI |
-| macOS, Python 3.11 | Current wheel and suite checks are configured in CI. Native integration remains unverified |
+| Windows, Linux and macOS, Python 3.11 | Audit candidate CI passed the suite, installed wheel and pinned local-client checks on each OS |
 | Structural indexing | Python, JavaScript, TypeScript, Apps Script and Astro script sections |
 
 Use managed mode on the tested OpenCode 2.x versions when the agent needs model-facing evidence tools. On 2.x TRACE records user and assistant text and supports opt-in selected pytest outcomes. Run OpenCode once
@@ -772,8 +804,11 @@ are environmental, not assertion failures in TRACE logic.
   Dynamic dispatch, custom aliases, and ambiguous bindings can remain unresolved.
 - Same-named methods on different classes can conflate in call edges;
   symbol attribution from diffs is best-effort overlap, not proof.
-- Automatic capture and injection cover OpenCode only (see the compatibility
-  matrix). Other agents require manual transcript recording via CLI or MCP.
+- Automatic capture and injection depend on the host. Codex and Claude Code
+  have native prompt and reply hooks. OpenCode uses a monitor and plugin.
+  Antigravity captures prompts and delivered model-visible context in the
+  signed-in Windows App 2.34.0 test. Its delivery field is deprecated by
+  the host. See the [host matrix](docs/universal-agents.md#host-support).
 - Session resolution fails open: continued/stale sessions, TUI multi-session
   use, and concurrent same-project runs may receive no automatic injection
   rather than a wrong one.
