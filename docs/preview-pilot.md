@@ -4,12 +4,12 @@ Use a disposable project and a fresh OpenCode profile. Keep the exercise synthet
 
 ## Try the workflow
 
-1. On Windows x64, use the [one-command preview installer](../README.md#windows-x64-preview-bundle) and open a new terminal. On other platforms, follow the source or wheel instructions in a fresh Python 3.11 environment. Run `trace --version`. In an empty project, add `.agent-memory/` and `.trace-service/` to `.gitignore` and run `trace init`.
+1. Follow the [source or wheel instructions](../README.md#installation) in a fresh Python 3.11 environment. If you have a reviewed Windows x64 bundle, you can use its [preview installer](../README.md#windows-x64-preview-bundle) and open a new terminal. Run `trace --version`. In an empty project, add `.agent-memory/` and `.trace-service/` to `.gitignore` and run `trace init`.
 2. Open OpenCode once in the disposable profile, exit, and run `trace setup opencode --transparent`. For the Windows bundle, use `trace-opencode` to launch its bundled copy. Use managed OpenCode 2.x for evidence tools. Run `trace privacy` and check the memory path, capture status, plugin installation and the default setting for structured test recording.
 3. Start an OpenCode session. Ask it to remember this synthetic decision: “For the preview report, use a 17-minute review window and keep completed entries visible.” Close that session. Start another and ask for the agreed review window. Check that the previous decision appears in `trace preview` and in the answer.
 4. With a second disposable project, ask the same question before recording anything. Check that the previous project's decision stays out of the result. For evidence inspection, follow the task and evidence examples in the README.
 5. Run `trace backup <new-private-file.db>`. Try the same destination again and check that TRACE refuses it. Follow the [rollback guide](release-lifecycle.md#disable-or-roll-back) to open a copy in a third disposable project and check that the decision can still be read.
-6. Run `trace service stop` and verify `trace privacy` reports paused capture. Run `trace teardown opencode` and check that the next request omits the prior decision and `trace preview` is empty. Verify the backup remains available. Restart OpenCode to unload the plugin.
+6. Run `trace service stop` and verify `trace privacy` reports paused capture. Run `trace teardown opencode` and check that the next request omits the prior decision and `trace preview` reports no automatic memory block. Verify the backup remains available. Restart OpenCode to unload the plugin.
 
 ## Record what happened
 

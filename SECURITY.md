@@ -51,6 +51,13 @@ to arrange a private channel.
   OpenCode profile for tests. TRACE teardown retains project memory and
   disable markers for capture, the loaded plugin, and the integration MCP
   server. A separate MCP server you configured manually has its own lifecycle.
+- Project-scoped storage checks reject redirected or shared database files.
+  OS permissions still control who can read or write a project directory.
+- The selected Git ref supplies approved rule definitions. TRACE cannot
+  verify repository protection or the approver's identity. Pin a reviewed
+  base commit in trusted CI. Executable checks run with their subprocess's
+  permissions and are not a security sandbox. See the
+  [rule approval model](README.md#project-rules-approved-engineering-notes).
 - The general benchmark runner executes task code. Review task definitions
   before using it. The Phase 5 research comparison grades its synthetic
   edits separately in a restricted WASI environment.

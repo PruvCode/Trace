@@ -1,13 +1,19 @@
 # TRACE install, upgrade, and rollback
 
-TRACE 0.1.x is a research preview. Use a reviewed source checkout or a wheel built from that checkout. Install into a Python 3.11 virtual environment and keep the environment in place while OpenCode uses TRACE. Integration commands store the environment's Python path.
+TRACE 0.1.x is an experimental research preview. Use a reviewed source
+checkout or a wheel built from that checkout. Keep the virtual environment
+in place while any host uses it. Integration commands store the
+environment's Python path. See the [preview changelog](../CHANGELOG.md).
 
 For the cross-platform installer and multi-agent lifecycle, follow
-[TRACE for coding agents](universal-agents.md). The steps below cover legacy OpenCode setup.
+[TRACE for coding agents](universal-agents.md). The steps below cover
+legacy OpenCode setup. Review the
+[rule approval model](../README.md#project-rules-approved-engineering-notes)
+before making executable checks a CI requirement.
 
 ## Install and verify
 
-For the Windows x64 bundle, use the [one-command installer](../README.md#windows-x64-preview-bundle).
+If you have a reviewed Windows x64 bundle, use the [one-command installer](../README.md#windows-x64-preview-bundle).
 It installs into a versioned directory under `%LOCALAPPDATA%\TRACE`. After an
 upgrade, rerun project setup from the new version to refresh the Python path
 in OpenCode. Earlier installations remain available while projects reference them.
