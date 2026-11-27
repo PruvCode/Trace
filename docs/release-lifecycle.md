@@ -11,6 +11,21 @@ legacy OpenCode setup. Review the
 [rule approval model](../README.md#project-rules-approved-engineering-notes)
 before making executable checks a CI requirement.
 
+## Prepare a preview release
+
+1. Update the version in `trace_memory/__init__.py` and the changelog in a
+   reviewed pull request. The CLI and wheel metadata use the same version.
+2. Wait for CI to pass on the merged commit, then create the matching
+   `v<VERSION>` tag at that commit. The tag push runs CI again and fails if the
+   tag and wheel version differ.
+3. Use the `trace-wheel-*` artifact from the successful tag run. The OS matrix
+   installs the same wheel on Windows, Linux, and macOS. The additional Python
+   jobs check wheel installation and the offline demo on Linux.
+4. Compare the wheel's SHA-256 with `SHA256SUMS` and check that `build-info.json`
+   names the expected commit and run. Attach those files to the GitHub
+   pre-release with the matching changelog. Attach a Windows bundle after
+   checking that bundle in a disposable Windows environment.
+
 ## Install and verify
 
 If you have a reviewed Windows x64 bundle, use the [one-command installer](../README.md#windows-x64-preview-bundle).

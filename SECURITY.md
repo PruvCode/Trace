@@ -40,8 +40,11 @@ to arrange a private channel.
 
 - TRACE stores project memory in local SQLite
   (`<project>/.agent-memory/memory.db`). Keep the database and backup files
-  in private directories and out of Git. SQLite storage and backup files
-  have no application-level encryption.
+  in private directories and out of Git. On macOS and Linux, TRACE creates
+  its database and memory directory with owner-only permissions. Existing
+  paths keep their current permissions. On Windows, use a project folder
+  with private access permissions. SQLite storage and backups lack
+  application-level encryption.
 - An agent may include retrieved excerpts in model requests. The benchmark
   can also contact a configured provider. Review the provider and the
   project's capture settings before using sensitive data.

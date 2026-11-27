@@ -170,7 +170,7 @@ def _events_by_source(conn: sqlite3.Connection) -> dict[str, int]:
 
 def privacy_info(project: Path) -> dict:
     """Report project-local capture and recall settings without reading transcript text."""
-    from memory.opencode_files import integration_marker, require_local_paths
+    from memory.opencode_files import automatic_recall_enabled, integration_marker, require_local_paths
     from memory import opencode_plugin
     from trace_memory import native
 
@@ -181,7 +181,8 @@ def privacy_info(project: Path) -> dict:
     require_local_paths(project, database, marker, legacy, modern)
     initialized = database.is_file()
     installed = any(path.is_file() and opencode_plugin.is_owned_plugin(path) for path in (legacy, modern))
-    disabled = os.path.lexists(marker)
+    recall_enabled = automatic_recall_enabled(project)
+    disabled = os.path.lexists(marker) or not recall_enabled
     test_capture = False
     if initialized:
         with closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True)) as db:
@@ -211,6 +212,7 @@ def privacy_info(project: Path) -> dict:
         "initialized": initialized,
         "capture": capture_state,
         "automatic_recall": recall_state,
+        "automatic_recall_enabled": recall_enabled,
         "hosts": hosts,
         "selected_test_capture_opt_in": test_capture,
     }
@@ -219,8 +221,10 @@ def privacy_info(project: Path) -> dict:
 def preview_context(project: Path, session_id: str | None, query: str | None, *, agent: str = "opencode") -> str:
     """Render the block TRACE would assemble for a new request."""
     from memory import synthetic
-    from memory.opencode_files import integration_marker, require_local_paths
+    from memory.opencode_files import automatic_recall_enabled, integration_marker, require_local_paths
 
+    if not automatic_recall_enabled(project):
+        return ""
     database = require_local_db(project)
     if agent != "opencode":
         from memory import dialogue

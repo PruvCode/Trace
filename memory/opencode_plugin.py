@@ -48,7 +48,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from memory.opencode_files import INTEGRATION_DISABLED, atomic_write_text, require_local_paths
+from memory.opencode_files import (
+    AUTOMATIC_RECALL_DISABLED, INTEGRATION_DISABLED, atomic_write_text, require_local_paths,
+)
 from memory.opencode_service import SERVICE_DIR_NAME, default_opencode_db_path
 from memory.task_library import TASK_BINDINGS_VERSION
 from trace_memory import project as project_mod
@@ -67,27 +69,42 @@ def _js_string(value: str) -> str:
 _TASK_CACHE_JS = """
 const taskVersionPath = join(dirname(TRACE_DB), __TASK_VERSION_FILE__);
 const integrationDisabled = join(dirname(dirname(TRACE_DB)), __SERVICE_DIR__, __INTEGRATION_DISABLED__);
+const automaticRecallMarker = join(dirname(integrationDisabled), __AUTOMATIC_RECALL_DISABLED__);
 let taskVersion = "";
+let recallWasDisabled = false;
 
 function memoryUnavailable() {
   return existsSync(integrationDisabled) || !existsSync(TRACE_DB);
 }
 
-function refreshTaskBindings() {
+function automaticRecallDisabled() {
+  try {
+    lstatSync(automaticRecallMarker);
+    return true;
+  } catch (error) {
+    return error?.code !== "ENOENT";
+  }
+}
+
+function refreshContextCache() {
   let version = "";
   try {
     const info = lstatSync(taskVersionPath);
     if (info.isFile() && info.size === 32) version = readFileSync(taskVersionPath, "utf8");
   } catch {}
-  if (version !== taskVersion) {
+  const disabled = automaticRecallDisabled();
+  if (version !== taskVersion || disabled !== recallWasDisabled) {
     taskVersion = version;
+    recallWasDisabled = disabled;
     traceBlocks.clear();
     traceAttempts.clear();
   }
 }
 """.replace("__TASK_VERSION_FILE__", _js_string(TASK_BINDINGS_VERSION)).replace(
     "__SERVICE_DIR__", _js_string(SERVICE_DIR_NAME)
-).replace("__INTEGRATION_DISABLED__", _js_string(INTEGRATION_DISABLED))
+).replace("__INTEGRATION_DISABLED__", _js_string(INTEGRATION_DISABLED)).replace(
+    "__AUTOMATIC_RECALL_DISABLED__", _js_string(AUTOMATIC_RECALL_DISABLED)
+)
 
 
 PLUGIN_JS_TEMPLATE = PLUGIN_HEADER + """
@@ -145,7 +162,7 @@ export const TraceMemoryPlugin = async ({ directory }) => {
           reason = "no-session-id";
           return;
         }
-        refreshTaskBindings();
+        refreshContextCache();
         if (!traceBlocks.has(sessionID)) {
           if ((traceAttempts.get(sessionID) || 0) >= TRACE_HELPER_ATTEMPTS) {
             reason = "helper-failed";
@@ -192,7 +209,7 @@ export const TraceMemoryPlugin = async ({ directory }) => {
           // else: nothing cached yet, so the next request retries once.
         }
         const block = traceBlocks.get(sessionID);
-        if (!block || memoryUnavailable()) {
+        if (!block || memoryUnavailable() || automaticRecallDisabled()) {
           return;
         }
         if (hasTraceBlock(output.messages)) {
@@ -284,13 +301,14 @@ export default {
       let error = null;
       try {
         const first = event.messages.find((m) => m && m.role === "user");
-        refreshTaskBindings();
+        refreshContextCache();
         if (!traceBlocks.has(event.sessionID)) {
           spawned = true;
           helper(event.sessionID, textOf(first).slice(0, 2000));
         }
         const block = traceBlocks.get(event.sessionID);
-        if (block && !memoryUnavailable() && !event.messages.some((m) => textOf(m).startsWith(TRACE_LABEL))) {
+        if (block && !memoryUnavailable() && !automaticRecallDisabled()
+            && !event.messages.some((m) => textOf(m).startsWith(TRACE_LABEL))) {
           event.messages.unshift({ role: "user", content: [{ type: "text", text: block }] });
           chars = block.length;
         }

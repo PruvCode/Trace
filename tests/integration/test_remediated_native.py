@@ -12,7 +12,7 @@ from threading import Timer
 import pytest
 
 from trace_memory import cli, project
-from trace_memory.native import HOOK_HOSTS, MAX_PAYLOAD_BYTES
+from trace_memory.native import HOOK_HOSTS, MAX_PAYLOAD_BYTES, host_available
 
 
 def hook(root, host, session, text, turn="1"):
@@ -121,6 +121,28 @@ def test_native_pause_reset_and_uninstall(tmp_path, host, capsys):
     assert project.privacy_info(tmp_path)["hosts"][host]["recall"] == "not configured"
     assert json.loads(hook(tmp_path, host, "uninstalled", "No capture after uninstall.").stdout) == {}
     assert len(rows(tmp_path)) == 2
+
+
+@pytest.mark.parametrize("host", HOOK_HOSTS)
+def test_manual_only_mode_preserves_capture_and_explicit_access(tmp_path, host, capsys):
+    install(tmp_path, host, capsys)
+    hook(tmp_path, host, "starting", "Invoice credits require an audit.")
+    assert cli.main(["privacy", "--automatic-recall", "off", "--json", "--project", str(tmp_path)]) == 0
+    state = json.loads(capsys.readouterr().out)
+    assert state["automatic_recall_enabled"] is False
+    assert state["hosts"][host]["capture"] == "enabled"
+    assert state["hosts"][host]["recall"] == "disabled"
+    assert project.preview_context(tmp_path, "paused", "Invoice credits", agent=host) == ""
+    assert json.loads(hook(tmp_path, host, "paused", "Billable hours stay private.").stdout) == {}
+    assert (f"{host}:paused", "user", "Billable hours stay private.") in rows(tmp_path)
+    assert host_available(tmp_path, host)
+    assert cli.main(["context", "Billable hours", "--project", str(tmp_path)]) == 0
+    assert json.loads(capsys.readouterr().out)["content"] == "Billable hours stay private."
+
+    assert cli.main(["privacy", "--automatic-recall", "on", "--project", str(tmp_path)]) == 0
+    assert "Project automatic recall: on" in capsys.readouterr().out
+    assert "Invoice credits require an audit" in project.preview_context(tmp_path, "resumed", "Invoice credits", agent=host)
+    assert json.loads(hook(tmp_path, host, "resumed", "Invoice credits").stdout)
 
 
 def test_concurrent_replay_and_abrupt_writer_interruption(tmp_path, capsys):

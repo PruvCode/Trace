@@ -13,7 +13,7 @@ import tomllib
 from contextlib import contextmanager
 from pathlib import Path
 
-from memory.opencode_files import atomic_write_text, integration_marker, require_local_paths
+from memory.opencode_files import automatic_recall_enabled, atomic_write_text, integration_marker, require_local_paths
 from memory.opencode_service import DISABLED_FILE, LockHandle, default_opencode_db_path, get_service
 from trace_memory import project as projects
 from trace_memory.native import HOOK_HOSTS, privacy_state, receipt_path
@@ -401,7 +401,7 @@ def _doctor(project: Path, host: str) -> dict:
         service = get_service(project)
         return {"status": "configured", "binary": binary,
                 "capture": service.status(cleanup_stale=False)["status"],
-                "recall_disabled": integration_marker(project).exists(),
+                "recall_disabled": integration_marker(project).exists() or not automatic_recall_enabled(project),
                 "capture_disabled": (integration_marker(project).parent / DISABLED_FILE).exists()}
     receipt = _receipt(project, host)
     if not receipt:

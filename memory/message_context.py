@@ -42,6 +42,7 @@ from typing import Any
 from memory import session_context as session_context_mod
 from memory import store as store_mod
 from memory import synthetic as synthetic_mod
+from memory.opencode_files import automatic_recall_enabled
 
 # A session row newer than this is plausibly the session currently firing
 # the hook. Older newest-rows (continued sessions, idle servers) and two
@@ -123,6 +124,16 @@ def get_message_start_context(
         "finding_items": 0,
         "latency_ms": 0,
     }
+    from trace_memory.project import TraceUserError
+
+    project = Path(project_dir).resolve()
+    try:
+        recall_enabled = automatic_recall_enabled(project)
+    except (OSError, TraceUserError):
+        recall_enabled = False
+    if not recall_enabled:
+        stats["reason"] = "automatic-recall-disabled"
+        return {"items": [], "text": "", "truncated": False, "stats": stats}
     if session_id:
         resolution = {"ok": True, "session_id": session_id, "reason": "hook"}
     else:
@@ -130,9 +141,6 @@ def get_message_start_context(
     stats["reason"] = resolution["reason"]
     if not resolution["ok"]:
         return {"items": [], "text": "", "truncated": False, "stats": stats}
-    from trace_memory.project import TraceUserError
-
-    project = Path(project_dir).resolve()
     db = Path(trace_db_path).absolute()
     try:
         store_mod.require_local_storage(project if db.is_relative_to(project) else db.parent.resolve(), db)

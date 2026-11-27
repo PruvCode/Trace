@@ -5,23 +5,58 @@ on:
   pull_request:
   push:
     branches: [main, "release/**"]
+    tags: ["v*"]
 
 permissions:
   contents: read
 
 jobs:
+  wheel:
+    runs-on: ubuntu-latest
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+      sha256: ${{ steps.package.outputs.sha256 }}
+      version: ${{ steps.package.outputs.version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+      - name: Build and identify the release wheel
+        id: package
+        shell: bash
+        run: |
+          python -m pip wheel --no-deps --wheel-dir "$RUNNER_TEMP/trace-wheel" .
+          python scripts/release_wheel.py record "$RUNNER_TEMP/trace-wheel"
+      - name: Upload the candidate and its checksums
+        id: upload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: trace-wheel-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/trace-wheel/
+          if-no-files-found: error
+
   test:
+    needs: wheel
+    if: ${{ !cancelled() }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Require a successful wheel build
+        if: ${{ needs.wheel.result != 'success' }}
+        run: exit 1
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.11"
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
       - run: python -m pip install -c constraints.txt -e ".[dev,corpus]" ruff
@@ -39,6 +74,11 @@ jobs:
         if: failure()
         shell: bash
         run: grep -E '^(FAILED|ERROR) ' pytest.log | head -40 | sed 's/^/::error::/' || true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          artifact-ids: ${{ needs.wheel.outputs.artifact-id }}
+          path: ${{ runner.temp }}/trace-wheel
+          merge-multiple: true
       - name: Install pinned native test clients
         shell: bash
         run: |
@@ -46,12 +86,15 @@ jobs:
             @opencode/cli@2.2.5 @openai/codex@0.163.0 @anthropic-ai/claude-code@2.1.295
       - name: Verify the installed wheel with native clients
         shell: bash
+        env:
+          TRACE_WHEEL_SHA256: ${{ needs.wheel.outputs.sha256 }}
+          TRACE_WHEEL_VERSION: ${{ needs.wheel.outputs.version }}
         run: |
+          python scripts/release_wheel.py verify "$RUNNER_TEMP/trace-wheel"
           python - <<'PY'
           import json
           import os
           import sqlite3
-          import shutil
           import subprocess
           import sys
           import tempfile
@@ -59,11 +102,10 @@ jobs:
           from pathlib import Path
 
           source = Path.cwd()
+          runner_temp = Path(os.environ["RUNNER_TEMP"])
+          wheel, = (runner_temp / "trace-wheel").glob("trace-*.whl")
           with tempfile.TemporaryDirectory(prefix="trace-wheel-") as path:
               root = Path(path)
-              subprocess.run([sys.executable, "-m", "pip", "wheel", "--no-deps", "--wheel-dir", path, "."],
-                             cwd=source, check=True)
-              wheel, = root.glob("trace-*.whl")
               subprocess.run([sys.executable, "-m", "venv", str(root / "venv")], check=True)
               bin_dir = root / "venv" / ("Scripts" if os.name == "nt" else "bin")
               python = bin_dir / ("python.exe" if os.name == "nt" else "python")
@@ -76,7 +118,15 @@ jobs:
                              cwd=source, check=True)
               project = root / "project"
               project.mkdir()
-              subprocess.run([str(trace), "--version"], cwd=project, check=True)
+              expected_version = os.environ["TRACE_WHEEL_VERSION"]
+              cli_version = subprocess.check_output([str(trace), "--version"], cwd=project, text=True).strip()
+              installed_version = subprocess.check_output(
+                  [str(python), "-c", "from importlib.metadata import version; print(version('trace'))"],
+                  cwd=project, text=True,
+              ).strip()
+              print(f"{cli_version}; installed distribution {installed_version}")
+              if cli_version != f"trace {expected_version}" or installed_version != expected_version:
+                  raise RuntimeError(f"installed wheel and CLI must both report {expected_version}")
               subprocess.run([str(trace), "install", "--agent", "codex", "--agent", "claude",
                               "--agent", "antigravity"], cwd=project, check=True)
               subprocess.run([str(trace), "doctor"], cwd=project, check=True)
@@ -86,7 +136,7 @@ jobs:
               subprocess.run([str(trace), "backup", str(backup)], cwd=project, check=True)
               with closing(sqlite3.connect(backup)) as db:
                   assert db.execute("PRAGMA quick_check").fetchone() == ("ok",)
-              packages = Path(os.environ["RUNNER_TEMP"]) / "trace-clients/node_modules"
+              packages = runner_temp / "trace-clients/node_modules"
               package = packages / "@opencode/cli"
               manifest = json.loads((package / "package.json").read_text(encoding="utf-8"))
               assert manifest["version"] == "2.2.5"
@@ -112,13 +162,33 @@ jobs:
                    "--claude", str(claude), "--python", str(python), "--scratch", str(root / "universal")],
                   cwd=source, check=True,
               )
-              artifacts = Path(os.environ["RUNNER_TEMP"]) / "trace-wheel-artifact"
-              artifacts.mkdir(exist_ok=True)
-              shutil.copy2(wheel, artifacts / wheel.name)
           PY
-      - name: Upload the tested wheel
-        uses: actions/upload-artifact@v4
+
+  python-compatibility:
+    needs: wheel
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          name: trace-wheel-${{ matrix.os }}
-          path: ${{ runner.temp }}/trace-wheel-artifact/*.whl
-          if-no-files-found: error
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          artifact-ids: ${{ needs.wheel.outputs.artifact-id }}
+          path: ${{ runner.temp }}/trace-wheel
+          merge-multiple: true
+      - name: Check wheel installation and offline demo
+        shell: bash
+        env:
+          TRACE_WHEEL_SHA256: ${{ needs.wheel.outputs.sha256 }}
+        run: |
+          python scripts/release_wheel.py verify "$RUNNER_TEMP/trace-wheel"
+          python -m pip install -c constraints.txt "$RUNNER_TEMP"/trace-wheel/trace-*.whl
+          python -m pip check
+          python -m research.phase6.auth_debug_smoke --python "$(command -v python)" --scratch "$RUNNER_TEMP/trace-auth-debug"

@@ -92,6 +92,7 @@ raw host transcript files alone.
 | `trace doctor` | Reports local registration, detected binaries, and pending or changed configuration. Check hook trust and MCP approval in the host. |
 | `trace status` | Shows the project’s stored memory and OpenCode capture status. |
 | `trace privacy --json` | Shows each host's project-level capture and recall state and the latest native write diagnostics. |
+| `trace privacy --automatic-recall off` | Stops automatic context delivery across the project. Capture and explicit CLI and MCP access remain available. Set `on` to resume. |
 | `trace preview --agent codex --query-stdin` | Previews the supplied request using the selected native host's recall logic and budget. Use `--session` to exclude that session. |
 | `trace service stop --agent codex` | Pauses TRACE hooks and managed MCP for Codex in this project. Claude Code and Antigravity use the same control. `start` resumes. OpenCode's service stop pauses its capture monitor while it retains recall. |
 | `trace update --all` | Refreshes registered integrations with the TRACE interpreter running the command. Install the reviewed package version first. |
@@ -111,7 +112,10 @@ leaves JSONC files for manual configuration.
 TRACE stores model conversation text on disk. Add `.agent-memory/` and
 `.trace-service/` to your local Git excludes. Regular-expression redaction is
 best effort. Use a private project directory and review what can be shared
-before enabling capture. The local MCP connection uses stdio, and the host may
+before enabling capture. After an upgrade, run `trace update --all` and restart
+each enrolled host before relying on the automatic recall setting. Verify with
+a fresh request. A request already in progress may include recalled content.
+The local MCP connection uses stdio, and the host may
 send recalled excerpts to its model provider. Recall labels historical text as
 untrusted. Set `TRACE_DISABLE_HOOKS=1` in the host environment to pause Codex,
 Claude Code, and Antigravity capture and automatic recall for that process.

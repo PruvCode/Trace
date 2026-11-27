@@ -97,9 +97,11 @@ def build_parser() -> argparse.ArgumentParser:
         host_parser.add_argument("--project", default=".", help="project directory (default: current directory)")
         host_parser.set_defaults(func=integrations.cli)
 
-    p = sub.add_parser("privacy", help="show capture, recall, and test recording settings")
+    p = sub.add_parser("privacy", help="inspect privacy settings or change automatic recall")
     p.add_argument("--project", default=".", help="project directory (default: current directory)")
     p.add_argument("--json", action="store_true", help="return per-host privacy state as JSON")
+    p.add_argument("--automatic-recall", choices=("on", "off"),
+                   help="enable or disable automatic context delivery across this project")
     p.set_defaults(func=cmd_privacy)
 
     p = sub.add_parser("preview", help="show the memory block TRACE would include in a new request")
@@ -424,13 +426,18 @@ def cmd_status(args) -> int:
 
 
 def cmd_privacy(args) -> int:
+    from memory.opencode_files import set_automatic_recall
+
     project = project_mod.resolve_project(args.project)
+    if args.automatic_recall is not None:
+        set_automatic_recall(project, args.automatic_recall == "on")
     info = project_mod.privacy_info(project)
     if args.json:
         print(json.dumps(info, sort_keys=True))
         return EXIT_OK
     memory_status = "initialized" if info["initialized"] else "not initialized"
     print(f"Project memory ({memory_status}): {info['database']}")
+    print("Project automatic recall: " + ("on" if info["automatic_recall_enabled"] else "off"))
     print(f"OpenCode capture: {info['capture']}")
     print(f"OpenCode · Automatic recall: {info['automatic_recall']}")
     for host, state in info["hosts"].items():
@@ -440,6 +447,8 @@ def cmd_privacy(args) -> int:
         if failure := state.get("last_failure"):
             print(f"  Last capture failure: {failure['error']} at {failure['time']}")
     print("Selected test recording: " + ("opted in" if info["selected_test_capture_opt_in"] else "off"))
+    if not info["automatic_recall_enabled"]:
+        print("After upgrading, run 'trace update --all' and restart each enrolled host before relying on this setting.")
     print("Use 'trace preview' to inspect the memory TRACE can include in a new request.")
     print("Use 'trace service stop --agent HOST' to pause capture. For native hosts it also pauses automatic recall.")
     return EXIT_OK

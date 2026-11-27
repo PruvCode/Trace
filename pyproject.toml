@@ -1,6 +1,6 @@
 [project]
 name = "trace"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Persistent local memory for coding agents across sessions, with measurement."
 readme = "README.md"
 license = "MIT"
@@ -34,6 +34,9 @@ corpus = [
 [build-system]
 requires = ["setuptools>=84.1"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools.dynamic]
+version = {attr = "trace_memory.__version__"}
 
 [tool.setuptools.packages.find]
 where = ["."]

@@ -1,7 +1,9 @@
 """Editor mechanics shared by the maintained-notes coding trial (v2)."""
 
+import json
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -39,6 +41,62 @@ def test_retry_feedback_never_mentions_graded_behavior():
         message = retry_feedback(defect, "")
         assert "check" not in message.lower() or "checks" not in message.lower()
         assert defect != "signature" or "signature" in message
+
+
+@pytest.mark.parametrize("reply", [None, [], {"done_reason": "stop"}, {"message": {"content": []}}])
+def test_notes_trial_records_invalid_provider_response(monkeypatch, reply):
+    from research.preview import notes_trial
+
+    monkeypatch.setattr(notes_trial, "request", lambda *args: reply)
+    row = notes_trial.proposal(None, notes_trial.CASES[0], ORIGINAL, "stub", 1, "notes", "",
+                               fenced_editor=True, repair=True)
+    assert row["reason"] == "invalid-provider-response"
+    assert row["attempts"] == 1 and not row["passed"] and row["candidate"] is None
+
+
+def test_notes_trial_records_invalid_provider_json(monkeypatch):
+    from research.preview import notes_trial
+
+    def request(*args):
+        raise json.JSONDecodeError("invalid JSON", "", 0)
+
+    monkeypatch.setattr(notes_trial, "request", request)
+    row = notes_trial.proposal(None, notes_trial.CASES[0], ORIGINAL, "stub", 1, "notes", "")
+    assert row["reason"] == "invalid-provider-response" and not row["passed"]
+
+
+def test_notes_trial_retries_with_assistant_text_only(monkeypatch):
+    from research.preview import notes_trial
+
+    case = SimpleNamespace(repo="stub", path="module.py", symbol="f", request="Return the input.", prelude="")
+    candidate = ORIGINAL.strip()
+    replies = iter([
+        {"message": {"content": "Please clarify."}, "prompt_eval_count": 10, "eval_count": [], "done_reason": "stop"},
+        {"message": {"content": f"```python\n{candidate}\n```"}, "prompt_eval_count": 20,
+         "eval_count": 3, "done_reason": "stop"},
+    ])
+    prompts = []
+
+    def request(path, body):
+        prompts.append(body["messages"][0]["content"])
+        return next(replies)
+
+    monkeypatch.setattr(notes_trial, "request", request)
+    monkeypatch.setattr(notes_trial, "grade", lambda grader, case, edit: (edit == candidate, True))
+    row = notes_trial.proposal(None, case, ORIGINAL, "stub", 1, "notes", "", fenced_editor=True, repair=True)
+    assert row["passed"] and row["candidate"] == candidate and row["attempts"] == 2
+    assert row["input_tokens"] == 30 and row["output_tokens"] == 3
+    assert prompts[1] == prompts[0] + "\n\nPrevious reply:\nPlease clarify.\n\n" + retry_feedback("no-block", "")
+
+
+def test_notes_trial_does_not_retry_truncated_output(monkeypatch):
+    from research.preview import notes_trial
+
+    replies = iter([{"done_reason": "length", "eval_count": 400}])
+    monkeypatch.setattr(notes_trial, "request", lambda *args: next(replies))
+    row = notes_trial.proposal(None, notes_trial.CASES[0], ORIGINAL, "stub", 1, "notes", "",
+                               fenced_editor=True, repair=True)
+    assert row["reason"] == "length" and row["attempts"] == 1 and row["candidate"] is None
 
 
 def test_excerpt_renders_only_verified_evidenced_decisions():
