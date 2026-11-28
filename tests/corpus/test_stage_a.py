@@ -457,8 +457,8 @@ def test_index_is_intact_detects_empty_index(tmp_path: Path):
     assert validate._index_is_intact(repo) is False
 
 
-def test_worktree_is_registered_detects_dangling(tmp_path: Path):
-    """A dangling `.git` marker (post-prune) must not count as a worktree."""
+def test_worktree_is_registered_detects_dangling(tmp_path: Path, monkeypatch):
+    """A pruned cache worktree can be saved aside and registered again."""
     from corpus import validate
 
     clone = tmp_path / "clone"
@@ -471,13 +471,40 @@ def test_worktree_is_registered_detects_dangling(tmp_path: Path):
     wt = tmp_path / "wt"
     _git(clone, "worktree", "add", "--detach", str(wt), "HEAD")
     assert validate._worktree_is_registered(clone, wt) is True
+    alias = tmp_path / "clone" / ".." / "wt"
+    assert validate._worktree_is_registered(clone, alias) is True
 
     # Simulate `git worktree prune` having dropped the metadata directory.
     gitdir = clone / ".git" / "worktrees" / wt.name
     assert gitdir.exists()
-    import shutil as _shutil
-    _shutil.rmtree(gitdir)
+    gitdir.rename(tmp_path / "old-registration")
     assert validate._worktree_is_registered(clone, wt) is False
+
+    monkeypatch.setattr(validate, "ensure_repo_clone", lambda _repo: clone)
+    assert validate._scratch_worktree("owner/expected", "HEAD", wt) == wt
+    assert validate._worktree_is_registered(clone, wt) is True
+    assert (tmp_path / "wt.dangling" / "f.txt").read_text(encoding="utf-8") == "v\n"
+
+
+def test_scratch_rejects_unrelated_repositories_before_cleanup(tmp_path, tiny_repo, monkeypatch):
+    from corpus import validate
+
+    foreign = tmp_path / "foreign"
+    foreign.mkdir()
+    _git(foreign, "init", "-b", "main")
+    _git(foreign, "commit", "--allow-empty", "-m", "foreign")
+    linked = tmp_path / "foreign-linked"
+    _git(foreign, "worktree", "add", "--detach", str(linked), "HEAD")
+
+    monkeypatch.setattr(validate, "ensure_repo_clone", lambda _repo: tiny_repo)
+    monkeypatch.setattr(validate, "_reset_worktree_in_place", lambda *_args: pytest.fail("reset attempted"))
+    monkeypatch.setattr(validate, "_git_with_lock_retry", lambda *_args, **_kwargs: pytest.fail("Git mutation attempted"))
+
+    for scratch in (tiny_repo, foreign, linked):
+        assert validate._worktree_is_registered(tiny_repo, scratch) is False
+        with pytest.raises(RuntimeError, match="scratch path is not a worktree"):
+            validate._scratch_worktree("owner/expected", "HEAD", scratch)
+        assert (scratch / ".git").exists()
 
 
 def test_clear_stale_lock_clears_orphan_regardless_of_age(tmp_path: Path):

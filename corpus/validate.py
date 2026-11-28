@@ -244,9 +244,37 @@ def ensure_repo_clone(repo: str, *, allow_network: bool = True) -> Path:
     return dest
 
 
+def _git_common_dir(repo: Path) -> Path | None:
+    proc = _git("rev-parse", "--git-common-dir", cwd=repo)
+    if proc.returncode != 0 or not (value := proc.stdout.rstrip("\r\n")):
+        return None
+    return (repo / value).resolve()
+
+
+def _read_git_path(link: Path, prefix: str = "") -> Path | None:
+    """Read a Git metadata pointer, including worktrees using relative links."""
+    try:
+        if not link.is_file():
+            return None
+        with link.open("rb") as handle:
+            value = os.fsdecode(handle.read(65537)).rstrip("\r\n")
+        if len(value) > 65536 or not value.startswith(prefix):
+            return None
+        value = value[len(prefix):]
+        if not value or not value.isprintable():
+            return None
+        return (link.parent / value).resolve()
+    except (OSError, RuntimeError, ValueError):
+        return None
+
+
 def _worktree_lock_path(clone: Path, scratch: Path) -> Path:
     """Path of the worktree-specific ``index.lock`` git would contend for."""
-    return clone / ".git" / "worktrees" / scratch.name / "index.lock"
+    worktrees = (_git_common_dir(clone) or clone / ".git") / "worktrees"
+    git_dir = _read_git_path(scratch / ".git", "gitdir: ")
+    if git_dir is not None and git_dir.parent == worktrees:
+        return git_dir / "index.lock"
+    return worktrees / scratch.name / "index.lock"
 
 
 def _index_is_intact(scratch: Path) -> bool:
@@ -307,10 +335,26 @@ def _worktree_is_registered(clone: Path, scratch: Path) -> bool:
     directory is *not* usable as a worktree, so it must not be treated as one.
     """
     marker = scratch / ".git"
-    if not marker.exists():
+    git_dir = _read_git_path(marker, "gitdir: ")
+    if git_dir is None:
         return False
-    proc = _git("rev-parse", "--git-dir", cwd=scratch)
-    return proc.returncode == 0
+    common = _git_common_dir(clone)
+    if common is None or git_dir.parent != common / "worktrees":
+        return False
+    try:
+        registered_marker = _read_git_path(git_dir / "gitdir")
+        if (registered_marker is None or registered_marker.name != ".git"
+                or not registered_marker.parent.samefile(scratch)
+                or _read_git_path(git_dir / "commondir") != common):
+            return False
+        proc = _git("rev-parse", "--show-toplevel", "--git-common-dir", "--absolute-git-dir", cwd=scratch)
+        paths = proc.stdout.splitlines()
+        if proc.returncode != 0 or len(paths) != 3:
+            return False
+        actual_root, actual_common, actual_git_dir = ((scratch / path).resolve() for path in paths)
+        return actual_root.samefile(scratch) and actual_common == common and actual_git_dir == git_dir
+    except (OSError, RuntimeError, ValueError):
+        return False
 
 
 def _scratch_worktree(repo: str, base_commit: str, scratch: Path) -> Path:
@@ -329,21 +373,21 @@ def _scratch_worktree(repo: str, base_commit: str, scratch: Path) -> Path:
     """
     clone = ensure_repo_clone(repo)
     scratch.parent.mkdir(parents=True, exist_ok=True)
-    lock = _worktree_lock_path(clone, scratch)
-
-    if (scratch / ".git").exists() and not _worktree_is_registered(clone, scratch):
-        # Dangling worktree metadata: move it aside (a single rename, not a
-        # recursive delete) so `worktree add` can succeed cleanly.
+    marker = scratch / ".git"
+    registered = _worktree_is_registered(clone, scratch)
+    if not registered and os.path.lexists(marker):
+        common = _git_common_dir(clone)
+        git_dir = _read_git_path(marker, "gitdir: ")
+        if common is None or git_dir is None or git_dir.parent != common / "worktrees" or git_dir.exists():
+            raise RuntimeError(f"scratch path is not a worktree of the cached repository: {scratch}")
+        # Preserve the abandoned checkout and register a fresh worktree.
         stale = scratch.with_name(f"{scratch.name}.dangling")
-        if stale.exists():
-            stale = scratch.with_name(f"{scratch.name}.dangling.{int(time.time())}")
-        try:
-            scratch.rename(stale)
-        except OSError:
-            pass
-        _git("worktree", "prune", cwd=clone)
+        if os.path.lexists(stale):
+            stale = scratch.with_name(f"{scratch.name}.dangling.{time.time_ns()}")
+        scratch.rename(stale)
 
-    if _worktree_is_registered(clone, scratch):
+    lock = _worktree_lock_path(clone, scratch)
+    if registered:
         # Reuse: detach cleanly, then check out the new commit.
         _reset_worktree_in_place(clone, scratch)
         proc = _git_with_lock_retry(
@@ -815,6 +859,10 @@ def _run_tests(tree: Path, interpreter: str, labels: list[str]) -> dict:
 
 
 def _result_path(repo_root: Path, instance_id: str) -> Path:
+    if not isinstance(instance_id, str) or not re.fullmatch(
+        r"[A-Za-z0-9][A-Za-z0-9-]*__[A-Za-z0-9_.-]+-[0-9]+", instance_id
+    ):
+        raise ValueError("expected a SWE-bench instance ID such as owner__repo-123")
     return cache.validation_dir(repo_root) / "candidates" / f"{instance_id}.json"
 
 

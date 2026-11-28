@@ -8,6 +8,8 @@
   macOS and Linux.
 - CI builds one wheel and verifies its checksum before testing it on all
   three operating systems. Tagged builds verify the version in the wheel.
+- Research tooling handles malformed provider replies, validates cache IDs,
+  and checks worktree registration before cleaning up.
 - Git history, reports, and evidence work from TRACE projects inside Git
   worktrees, including linked worktrees. History lists project-relative paths
   and limits commit details that also concern sibling projects.

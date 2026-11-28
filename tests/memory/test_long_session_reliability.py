@@ -501,7 +501,7 @@ def test_opt_in_pytest_outcome_is_scoped_atomic_and_replay_safe(env, monkeypatch
     tool = {"type": "tool", "tool": "bash", "state": {
         "status": "completed", "input": {"command": "python -m pytest -q tests", "description": secret},
         "metadata": {"exit": 1, "other": secret}, "output": (
-            f"fixture secret {secret}\nFAILED test_contract.py::test_outside_summary\n"
+            f"fixture secret {secret}\nshort test summary info\nFAILED test_contract.py::test_outside_summary\n"
             f"=== short test summary info ===\nFAILED test_contract.py::test_limit[{secret}] - AssertionError: {secret}\n"
             "FAILED ../test_contract.py::test_escape\nFAILED test_missing.py::test_fake\n1 failed, 2 passed in 0.05s"
         ),
@@ -589,6 +589,24 @@ def test_pytest_failed_identifiers_match_real_summary(tmp_path):
     (tmp_path / "nested").mkdir()
     state["input"]["cwd"] = "nested"
     assert "failed_checks" not in captured_outcomes.summarize(part, True, tmp_path.resolve())
+
+
+@pytest.mark.parametrize(("target", "recognized"), [
+    ("test", True),
+    ("tests/", True),
+    ("tests/unit/test_contract.py::Case::test_limit", True),
+    ("test_contract.py::test_limit", True),
+    ("tests//unit", False),
+    ("test_contract.py::", False),
+    ("src/test_contract.py", False),
+])
+def test_pytest_capture_recognizes_supported_targets(tmp_path, target, recognized):
+    from memory import captured_outcomes
+
+    state = {"status": "completed", "input": {"command": f"python3 -m pytest -q {target}"},
+             "metadata": {"exit": 0}}
+    part = {"type": "tool", "tool": "bash", "state": state}
+    assert (captured_outcomes.summarize(part, False, tmp_path.resolve()) is not None) == recognized
 
 
 def test_prefixed_memory_tool_calls_captured_when_complete(env):
