@@ -18,6 +18,7 @@ FTS5 is an implementation detail of this backend; callers only see dicts.
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import stat
 from itertools import combinations
@@ -198,7 +199,14 @@ def require_local_storage(root: Path, db: Path) -> Path:
 
 def connect(db_path: Path) -> sqlite3.Connection:
     """Open the workspace-local database (parents created on demand)."""
-    db_path.parent.mkdir(parents=True, exist_ok=True)
+    directory_mode = 0o700 if os.name == "posix" else 0o777
+    db_path.parent.mkdir(mode=directory_mode, parents=True, exist_ok=True)
+    if os.name == "posix" and str(db_path) != ":memory:" and not db_path.exists():
+        # Create privately before SQLite can write any project data.
+        try:
+            db_path.touch(mode=0o600, exist_ok=False)
+        except FileExistsError:
+            pass  # Another process created the file after the existence check.
     conn = sqlite3.connect(str(db_path), timeout=30.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA busy_timeout = 5000")

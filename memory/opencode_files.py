@@ -9,12 +9,37 @@ from pathlib import Path
 
 
 INTEGRATION_DISABLED = "integration.disabled"
+AUTOMATIC_RECALL_DISABLED = "automatic-recall.disabled"
 
 
 def integration_marker(project: Path) -> Path:
     from memory.opencode_service import SERVICE_DIR_NAME
 
     return project / SERVICE_DIR_NAME / INTEGRATION_DISABLED
+
+
+def automatic_recall_marker(project: Path) -> Path:
+    return integration_marker(project).with_name(AUTOMATIC_RECALL_DISABLED)
+
+
+def automatic_recall_enabled(project: Path) -> bool:
+    marker = automatic_recall_marker(project)
+    require_local_paths(project, marker)
+    try:
+        marker.lstat()
+    except FileNotFoundError:
+        return True
+    return False
+
+
+def set_automatic_recall(project: Path, enabled: bool) -> None:
+    marker = automatic_recall_marker(project)
+    require_local_paths(project, marker)
+    if enabled:
+        marker.unlink(missing_ok=True)
+    else:
+        marker.parent.mkdir(mode=0o700, exist_ok=True)
+        atomic_write_text(marker, "Automatic TRACE recall is disabled for this project.\n")
 
 
 def require_local_paths(project: Path, *paths: Path) -> None:

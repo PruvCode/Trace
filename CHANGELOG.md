@@ -2,6 +2,14 @@
 
 ## v0.1.1 · Proposed experimental preview
 
+- Pause automatic recall across a project while keeping capture and explicit
+  search available. Update and restart existing host integrations to use the control.
+- New memory directories and SQLite databases use owner-only permissions on
+  macOS and Linux.
+- CI builds one wheel and verifies its checksum before testing it on all
+  three operating systems. Tagged builds verify the version in the wheel.
+- Research tooling handles malformed provider replies, validates cache IDs,
+  and checks worktree registration before cleaning up.
 - Git history, reports, and evidence work from TRACE projects inside Git
   worktrees, including linked worktrees. History lists project-relative paths
   and limits commit details that also concern sibling projects.

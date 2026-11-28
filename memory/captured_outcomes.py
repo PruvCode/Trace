@@ -13,14 +13,15 @@ from memory import episodic, redact, store, task_library, transcript
 
 _RUN = re.compile(r"(?:pytest|(?:python(?:3)?|py) -m pytest)(?: +([^\r\n]+))?")
 _FLAG = re.compile(r"-(?:q{1,2}|v{1,2}|x|s)|--(?:quiet|verbose|disable-warnings|maxfail=[1-9][0-9]{0,3})")
-_TARGET = re.compile(r"(?:tests?(?:/[\w.-]+)*/?|test_[\w.-]+\.py)(?:::[\w]+)*", re.ASCII)
+_PATH_PART = re.compile(r"[\w.-]+", re.ASCII)
+_SELECTOR = re.compile(r"[\w]+", re.ASCII)
 _ID = re.compile(r"[A-Za-z0-9_.:-]{1,128}")
 _ANSI = re.compile(r"\x1b\[[0-9;]*m")
 _COUNT = r"[0-9]{1,8} (?:passed|failed|skipped|errors?|xfailed|xpassed|deselected|warnings?)"
 _SUMMARY = re.compile(rf"({_COUNT}(?:, {_COUNT})*) in [0-9]+(?:\.[0-9]+)?s(?: \([0-9:.]+\))?")
 _NODE = re.compile(r"(?:[\w-]+/)*(?:test_[\w-]+|[\w-]+_test)\.py(?:::[A-Za-z_][\w]*){0,2}", re.ASCII)
 _FAILURE = re.compile(rf"(?:FAILED|ERROR) ({_NODE.pattern})(?:\[[^\r\n]*?\])?(?: - [^\r\n]*)?", re.ASCII)
-_SHORT_SUMMARY = re.compile(r"=+ short test summary info =+")
+_SHORT_SUMMARY = " short test summary info "
 _MAX_CHECKS = 4
 _EXIT = {
     0: "completed", 1: "failed", 2: "interrupted", 3: "internal_error",
@@ -59,6 +60,18 @@ def should_wait(conn: sqlite3.Connection, created_ms: int, part: dict, v2: bool,
     return state["status"] == "streaming" or _is_pytest(state.get("input"), root)
 
 
+def _is_target(arg: str) -> bool:
+    path, *selectors = arg.split("::")
+    if any(not _SELECTOR.fullmatch(selector) for selector in selectors):
+        return False
+    parts = path.removesuffix("/").split("/")
+    if parts[0] in ("test", "tests"):
+        return all(part != ".." and _PATH_PART.fullmatch(part) for part in parts[1:])
+    if not path.startswith("test_") or not path.endswith(".py"):
+        return False
+    return _PATH_PART.fullmatch(path.removeprefix("test_").removesuffix(".py")) is not None
+
+
 def _is_pytest(inputs: object, root: Path, *, project_root_only: bool = False) -> bool:
     if not isinstance(inputs, dict):
         return False
@@ -69,7 +82,7 @@ def _is_pytest(inputs: object, root: Path, *, project_root_only: bool = False) -
     if not match:
         return False
     for arg in (match[1] or "").split(" "):
-        if arg and not (_FLAG.fullmatch(arg) or (_TARGET.fullmatch(arg) and ".." not in arg.split("::", 1)[0].split("/"))):
+        if arg and not (_FLAG.fullmatch(arg) or _is_target(arg)):
             return False
     for key in ("workdir", "cwd"):
         if key not in inputs or inputs[key] is None:
@@ -118,7 +131,8 @@ def _failed_checks(lines: list[str], root: Path) -> list[str]:
     checks = []
     in_summary = False
     for line in lines:
-        if _SHORT_SUMMARY.fullmatch(line.strip()):
+        heading = line.strip()
+        if heading.startswith("=") and heading.endswith("=") and heading.strip("=") == _SHORT_SUMMARY:
             in_summary = True
             continue
         if not in_summary:

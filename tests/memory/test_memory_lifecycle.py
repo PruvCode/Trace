@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import stat
 import subprocess
 import time
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -123,6 +125,36 @@ def test_supersession_is_project_scoped_and_validated(project, tmp_path):
     with pytest.raises(ValueError, match="supersedes"):
         _record(db, type="decision", payload={"decision": "x", "supersedes": ["1"]})
     assert [f["text"] for f in _findings(db)] == ["project A conclusion"]
+
+
+@pytest.mark.skipif(os.name != "posix", reason="requires POSIX file modes")
+def test_project_memory_is_private_under_a_permissive_umask(tmp_path):
+    from trace_memory import project
+
+    previous_umask = os.umask(0)
+    try:
+        project.init_project(tmp_path)
+    finally:
+        os.umask(previous_umask)
+
+    db = project.db_path(tmp_path)
+    assert stat.S_IMODE(db.parent.stat().st_mode) == 0o700
+    assert stat.S_IMODE(db.stat().st_mode) == 0o600
+
+
+@pytest.mark.skipif(os.name != "posix", reason="requires POSIX file modes")
+def test_existing_project_memory_permissions_are_preserved(tmp_path):
+    db = tmp_path / ".agent-memory" / "memory.db"
+    with closing(store_mod.connect(db)) as conn:
+        store_mod.init_schema(conn)
+    db.parent.chmod(0o750)
+    db.chmod(0o640)
+
+    with closing(store_mod.connect(db)) as conn:
+        store_mod.init_schema(conn)
+
+    assert stat.S_IMODE(db.parent.stat().st_mode) == 0o750
+    assert stat.S_IMODE(db.stat().st_mode) == 0o640
 
 
 def test_historical_events_remain_readable(tmp_path):

@@ -6,6 +6,7 @@ import argparse
 import ast
 from contextlib import closing
 from hashlib import sha256
+from http.client import HTTPException
 import json
 import os
 from pathlib import Path
@@ -200,9 +201,9 @@ def proposal(grader, case, original, model, seed, arm, context, *, fenced_editor
     candidate, reason, defect = None, None, None
     attempts = 0
     input_tokens = output_tokens = 0
-    for attempt in range(2 if repair else 1):
-        message = prompt if attempt == 0 else (
-            f"{prompt}\n\nPrevious reply:\n{reply}\n\n{retry_message(defect)}")
+    message = prompt
+    for _ in range(2 if repair else 1):
+        defect = None
         try:
             reply = request("/api/chat", {
                 "model": model, "stream": False, "keep_alive": "10m",
@@ -211,27 +212,45 @@ def proposal(grader, case, original, model, seed, arm, context, *, fenced_editor
                 "options": {"temperature": 0, "seed": seed, "num_ctx": 2048,
                             "num_predict": FENCED_OUTPUT if fenced_editor else MAX_OUTPUT, "num_gpu": 0},
             })
-        except (OSError, RuntimeError) as exc:
-            reason, candidate, defect = type(exc).__name__, None, None
+        except (ValueError, RecursionError):
+            reason = "invalid-provider-response"
+            break
+        except (OSError, RuntimeError, HTTPException) as exc:
+            reason = type(exc).__name__
             break
         attempts += 1
-        input_tokens += reply.get("prompt_eval_count") or 0
-        output_tokens += reply.get("eval_count") or 0
-        reason = reply.get("done_reason")
-        updated = None
-        if reason != "length":
+        if not isinstance(reply, dict):
+            reason = "invalid-provider-response"
+            break
+        prompt_count = reply.get("prompt_eval_count")
+        eval_count = reply.get("eval_count")
+        if type(prompt_count) is int and prompt_count >= 0:
+            input_tokens += prompt_count
+        if type(eval_count) is int and eval_count >= 0:
+            output_tokens += eval_count
+        done_reason = reply.get("done_reason")
+        reason = done_reason if isinstance(done_reason, str) else None
+        if reason == "length":
+            break
+        assistant_message = reply.get("message")
+        content = assistant_message.get("content") if isinstance(assistant_message, dict) else None
+        if not isinstance(content, str):
+            reason = "invalid-provider-response"
+            break
+        updated = content
+        if not fenced_editor:
             try:
-                content = reply["message"]["content"]
-                body = {"function": content} if fenced_editor else json.loads(content)
-                updated = body.get("function") if isinstance(body, dict) else None
-            except (TypeError, ValueError):
-                updated = None
+                body = json.loads(content)
+            except (ValueError, RecursionError):
+                body = None
+            updated = body.get("function") if isinstance(body, dict) else None
         if isinstance(updated, str) and len(updated) <= MAX_SOURCE:
             candidate, defect = function_candidate(updated, case, original)
         else:
             candidate, defect = None, None
-        if candidate is not None or not repair or reason == "length":
+        if candidate is not None or not repair:
             break
+        message = f"{prompt}\n\nPrevious reply:\n{content[:MAX_SOURCE]}\n\n{retry_message(defect)}"
     changed, preserved = grade(grader, case, candidate)
     return dict(task=key(case), arm=arm, model=model, seed=seed, candidate=candidate, passed=changed and preserved,
                 regression=not preserved, reason=reason, attempts=attempts, defect=defect if candidate is None else None,

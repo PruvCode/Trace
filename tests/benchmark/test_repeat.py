@@ -6,6 +6,7 @@ from agent.llm_agent import LLMAgent, LLMClient, LLMResponse, LLMToolCall, LLMUs
 from benchmark import loader as loader_mod
 from benchmark import results as results_mod
 from benchmark import runner as runner_mod
+from trace_memory import __version__
 
 
 class _DoneFake(LLMClient):
@@ -54,7 +55,7 @@ def test_repeated_baseline_runs_fresh_workspaces(tmp_path, repo_root, monkeypatc
         assert outcome["total_tokens"] == 150
         assert outcome["token_source"] == "provider"
         assert outcome["timestamp"]
-        assert outcome["benchmark_version"] == "0.1.0"
+        assert outcome["benchmark_version"] == __version__
     rows = results_mod.read_results(results_path)
     assert len(rows) == 3
     for row in rows:

@@ -40,6 +40,8 @@ def _trace_db_with(tmp: Path, *, empty: bool) -> Path:
 
 DRIVER_TEMPLATE = r"""
 import { spawnSync } from "node:child_process";
+import { mkdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { join, dirname } from "node:path";
 import { pathToFileURL } from "node:url";
 const LABEL_START = "[TRACE PROJECT MEMORY";
 let spawns = 0;
@@ -63,7 +65,13 @@ const msg = (role, text) => ({ info: { role, sessionID: "ses_B" },
                                parts: [{ type: "text", text }] });
 const history = [msg("user", "continue the timeout work")];
 const seen = [];
+const marker = join(process.argv[3], ".trace-service", "automatic-recall.disabled");
 for (let step = 0; step < REQUESTS; step++) {
+  if (TOGGLE_RECALL && step === 1) {
+    mkdirSync(dirname(marker), { recursive: true });
+    writeFileSync(marker, "");
+  }
+  if (TOGGLE_RECALL && step === 3) unlinkSync(marker);
   const output = { messages: history.map((m) => ({ ...m })) };
   await hook({}, output);
   const first = output.messages[0] ? output.messages[0].parts[0].text : "";
@@ -86,7 +94,7 @@ def helper_env(tmp_path):
 
 
 def _run_scenario(helper_env, tmp: Path, trace_db: Path, requests: int,
-                  fail_times: int, *, name: str) -> dict:
+                  fail_times: int, *, name: str, toggle_recall: bool = False) -> dict:
     node, repo_root = helper_env
     plugin = tmp / f"trace-memory-{name}.mjs"
     plugin.write_text(
@@ -96,7 +104,8 @@ def _run_scenario(helper_env, tmp: Path, trace_db: Path, requests: int,
     driver = tmp / f"driver_{name}.mjs"
     driver.write_text(
         DRIVER_TEMPLATE.replace("FAIL_TIMES", str(fail_times))
-                       .replace("REQUESTS", str(requests)),
+                       .replace("REQUESTS", str(requests))
+                       .replace("TOGGLE_RECALL", json.dumps(toggle_recall)),
         encoding="utf-8")
     env = {k: v for k, v in os.environ.items()}
     env["PYTHONPATH"] = str(repo_root)
@@ -132,6 +141,13 @@ def test_recoverable_failure_is_retried_once_then_injects(helper_env, tmp_path):
     injected = [e["injected"] for e in report["seen"]]
     assert injected == [False, True, True, True], report["seen"]
     assert [e["copies"] for e in report["seen"]] == [0, 1, 1, 1], report["seen"]
+
+
+def test_plugin_pauses_cached_recall_and_resumes_in_the_same_session(helper_env, tmp_path):
+    db = _trace_db_with(tmp_path / ".agent-memory", empty=False)
+    report = _run_scenario(helper_env, tmp_path, db, requests=5, fail_times=0, name="pause", toggle_recall=True)
+    assert [event["injected"] for event in report["seen"]] == [True, False, False, True, True]
+    assert report["spawns"] == 3  # capture helper runs once for each settings state
 
 
 def test_permanent_failure_is_bounded(helper_env, tmp_path):

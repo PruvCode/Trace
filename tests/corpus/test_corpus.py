@@ -237,9 +237,18 @@ def test_validation_result_round_trip(tmp_path):
         "failure_reason": None,
     }
     path = validate.save_result(tmp_path, result)
-    assert path.exists()
+    assert path == cache.validation_dir(tmp_path) / "candidates" / "django__django-1.json"
     assert validate.load_cached(tmp_path, "django__django-1")["valid"] is True
-    assert validate.load_cached(tmp_path, "missing") is None
+    assert validate.load_cached(tmp_path, "django__django-2") is None
+
+
+@pytest.mark.parametrize("instance_id", [None, "", "missing", "sample__repo-abc", "sample__repo-1.json"])
+def test_validation_cache_rejects_malformed_instance_id(tmp_path, instance_id):
+    with pytest.raises(ValueError, match="expected a SWE-bench instance ID"):
+        validate.load_cached(tmp_path, instance_id)
+    with pytest.raises(ValueError, match="expected a SWE-bench instance ID"):
+        validate.save_result(tmp_path, {"task_id": instance_id})
+    assert not cache.validation_dir(tmp_path).exists()
 
 
 def test_validate_candidate_rejects_empty_test_spec(patched_cache):

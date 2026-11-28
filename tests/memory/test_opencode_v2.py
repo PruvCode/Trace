@@ -216,6 +216,7 @@ def test_setup_uses_the_v2_plugin_key_and_teardown_removes_it(tmp_path, env, mon
 
 DRIVER = """
 import childProcess from "node:child_process";
+import { unlinkSync, writeFileSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { pathToFileURL } from "node:url";
 const prompt = "Find ZEPHYR 🧪";
@@ -238,13 +239,22 @@ hook(b);
 const carried = event("ses_now");
 carried.messages.unshift({ role: "user", content: [{ type: "text", text: a.messages[0].content[0].text }] });
 hook(carried);
-console.log(JSON.stringify({ id: plugin.id, first: a.messages[0].content[0].text, counts: [a, b, carried].map((e) => e.messages.length),
+writeFileSync(process.argv[3], "");
+const paused = event("ses_now");
+hook(paused);
+unlinkSync(process.argv[3]);
+const resumed = event("ses_now");
+hook(resumed);
+console.log(JSON.stringify({ id: plugin.id, first: a.messages[0].content[0].text,
+  counts: [a, b, carried, paused, resumed].map((e) => e.messages.length),
   systemParts: system.length, safeTransport }));
 """
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node not installed")
-def test_v2_plugin_injects_into_messages_on_every_request(tmp_path, env, monkeypatch):
+def test_v2_plugin_injects_into_messages_on_every_request(tmp_path, env):
+    from memory.opencode_files import automatic_recall_marker
+
     project, _, _, _ = env
     conn = store_mod.connect(project_mod.db_path(project))
     transcript_mod.record_message(conn, session_id="ses_old", role="user", content="the codename is ZEPHYR",
@@ -257,14 +267,15 @@ def test_v2_plugin_injects_into_messages_on_every_request(tmp_path, env, monkeyp
     index.write_text(index.read_text(encoding="utf-8").replace('"--ensure-capture",', ""), encoding="utf-8")
     driver = tmp_path / "driver.mjs"
     driver.write_text(DRIVER, encoding="utf-8")
-    run = subprocess.run(["node", str(driver), str(index)], capture_output=True, text=True, timeout=60,
+    run = subprocess.run(["node", str(driver), str(index), str(automatic_recall_marker(project))],
+                         capture_output=True, text=True, timeout=60,
                          env={**__import__("os").environ, "PYTHONPATH": str(Path(__file__).resolve().parents[2])})
     assert run.returncode == 0, run.stderr
     report = json.loads(run.stdout.strip().splitlines()[-1])
     assert report["id"] == "trace-memory"
     assert report["safeTransport"] is True
     assert report["first"].startswith("[TRACE PROJECT MEMORY") and "ZEPHYR" in report["first"]
-    assert report["counts"] == [2, 2, 2]  # every request, never a second copy
+    assert report["counts"] == [2, 2, 2, 1, 2]  # live pause/resume, with no duplicate copies
     assert report["systemParts"] == 1  # memory stays out of the trusted system prompt
 
 

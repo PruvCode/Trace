@@ -720,7 +720,12 @@ memory block TRACE can assemble for a new request. Supply `--session ID`
 for an existing OpenCode session's task binding and `--query-stdin` to read
 a prospective request from UTF-8 standard input. This previews TRACE's
 part of a request using current memory. The plugin can cache a block for
-an already-running session. `trace service stop` pauses capture while
+an already-running session. Run `trace privacy --automatic-recall off` to
+stop automatic delivery across this project while retaining capture and
+explicit CLI and MCP access. Use `--automatic-recall on` to resume.
+After an upgrade, run `trace update --all` in the project and restart each
+enrolled host so it uses the new control. Verify with a fresh request.
+`trace service stop` pauses capture while
 preserving OpenCode recall. `trace teardown opencode` disables both for
 OpenCode. For Codex, Claude Code, or Antigravity, use
 `trace service stop --agent HOST` to pause native capture, automatic

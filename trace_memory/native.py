@@ -11,7 +11,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-from memory.opencode_files import atomic_write_text, require_local_paths
+from memory.opencode_files import atomic_write_text, automatic_recall_enabled, require_local_paths
 from memory.opencode_service import LockHandle, SERVICE_DIR_NAME
 from trace_memory.project import TraceUserError, require_local_db
 
@@ -124,7 +124,8 @@ def privacy_state(project: Path, host: str) -> dict:
         state = "memory missing"
     else:
         state = "enabled"
-    return {"capture": state, "recall": state, "enrolled": enrolled,
+    recall = "disabled" if state == "enabled" and not automatic_recall_enabled(project) else state
+    return {"capture": state, "recall": recall, "enrolled": enrolled,
             "last_saved": _read_diagnostic(project, host, "saved") if enrolled else None,
             "last_failure": _read_diagnostic(project, host, "failed") if enrolled else None}
 
@@ -203,10 +204,10 @@ def dispatch(host: str, event: str, project: Path, payload: dict) -> dict:
         _diagnostic(project, host, "failed", reason)
         print(f"TRACE native capture unavailable ({reason})", file=sys.stderr)
         return {}
-    if stopped:
+    if stopped or not automatic_recall_enabled(project):
         return {}
     context = dialogue.recall(db, session, prompt)
-    if not context:
+    if not context or not automatic_recall_enabled(project):
         return {}
     if host == "antigravity":
         return {"injectSteps": [{"ephemeralMessage": context}]}

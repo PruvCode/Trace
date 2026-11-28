@@ -10,4 +10,4 @@ It never imports the benchmark engine; the benchmark remains standalone
 research infrastructure (``python -m benchmark.runner``).
 """
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
